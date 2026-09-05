@@ -12,78 +12,52 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. تحميل المشروع
-      - name: Checkout repository
+
+      # Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. إعداد Node.js 24
+      # Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # 3. إعداد Java 17
+      # Java
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
 
-      # 4. تثبيت Dependencies
+      # Install dependencies
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f yarn.lock ]; then
-            corepack enable
-            yarn install --frozen-lockfile
-          else
-            npm install
-          fi
+        run: npm install
 
-      # 5. إنشاء مشروع Android إذا لم يكن موجودًا
-      - name: Generate Android project
-        run: |
-          if [ ! -d "android" ]; then
-            npx expo prebuild --platform android --non-interactive
-          else
-            echo "Android project already exists."
-          fi
+      # Generate Android project
+      - name: Expo Prebuild
+        run: npx expo prebuild --platform android --non-interactive
 
-      # 6. إعطاء Gradle صلاحية التنفيذ
+      # Gradle permission
       - name: Make Gradle executable
-        run: |
-          chmod +x android/gradlew
+        run: chmod +x android/gradlew
 
-      # 7. تنظيف المشروع
-      - name: Clean Gradle
-        working-directory: android
-        run: |
-          ./gradlew clean --no-daemon
-
-      # 8. بناء APK مباشرة باستخدام Gradle
+      # Build APK
       - name: Build APK
         working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # Check APK
+      - name: Check APK
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          test -f android/app/build/outputs/apk/debug/app-debug.apk
+          echo "APK successfully created"
 
-      # 9. تجهيز APK
-      - name: Prepare APK
-        run: |
-          mkdir -p release
-
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
-             release/Mafia001-v1.0-debug.apk
-
-          echo "APK created successfully:"
-          ls -lh release/Mafia001-v1.0-debug.apk
-
-      # 10. رفع APK
+      # Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Mafia001-APK
-          path: release/Mafia001-v1.0-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
