@@ -1,7 +1,157 @@
-import React,{useState} from 'react';
-import {Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
-import {router} from 'expo-router';
-import {Ionicons} from '@expo/vector-icons';
-import {SafeAreaView} from 'react-native-safe-area-context';
-export default function JoinRoom(){const[code,setCode]=useState('');return <SafeAreaView style={s.safe}><View style={s.c}><Pressable onPress={()=>router.back()} style={s.back}><Ionicons name="arrow-back" size={22} color="#EEE"/><Text style={s.backT}>Back</Text></Pressable><Text style={s.k}>ENTER INVITE CODE</Text><Text style={s.t}>Join Room</Text><Text style={s.sub}>Ask the host for the 6-character room code.</Text><TextInput autoCapitalize="characters" maxLength={6} value={code} onChangeText={setCode} placeholder="ABC123" placeholderTextColor="#555761" style={s.input}/><Pressable style={[s.btn,!code&&s.disabled]}><Text style={s.btnT}>JOIN GAME</Text><Ionicons name="arrow-forward" size={19} color="#090A0D"/></Pressable></View></SafeAreaView>}
-const s=StyleSheet.create({safe:{flex:1,backgroundColor:'#090A0D'},c:{padding:20},back:{flexDirection:'row',gap:8,alignItems:'center',marginBottom:50},backT:{color:'#AAA'},k:{color:'#B5222E',fontSize:10,letterSpacing:2,fontWeight:'900'},t:{color:'#F4F1EF',fontSize:34,fontWeight:'900',marginTop:5},sub:{color:'#898A92',marginTop:8,marginBottom:28},input:{height:64,borderRadius:15,borderWidth:1,borderColor:'#2B2D34',backgroundColor:'#14151A',color:'#F2F2F2',fontSize:26,fontWeight:'900',letterSpacing:7,textAlign:'center'},btn:{height:54,borderRadius:14,backgroundColor:'#D7A94B',marginTop:20,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10},disabled:{opacity:.45},btnT:{fontWeight:'900',letterSpacing:1}});
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
+import { router } from "expo-router";
+import { joinRoom } from "../lib/rooms";
+
+export default function JoinRoomScreen() {
+  const [playerName, setPlayerName] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleJoinRoom() {
+    if (!playerName.trim()) {
+      Alert.alert("تنبيه", "اكتب اسمك أولاً");
+      return;
+    }
+
+    if (roomCode.trim().length !== 6) {
+      Alert.alert("تنبيه", "أدخل كود الغرفة المكون من 6 أحرف");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const room = await joinRoom(
+        roomCode.trim(),
+        playerName.trim()
+      );
+
+      router.replace(`/room/${room.code}`);
+    } catch (error: any) {
+      Alert.alert(
+        "تعذر الانضمام",
+        error?.message || "حدث خطأ أثناء الانضمام إلى الغرفة"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>JOIN ROOM</Text>
+
+      <Text style={styles.label}>Your name</Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="Omar"
+        placeholderTextColor="#777"
+        value={playerName}
+        onChangeText={setPlayerName}
+        maxLength={20}
+      />
+
+      <Text style={styles.label}>Room code</Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="ABC123"
+        placeholderTextColor="#777"
+        value={roomCode}
+        onChangeText={(text) =>
+          setRoomCode(text.toUpperCase())
+        }
+        autoCapitalize="characters"
+        maxLength={6}
+      />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handleJoinRoom}
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>
+            JOIN GAME
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => router.back()}
+        disabled={loading}
+      >
+        <Text style={styles.backText}>BACK</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#101010",
+    padding: 25,
+    paddingTop: 70,
+  },
+
+  title: {
+    color: "#fff",
+    fontSize: 30,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 40,
+  },
+
+  label: {
+    color: "#fff",
+    fontSize: 15,
+    marginBottom: 8,
+  },
+
+  input: {
+    backgroundColor: "#1d1d1d",
+    color: "#fff",
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    fontSize: 16,
+  },
+
+  button: {
+    backgroundColor: "#8b0000",
+    padding: 17,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  buttonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "bold",
+  },
+
+  backButton: {
+    alignItems: "center",
+    padding: 18,
+  },
+
+  backText: {
+    color: "#aaa",
+    fontWeight: "bold",
+  },
+});
