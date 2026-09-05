@@ -26,6 +26,11 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
+      - name: Initialize EAS project
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas init --account pyouri --non-interactive
+
       - name: Build APK with EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
