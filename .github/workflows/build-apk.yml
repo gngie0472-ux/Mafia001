@@ -1,4 +1,4 @@
-name: Build DramaRush APK
+name: Build Mafia001 APK
 
 on:
   workflow_dispatch:
@@ -16,12 +16,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. إعداد Node.js
+      # 2. إعداد Node.js 24
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
+          node-version: 24
 
       # 3. إعداد Java 17
       - name: Setup Java
@@ -31,11 +30,14 @@ jobs:
           java-version: 17
           cache: gradle
 
-      # 4. تثبيت الحزم
+      # 4. تثبيت Dependencies
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then
             npm ci
+          elif [ -f yarn.lock ]; then
+            corepack enable
+            yarn install --frozen-lockfile
           else
             npm install
           fi
@@ -54,14 +56,14 @@ jobs:
         run: |
           chmod +x android/gradlew
 
-      # 7. تنظيف Gradle
+      # 7. تنظيف المشروع
       - name: Clean Gradle
         working-directory: android
         run: |
           ./gradlew clean --no-daemon
 
-      # 8. بناء Debug APK مباشرة بدون EAS
-      - name: Build Debug APK
+      # 8. بناء APK مباشرة باستخدام Gradle
+      - name: Build APK
         working-directory: android
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
@@ -72,15 +74,16 @@ jobs:
           mkdir -p release
 
           cp android/app/build/outputs/apk/debug/app-debug.apk \
-             release/DramaRush-v1.0-debug.apk
+             release/Mafia001-v1.0-debug.apk
 
-          ls -lh release/DramaRush-v1.0-debug.apk
+          echo "APK created successfully:"
+          ls -lh release/Mafia001-v1.0-debug.apk
 
-      # 10. رفع APK كـ Artifact
+      # 10. رفع APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DramaRush-APK
-          path: release/DramaRush-v1.0-debug.apk
+          name: Mafia001-APK
+          path: release/Mafia001-v1.0-debug.apk
           if-no-files-found: error
           retention-days: 7
