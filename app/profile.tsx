@@ -1,0 +1,7 @@
+import React from 'react';
+import {StyleSheet,Text,View,Pressable} from 'react-native';
+import {router} from 'expo-router';
+import {Ionicons} from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+export default function Profile(){return <SafeAreaView style={s.safe}><View style={s.c}><Pressable onPress={()=>router.back()}><Ionicons name="arrow-back" size={24} color="#EEE"/></Pressable><View style={s.avatar}><Ionicons name="person" size={45} color="#D7A94B"/></View><Text style={s.name}>YOUR ALIAS</Text><Text style={s.handle}>@player</Text><View style={s.stats}><View><Text style={s.num}>0</Text><Text style={s.lab}>WINS</Text></View><View><Text style={s.num}>0</Text><Text style={s.lab}>GAMES</Text></View><View><Text style={s.num}>0</Text><Text style={s.lab}>RATING</Text></View></View></View></SafeAreaView>}
+const s=StyleSheet.create({safe:{flex:1,backgroundColor:'#090A0D'},c:{padding:20},avatar:{width:92,height:92,borderRadius:46,backgroundColor:'#19150C',borderWidth:1,borderColor:'#5A4720',alignItems:'center',justifyContent:'center',alignSelf:'center',marginTop:70},name:{textAlign:'center',color:'#EEE',fontSize:20,fontWeight:'900',marginTop:14},handle:{textAlign:'center',color:'#777983',marginTop:4},stats:{flexDirection:'row',justifyContent:'space-around',marginTop:40,padding:20,borderRadius:16,backgroundColor:'#14151A'},num:{textAlign:'center',color:'#D7A94B',fontSize:22,fontWeight:'900'},lab:{textAlign:'center',color:'#777983',fontSize:9,letterSpacing:1,marginTop:4}});

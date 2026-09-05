@@ -1,0 +1,8 @@
+import React from 'react';
+import {StyleSheet,Text,View,Pressable} from 'react-native';
+import {router} from 'expo-router';
+import {Ionicons} from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+const players=[['01','ShadowFox','2,840'],['02','NightOwl','2,610'],['03','RedMask','2,455'],['04','Ghost','2,180'],['05','Ace','1,990']];
+export default function Ranking(){return <SafeAreaView style={s.safe}><View style={s.c}><Pressable onPress={()=>router.back()}><Ionicons name="arrow-back" size={24} color="#EEE"/></Pressable><Text style={s.k}>SEASON LEADERBOARD</Text><Text style={s.t}>Ranking</Text>{players.map(([r,n,p])=><View key={r} style={s.row}><Text style={s.rank}>{r}</Text><View style={{flex:1}}><Text style={s.name}>{n}</Text><Text style={s.small}>Mafia Night</Text></View><Text style={s.points}>{p}</Text></View>)}</View></SafeAreaView>}
+const s=StyleSheet.create({safe:{flex:1,backgroundColor:'#090A0D'},c:{padding:20},k:{marginTop:38,color:'#D7A94B',fontSize:10,letterSpacing:2,fontWeight:'900'},t:{color:'#F4F1EF',fontSize:34,fontWeight:'900',marginTop:4,marginBottom:24},row:{flexDirection:'row',alignItems:'center',padding:15,borderRadius:15,borderWidth:1,borderColor:'#25272E',backgroundColor:'#14151A',marginBottom:9},rank:{width:34,color:'#777983',fontWeight:'900'},name:{color:'#EEE',fontWeight:'800'},small:{color:'#666872',fontSize:10,marginTop:3},points:{color:'#D7A94B',fontWeight:'900'}});

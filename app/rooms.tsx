@@ -1,0 +1,7 @@
+import React from 'react';
+import {Pressable,StyleSheet,Text,View} from 'react-native';
+import {router} from 'expo-router';
+import {Ionicons} from '@expo/vector-icons';
+import {SafeAreaView} from 'react-native-safe-area-context';
+export default function Rooms(){return <SafeAreaView style={s.safe}><View style={s.c}><Pressable onPress={()=>router.back()}><Ionicons name="arrow-back" size={24} color="#EEE"/></Pressable><Text style={s.k}>MULTIPLAYER</Text><Text style={s.t}>Rooms</Text><View style={s.empty}><Ionicons name="people-outline" size={46} color="#D7A94B"/><Text style={s.et}>No active rooms</Text><Text style={s.es}>Create a private room or join with an invite code.</Text><Pressable style={s.btn} onPress={()=>router.push('/create-room')}><Text style={s.bt}>CREATE ROOM</Text></Pressable></View></View></SafeAreaView>}
+const s=StyleSheet.create({safe:{flex:1,backgroundColor:'#090A0D'},c:{padding:20},k:{marginTop:40,color:'#B5222E',fontSize:10,letterSpacing:2,fontWeight:'900'},t:{color:'#F4F1EF',fontSize:34,fontWeight:'900',marginTop:4},empty:{alignItems:'center',marginTop:120,padding:25},et:{color:'#EEE',fontSize:18,fontWeight:'800',marginTop:18},es:{color:'#777983',textAlign:'center',lineHeight:20,marginTop:6},btn:{marginTop:22,backgroundColor:'#D7A94B',paddingHorizontal:20,paddingVertical:13,borderRadius:12},bt:{fontWeight:'900'}});
