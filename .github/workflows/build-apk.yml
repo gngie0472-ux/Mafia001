@@ -1,4 +1,4 @@
-name: Build Mafia001 APK
+name: Build Mafia Night APK
 
 on:
   workflow_dispatch:
@@ -8,56 +8,138 @@ on:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Standalone Android APK
     runs-on: ubuntu-latest
 
     steps:
 
-      # Checkout
-      - name: Checkout
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Node.js
+
+      # --------------------------------------------------
+      # 2. Node.js 24
+      # --------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      # Java
+
+      # --------------------------------------------------
+      # 3. Java 17
+      # --------------------------------------------------
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      # Install dependencies
+
+      # --------------------------------------------------
+      # 4. Install dependencies
+      # --------------------------------------------------
       - name: Install dependencies
         run: npm install
 
-      # Generate Android project
-      - name: Expo Prebuild
-        run: npx expo prebuild --platform android --non-interactive
 
-      # Gradle permission
-      - name: Make Gradle executable
+      # --------------------------------------------------
+      # 5. Verify Expo project
+      # --------------------------------------------------
+      - name: Verify Expo configuration
+        run: |
+          npx expo --version
+          npx expo config --type public
+
+
+      # --------------------------------------------------
+      # 6. Generate native Android project
+      # --------------------------------------------------
+      - name: Generate Android project
+        run: |
+          npx expo prebuild \
+            --platform android \
+            --non-interactive \
+            --clean
+
+
+      # --------------------------------------------------
+      # 7. Verify Expo Router
+      # --------------------------------------------------
+      - name: Verify project entry
+        run: |
+          node -e "const p=require('./package.json'); if(p.main!=='expo-router/entry'){throw new Error('Invalid Expo Router entry: '+p.main)}"
+          echo "Expo Router entry is correct."
+
+
+      # --------------------------------------------------
+      # 8. Make Gradle executable
+      # --------------------------------------------------
+      - name: Prepare Gradle
         run: chmod +x android/gradlew
 
-      # Build APK
-      - name: Build APK
+
+      # --------------------------------------------------
+      # 9. Build RELEASE APK
+      #
+      # This is important:
+      # assembleRelease creates a standalone APK and
+      # bundles the JavaScript into the application.
+      # --------------------------------------------------
+      - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      # Check APK
-      - name: Check APK
         run: |
-          test -f android/app/build/outputs/apk/debug/app-debug.apk
-          echo "APK successfully created"
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace
 
-      # Upload APK
+
+      # --------------------------------------------------
+      # 10. Find generated APK
+      # --------------------------------------------------
+      - name: Find APK
+        run: |
+          echo "Searching for APK..."
+
+          find android/app/build/outputs/apk \
+            -type f \
+            -name "*.apk" \
+            -print
+
+
+      # --------------------------------------------------
+      # 11. Prepare final APK
+      # --------------------------------------------------
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+
+          APK=$(find android/app/build/outputs/apk/release \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK was not generated."
+            exit 1
+          fi
+
+          cp "$APK" release/Mafia-Night-v1.0.apk
+
+          echo "Final APK:"
+          ls -lh release/Mafia-Night-v1.0.apk
+
+
+      # --------------------------------------------------
+      # 12. Upload APK
+      # --------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Mafia001-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Mafia-Night-APK
+          path: release/Mafia-Night-v1.0.apk
           if-no-files-found: error
           retention-days: 7
