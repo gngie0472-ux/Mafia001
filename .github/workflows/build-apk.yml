@@ -1,4 +1,4 @@
-name: Build Mafia Night APK
+name: Build DramaRush APK
 
 on:
   workflow_dispatch:
@@ -12,59 +12,75 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. تحميل المشروع
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. إعداد Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
+      # 3. إعداد Java 17
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      # 4. تثبيت الحزم
       - name: Install dependencies
-        run: npm install
-
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Initialize EAS project
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas init --account pyouri --non-interactive
-
-      - name: Build APK with EAS
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --profile preview --non-interactive --wait
-
-      - name: Get latest EAS APK URL
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas build:list --platform android --status finished --limit 1 --json > eas-build.json
-
-          APK_URL=$(node -e "
-          const fs = require('fs');
-          const d = JSON.parse(fs.readFileSync('eas-build.json', 'utf8'));
-          const b = Array.isArray(d) ? d[0] : d;
-          console.log(b?.artifacts?.buildUrl || '');
-          ")
-
-          if [ -z "$APK_URL" ]; then
-            echo "Could not find APK download URL."
-            cat eas-build.json
-            exit 1
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
           fi
 
-          echo "APK_URL=$APK_URL" >> "$GITHUB_ENV"
-
-      - name: Download APK from EAS
+      # 5. إنشاء مشروع Android إذا لم يكن موجودًا
+      - name: Generate Android project
         run: |
-          curl -L --fail --retry 3 "$APK_URL" -o MafiaNight.apk
+          if [ ! -d "android" ]; then
+            npx expo prebuild --platform android --non-interactive
+          else
+            echo "Android project already exists."
+          fi
 
-      - name: Upload APK to GitHub
+      # 6. إعطاء Gradle صلاحية التنفيذ
+      - name: Make Gradle executable
+        run: |
+          chmod +x android/gradlew
+
+      # 7. تنظيف Gradle
+      - name: Clean Gradle
+        working-directory: android
+        run: |
+          ./gradlew clean --no-daemon
+
+      # 8. بناء Debug APK مباشرة بدون EAS
+      - name: Build Debug APK
+        working-directory: android
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # 9. تجهيز APK
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+             release/DramaRush-v1.0-debug.apk
+
+          ls -lh release/DramaRush-v1.0-debug.apk
+
+      # 10. رفع APK كـ Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MafiaNight-APK
-          path: MafiaNight.apk
+          name: DramaRush-APK
+          path: release/DramaRush-v1.0-debug.apk
           if-no-files-found: error
           retention-days: 7
