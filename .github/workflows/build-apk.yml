@@ -13,25 +13,19 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
       # 1. Checkout
-      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
       # 2. Node.js 24
-      # --------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
 
-      # --------------------------------------------------
       # 3. Java 17
-      # --------------------------------------------------
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -39,25 +33,41 @@ jobs:
           java-version: 17
 
 
-      # --------------------------------------------------
       # 4. Install dependencies
-      # --------------------------------------------------
       - name: Install dependencies
         run: npm install
 
 
-      # --------------------------------------------------
-      # 5. Verify Expo project
-      # --------------------------------------------------
+      # 5. Verify required Supabase packages
+      - name: Verify Supabase dependencies
+        run: |
+          echo "Checking required packages..."
+
+          node -e "require.resolve('react-native-url-polyfill/auto')"
+          node -e "require.resolve('@supabase/supabase-js')"
+          node -e "require.resolve('@react-native-async-storage/async-storage')"
+
+          echo "All Supabase dependencies are installed."
+
+
+      # 6. Verify Expo
       - name: Verify Expo configuration
         run: |
           npx expo --version
           npx expo config --type public
 
 
-      # --------------------------------------------------
-      # 6. Generate native Android project
-      # --------------------------------------------------
+      # 7. Verify Expo Router
+      - name: Verify Expo Router
+        run: |
+          node -e "const p=require('./package.json'); if(p.main!=='expo-router/entry'){throw new Error('package.json main must be expo-router/entry')}"
+
+          node -e "require.resolve('expo-router/entry')"
+
+          echo "Expo Router configuration is correct."
+
+
+      # 8. Generate Android project
       - name: Generate Android project
         run: |
           npx expo prebuild \
@@ -66,29 +76,21 @@ jobs:
             --clean
 
 
-      # --------------------------------------------------
-      # 7. Verify Expo Router
-      # --------------------------------------------------
-      - name: Verify project entry
+      # 9. Verify Android project
+      - name: Verify Android project
         run: |
-          node -e "const p=require('./package.json'); if(p.main!=='expo-router/entry'){throw new Error('Invalid Expo Router entry: '+p.main)}"
-          echo "Expo Router entry is correct."
+          test -f android/gradlew
+          test -f android/gradle/wrapper/gradle-wrapper.properties
+
+          echo "Android project verified."
 
 
-      # --------------------------------------------------
-      # 8. Make Gradle executable
-      # --------------------------------------------------
+      # 10. Prepare Gradle
       - name: Prepare Gradle
         run: chmod +x android/gradlew
 
 
-      # --------------------------------------------------
-      # 9. Build RELEASE APK
-      #
-      # This is important:
-      # assembleRelease creates a standalone APK and
-      # bundles the JavaScript into the application.
-      # --------------------------------------------------
+      # 11. Build standalone Release APK
       - name: Build Release APK
         working-directory: android
         run: |
@@ -97,26 +99,9 @@ jobs:
             --stacktrace
 
 
-      # --------------------------------------------------
-      # 10. Find generated APK
-      # --------------------------------------------------
-      - name: Find APK
+      # 12. Verify APK
+      - name: Verify APK
         run: |
-          echo "Searching for APK..."
-
-          find android/app/build/outputs/apk \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # --------------------------------------------------
-      # 11. Prepare final APK
-      # --------------------------------------------------
-      - name: Prepare APK
-        run: |
-          mkdir -p release
-
           APK=$(find android/app/build/outputs/apk/release \
             -type f \
             -name "*.apk" \
@@ -127,15 +112,27 @@ jobs:
             exit 1
           fi
 
+          echo "APK generated successfully:"
+          ls -lh "$APK"
+
+
+      # 13. Prepare APK
+      - name: Prepare APK
+        run: |
+          mkdir -p release
+
+          APK=$(find android/app/build/outputs/apk/release \
+            -type f \
+            -name "*.apk" \
+            | head -n 1)
+
           cp "$APK" release/Mafia-Night-v1.0.apk
 
           echo "Final APK:"
           ls -lh release/Mafia-Night-v1.0.apk
 
 
-      # --------------------------------------------------
-      # 12. Upload APK
-      # --------------------------------------------------
+      # 14. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
