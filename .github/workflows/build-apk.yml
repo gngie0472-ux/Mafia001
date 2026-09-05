@@ -1,35 +1,33 @@
 name: Build Mafia Night APK
+
 on:
-workflow_dispatch:
-push:
-branches:
-- main
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-build:
-name: Build Android APK
-runs-on: ubuntu-latest
-steps:
-- name: Checkout repository
-uses: actions/checkout@v4
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
 
-  - name: Setup Node.js
-    uses: actions/setup-node@v4
-    with:
-      node-version: 20
-      cache: npm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Install dependencies
-    run: npm install
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-  - name: Install EAS CLI
-    run: npm install -g eas-cli
+      - name: Install dependencies
+        run: npm install
 
-  - name: Build APK with EAS
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-    run: |
-      eas build \
-        --platform android \
-        --profile preview \
-        --non-interactive
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Build APK with EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build --platform android --profile preview --non-interactive
