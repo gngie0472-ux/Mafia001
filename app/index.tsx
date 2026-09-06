@@ -1,5 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   StyleSheet,
@@ -7,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
@@ -39,9 +42,63 @@ const slides = [
 
 export default function OnboardingScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [checkingOnboarding, setCheckingOnboarding] =
+    useState(true);
 
   const listRef = useRef<FlatList>(null);
 
+  /*
+   * التحقق من حالة الـ Onboarding.
+   *
+   * إذا كان المستخدم أنهى الـ Onboarding سابقًا،
+   * لا نعرضه مرة أخرى وننتقل مباشرة إلى الغرف.
+   */
+  useEffect(() => {
+    let mounted = true;
+
+    const checkOnboarding = async () => {
+      try {
+        const completed =
+          await AsyncStorage.getItem(
+            ONBOARDING_KEY
+          );
+
+        if (!mounted) {
+          return;
+        }
+
+        if (completed === 'true') {
+          router.replace('/rooms');
+          return;
+        }
+      } catch (error) {
+        console.log(
+          'Onboarding check error:',
+          error
+        );
+      } finally {
+        if (mounted) {
+          setCheckingOnboarding(false);
+        }
+      }
+    };
+
+    checkOnboarding();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /*
+   * إنهاء الـ Onboarding.
+   *
+   * مهم جدًا:
+   * لا نرجع إلى '/' لأن '/' هو index.tsx نفسه،
+   * وهذا كان سبب الحلقة اللانهائية.
+   *
+   * بدلًا من ذلك ننتقل مباشرة إلى /rooms.
+   */
   const finishOnboarding = async () => {
     try {
       await AsyncStorage.setItem(
@@ -55,7 +112,7 @@ export default function OnboardingScreen() {
       );
     }
 
-    router.replace('/');
+    router.replace('/rooms');
   };
 
   const nextSlide = () => {
@@ -79,10 +136,33 @@ export default function OnboardingScreen() {
       event.nativeEvent.contentOffset.x / width
     );
 
-    if (index !== currentIndex) {
+    if (
+      index !== currentIndex &&
+      index >= 0 &&
+      index < slides.length
+    ) {
       setCurrentIndex(index);
     }
   };
+
+  /*
+   * أثناء فحص AsyncStorage لا نعرض الشاشة،
+   * حتى لا يظهر الـ Onboarding للحظة ثم ينتقل المستخدم.
+   */
+  if (checkingOnboarding) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator
+          size="large"
+          color="#D7A94B"
+        />
+
+        <Text style={styles.loadingText}>
+          جاري التحميل...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -188,6 +268,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#090A0D',
+  },
+
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#090A0D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  loadingText: {
+    color: '#9B9EA6',
+    fontSize: 14,
+    marginTop: 14,
+    fontWeight: '700',
   },
 
   topBar: {
