@@ -3439,6 +3439,3 @@ const styles =
       fontWeight: "900",
     },
   });
-
-[/code]
-[/writing]
