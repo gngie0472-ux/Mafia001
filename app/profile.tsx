@@ -1,96 +1,63 @@
-import React, {
-  useCallback,
-  useEffect,
-  useState,
-} from 'react';
-
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-
 import * as ImagePicker from 'expo-image-picker';
-
-import { router } from 'expo-router';
-
 import { Ionicons } from '@expo/vector-icons';
-
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   getMyProfile,
-  saveMyProfile,
-  Profile as ProfileType,
-} from '../lib/profile';
+  saveMyProfileWithAvatar,
+  Profile,
+} from '@/lib/profile';
 
-export default function Profile() {
-  const [profile, setProfile] =
-    useState<ProfileType | null>(null);
+export default function ProfileScreen() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [username, setUsername] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
 
-  const [name, setName] =
-    useState('');
-
-  const [avatar, setAvatar] =
-    useState('');
-
-  const [editing, setEditing] =
-    useState(false);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [pickingImage, setPickingImage] =
-    useState(false);
-
-  const load = useCallback(
-    async () => {
-      try {
-        const data =
-          await getMyProfile();
-
-        setProfile(data);
-        setName(data.username);
-        setAvatar(
-          data.avatar_url || ''
-        );
-      } catch (error: any) {
-        Alert.alert(
-          'الحساب',
-          error?.message ||
-            'تعذر تحميل الحساب'
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadProfile();
+  }, []);
 
-  async function choosePhoto() {
+  async function loadProfile() {
     try {
-      setPickingImage(true);
+      setLoading(true);
 
+      const data = await getMyProfile();
+
+      setProfile(data);
+      setUsername(data.username || '');
+      setAvatarUri(data.avatar_url || null);
+    } catch (error: any) {
+      Alert.alert(
+        'خطأ',
+        error?.message || 'تعذر تحميل الملف الشخصي'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function chooseAvatar() {
+    try {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
         Alert.alert(
-          'الصورة الشخصية',
-          'يجب السماح للتطبيق بالوصول إلى الصور لاختيار صورة شخصية.'
+          'صلاحية مطلوبة',
+          'اسمح للتطبيق بالوصول إلى الصور لاختيار صورة الملف الشخصي.'
         );
         return;
       }
@@ -103,634 +70,382 @@ export default function Profile() {
           quality: 0.8,
         });
 
-      if (
-        result.canceled ||
-        !result.assets?.length
-      ) {
+      if (result.canceled) {
         return;
       }
 
       const selected =
-        result.assets[0];
+        result.assets?.[0]?.uri;
 
-      if (selected.uri) {
-        setAvatar(selected.uri);
-        setEditing(true);
+      if (selected) {
+        setAvatarUri(selected);
       }
     } catch (error: any) {
       Alert.alert(
-        'الصورة الشخصية',
-        error?.message ||
-          'تعذر اختيار الصورة'
+        'خطأ',
+        error?.message || 'تعذر اختيار الصورة'
       );
-    } finally {
-      setPickingImage(false);
     }
   }
 
-  async function save() {
+  async function saveProfile() {
+    const cleanName = username.trim();
+
+    if (cleanName.length < 2) {
+      Alert.alert(
+        'اسم غير صالح',
+        'اسم اللاعب يجب أن يحتوي على حرفين على الأقل.'
+      );
+      return;
+    }
+
+    if (cleanName.length > 24) {
+      Alert.alert(
+        'اسم غير صالح',
+        'اسم اللاعب يجب ألا يتجاوز 24 حرفًا.'
+      );
+      return;
+    }
+
     try {
       setSaving(true);
 
-      const cleanName =
-        name.trim();
-
-      if (cleanName.length < 2) {
-        Alert.alert(
-          'اسم اللاعب',
-          'اسم اللاعب يجب أن يحتوي على حرفين على الأقل.'
-        );
-        return;
-      }
-
       /*
-       * ملاحظة:
-       * إذا كانت الصورة من معرض الهاتف فهي URI محلية.
-       * سيتم التعامل مع رفع الصورة إلى Storage
-       * في طبقة التخزين التالية قبل اعتمادها كصورة
-       * دائمة على جميع الأجهزة.
+       * إذا كانت avatarUri صورة محلية من الهاتف،
+       * سيتم رفعها إلى Supabase.
        *
-       * في الوقت الحالي نحفظ الرابط إذا كان رابطًا
-       * صالحًا أو URI متاحًا.
+       * إذا كانت بالفعل صورة Supabase،
+       * سيتم الاحتفاظ بها.
        */
-      const data =
-        await saveMyProfile(
-          cleanName,
-          avatar.trim() || null
+      const isLocalImage =
+        avatarUri &&
+        (
+          avatarUri.startsWith('file://') ||
+          avatarUri.startsWith('content://')
         );
 
-      setProfile(data);
-      setName(data.username);
-      setAvatar(
-        data.avatar_url || ''
-      );
-      setEditing(false);
+      const updated =
+        await saveMyProfileWithAvatar(
+          cleanName,
+          isLocalImage ? avatarUri : null
+        );
+
+      setProfile(updated);
+      setUsername(updated.username);
+      setAvatarUri(updated.avatar_url);
 
       Alert.alert(
-        'تم',
-        'تم حفظ الملف الشخصي.'
+        'تم الحفظ',
+        'تم تحديث ملفك الشخصي بنجاح.'
       );
     } catch (error: any) {
       Alert.alert(
-        'الحساب',
+        'تعذر الحفظ',
         error?.message ||
-          'تعذر حفظ التغييرات'
+          'حدث خطأ أثناء حفظ الملف الشخصي.'
       );
     } finally {
       setSaving(false);
     }
   }
 
-  function cancelEditing() {
-    setName(
-      profile?.username || ''
-    );
-
-    setAvatar(
-      profile?.avatar_url || ''
-    );
-
-    setEditing(false);
-  }
-
   if (loading) {
     return (
-      <SafeAreaView
-        style={styles.safe}
-      >
-        <View
-          style={styles.center}
-        >
-          <ActivityIndicator
-            size="large"
-            color="#D7A94B"
-          />
-        </View>
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" />
+        <Text style={styles.loadingText}>
+          جاري تحميل الملف الشخصي...
+        </Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView
-      style={styles.safe}
-    >
-      <ScrollView
-        contentContainerStyle={
-          styles.scroll
-        }
-        keyboardShouldPersistTaps="handled"
-      >
-        <View
-          style={styles.container}
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>
+          الملف الشخصي
+        </Text>
+
+        <Text style={styles.subtitle}>
+          هويتك داخل Mafia Night
+        </Text>
+      </View>
+
+      <View style={styles.avatarSection}>
+        <Pressable
+          style={styles.avatarButton}
+          onPress={chooseAvatar}
+          disabled={saving}
         >
-          <Pressable
-            style={styles.back}
-            onPress={() =>
-              router.back()
-            }
-          >
-            <Ionicons
-              name="arrow-back"
-              size={23}
-              color="#EEE"
+          {avatarUri ? (
+            <Image
+              source={{ uri: avatarUri }}
+              style={styles.avatar}
             />
-
-            <Text
-              style={styles.backText}
-            >
-              رجوع
-            </Text>
-          </Pressable>
-
-          <Text
-            style={styles.kicker}
-          >
-            PLAYER ACCOUNT
-          </Text>
-
-          <Pressable
-            style={styles.avatar}
-            onPress={choosePhoto}
-            disabled={pickingImage}
-          >
-            {avatar ? (
-              <Image
-                source={{
-                  uri: avatar,
-                }}
-                style={
-                  styles.avatarImage
-                }
-              />
-            ) : (
+          ) : (
+            <View style={styles.avatarPlaceholder}>
               <Ionicons
                 name="person"
-                size={45}
-                color="#D7A94B"
+                size={54}
               />
-            )}
-
-            <View
-              style={styles.camera}
-            >
-              {pickingImage ? (
-                <ActivityIndicator
-                  size="small"
-                  color="#090A0D"
-                />
-              ) : (
-                <Ionicons
-                  name="camera"
-                  size={17}
-                  color="#090A0D"
-                />
-              )}
             </View>
-          </Pressable>
-
-          <Text
-            style={styles.photoHint}
-          >
-            اضغط على الصورة لتغييرها
-          </Text>
-
-          {editing ? (
-            <>
-              <Text
-                style={styles.label}
-              >
-                PLAYER NAME
-              </Text>
-
-              <TextInput
-                value={name}
-                onChangeText={setName}
-                style={styles.input}
-                placeholder="اسم اللاعب"
-                placeholderTextColor="#666872"
-                maxLength={24}
-                autoCorrect={false}
-              />
-
-              <View
-                style={styles.editRow}
-              >
-                <Pressable
-                  style={styles.cancel}
-                  onPress={
-                    cancelEditing
-                  }
-                  disabled={saving}
-                >
-                  <Text
-                    style={
-                      styles.cancelText
-                    }
-                  >
-                    إلغاء
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={styles.save}
-                  onPress={save}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <ActivityIndicator
-                      color="#090A0D"
-                    />
-                  ) : (
-                    <Text
-                      style={
-                        styles.saveText
-                      }
-                    >
-                      حفظ
-                    </Text>
-                  )}
-                </Pressable>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text
-                style={styles.name}
-              >
-                {profile?.username ||
-                  'Player'}
-              </Text>
-
-              <Text
-                style={styles.handle}
-              >
-                @mafia_player
-              </Text>
-
-              <Pressable
-                style={styles.editButton}
-                onPress={() =>
-                  setEditing(true)
-                }
-              >
-                <Ionicons
-                  name="create-outline"
-                  size={17}
-                  color="#D7A94B"
-                />
-
-                <Text
-                  style={
-                    styles.editText
-                  }
-                >
-                  تعديل الحساب
-                </Text>
-              </Pressable>
-            </>
           )}
 
-          <View
-            style={styles.stats}
-          >
-            <View
-              style={styles.stat}
-            >
-              <Text
-                style={styles.num}
-              >
-                {profile?.wins ?? 0}
-              </Text>
+          <View style={styles.cameraButton}>
+            <Ionicons
+              name="camera"
+              size={20}
+              color="#fff"
+            />
+          </View>
+        </Pressable>
 
-              <Text
-                style={styles.lab}
-              >
-                WINS
-              </Text>
-            </View>
+        <Text style={styles.changePhoto}>
+          اضغط لتغيير الصورة
+        </Text>
+      </View>
 
-            <View
-              style={styles.stat}
-            >
-              <Text
-                style={styles.num}
-              >
-                {profile?.games ?? 0}
-              </Text>
+      <View style={styles.card}>
+        <Text style={styles.label}>
+          اسم اللاعب
+        </Text>
 
-              <Text
-                style={styles.lab}
-              >
-                GAMES
-              </Text>
-            </View>
+        <TextInput
+          value={username}
+          onChangeText={setUsername}
+          placeholder="اكتب اسمك"
+          placeholderTextColor="#777"
+          maxLength={24}
+          editable={!saving}
+          style={styles.input}
+        />
+      </View>
 
-            <View
-              style={styles.stat}
-            >
-              <Text
-                style={styles.num}
-              >
-                {profile?.rating ?? 0}
-              </Text>
+      {profile && (
+        <View style={styles.statsCard}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>
+              {profile.games ?? 0}
+            </Text>
 
-              <Text
-                style={styles.lab}
-              >
-                RATING
-              </Text>
-            </View>
+            <Text style={styles.statLabel}>
+              المباريات
+            </Text>
           </View>
 
-          <View
-            style={styles.infoCard}
-          >
-            <View
-              style={styles.infoIcon}
-            >
-              <Ionicons
-                name="shield-checkmark"
-                size={20}
-                color="#D7A94B"
-              />
-            </View>
+          <View style={styles.divider} />
 
-            <View
-              style={styles.infoBody}
-            >
-              <Text
-                style={styles.infoTitle}
-              >
-                حسابك محفوظ
-              </Text>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>
+              {profile.wins ?? 0}
+            </Text>
 
-              <Text
-                style={styles.infoText}
-              >
-                اسمك وإحصائياتك مرتبطة بحساب
-                اللاعب وتظهر داخل غرف Mafia Night.
-              </Text>
-            </View>
+            <Text style={styles.statLabel}>
+              الانتصارات
+            </Text>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>
+              {profile.rating ?? 0}
+            </Text>
+
+            <Text style={styles.statLabel}>
+              التقييم
+            </Text>
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      )}
+
+      <Pressable
+        style={[
+          styles.saveButton,
+          saving && styles.disabledButton,
+        ]}
+        onPress={saveProfile}
+        disabled={saving}
+      >
+        {saving ? (
+          <ActivityIndicator
+            color="#fff"
+          />
+        ) : (
+          <>
+            <Ionicons
+              name="save-outline"
+              size={21}
+              color="#fff"
+            />
+
+            <Text style={styles.saveText}>
+              حفظ الملف الشخصي
+            </Text>
+          </>
+        )}
+      </Pressable>
+    </View>
   );
 }
 
-const styles =
-  StyleSheet.create({
-    safe: {
-      flex: 1,
-      backgroundColor:
-        '#090A0D',
-    },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#080808',
+    paddingHorizontal: 20,
+    paddingTop: 60,
+  },
 
-    scroll: {
-      flexGrow: 1,
-    },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#080808',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
-    container: {
-      padding: 20,
-      paddingBottom: 40,
-    },
+  loadingText: {
+    marginTop: 12,
+    color: '#aaa',
+    fontSize: 15,
+  },
 
-    center: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor:
-        '#090A0D',
-    },
+  header: {
+    marginBottom: 26,
+  },
 
-    back: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 30,
-    },
+  title: {
+    color: '#fff',
+    fontSize: 30,
+    fontWeight: '800',
+  },
 
-    backText: {
-      color: '#AAA',
-      fontSize: 14,
-    },
+  subtitle: {
+    color: '#888',
+    marginTop: 6,
+    fontSize: 14,
+  },
 
-    kicker: {
-      textAlign: 'center',
-      color: '#B5222E',
-      fontSize: 10,
-      letterSpacing: 2,
-      fontWeight: '900',
-    },
+  avatarSection: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
 
-    avatar: {
-      width: 112,
-      height: 112,
-      borderRadius: 56,
-      backgroundColor:
-        '#19150C',
-      borderWidth: 1,
-      borderColor:
-        '#5A4720',
-      alignItems: 'center',
-      justifyContent: 'center',
-      alignSelf: 'center',
-      marginTop: 24,
-      overflow: 'hidden',
-      position: 'relative',
-    },
+  avatarButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    position: 'relative',
+  },
 
-    avatarImage: {
-      width: '100%',
-      height: '100%',
-    },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
 
-    camera: {
-      position: 'absolute',
-      right: 4,
-      bottom: 4,
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor:
-        '#D7A94B',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 2,
-      borderColor:
-        '#090A0D',
-    },
+  avatarPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#202020',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
-    photoHint: {
-      textAlign: 'center',
-      color: '#666872',
-      fontSize: 11,
-      marginTop: 8,
-    },
+  cameraButton: {
+    position: 'absolute',
+    right: 0,
+    bottom: 2,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#b00020',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#080808',
+  },
 
-    name: {
-      textAlign: 'center',
-      color: '#EEE',
-      fontSize: 22,
-      fontWeight: '900',
-      marginTop: 14,
-    },
+  changePhoto: {
+    color: '#888',
+    fontSize: 13,
+    marginTop: 10,
+  },
 
-    handle: {
-      textAlign: 'center',
-      color: '#777983',
-      marginTop: 4,
-    },
+  card: {
+    backgroundColor: '#151515',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+  },
 
-    editButton: {
-      alignSelf: 'center',
-      marginTop: 14,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 6,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-      borderRadius: 10,
-      backgroundColor:
-        '#19150C',
-    },
+  label: {
+    color: '#999',
+    fontSize: 13,
+    marginBottom: 8,
+  },
 
-    editText: {
-      color: '#D7A94B',
-      fontSize: 10,
-      fontWeight: '900',
-      letterSpacing: 1,
-    },
+  input: {
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: '#222',
+    color: '#fff',
+    paddingHorizontal: 15,
+    fontSize: 16,
+  },
 
-    label: {
-      color: '#777983',
-      fontSize: 10,
-      letterSpacing: 1.5,
-      fontWeight: '900',
-      marginTop: 22,
-      marginBottom: 8,
-    },
+  statsCard: {
+    backgroundColor: '#151515',
+    borderRadius: 18,
+    minHeight: 90,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
 
-    input: {
-      height: 50,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor:
-        '#292B32',
-      backgroundColor:
-        '#14151A',
-      color: '#EEE',
-      paddingHorizontal: 14,
-      fontSize: 15,
-    },
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+  },
 
-    editRow: {
-      flexDirection: 'row',
-      gap: 10,
-      marginTop: 18,
-    },
+  statValue: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '800',
+  },
 
-    cancel: {
-      flex: 1,
-      height: 48,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor:
-        '#292B32',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
+  statLabel: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 4,
+  },
 
-    cancelText: {
-      color: '#AAA',
-      fontWeight: '900',
-    },
+  divider: {
+    width: 1,
+    height: 42,
+    backgroundColor: '#333',
+  },
 
-    save: {
-      flex: 1,
-      height: 48,
-      borderRadius: 12,
-      backgroundColor:
-        '#D7A94B',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
+  saveButton: {
+    height: 54,
+    borderRadius: 15,
+    backgroundColor: '#b00020',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 9,
+  },
 
-    saveText: {
-      color: '#090A0D',
-      fontWeight: '900',
-    },
+  disabledButton: {
+    opacity: 0.6,
+  },
 
-    stats: {
-      flexDirection: 'row',
-      justifyContent: 'space-around',
-      marginTop: 38,
-      padding: 20,
-      borderRadius: 16,
-      backgroundColor:
-        '#14151A',
-      borderWidth: 1,
-      borderColor:
-        '#202229',
-    },
-
-    stat: {
-      minWidth: 70,
-      alignItems: 'center',
-    },
-
-    num: {
-      textAlign: 'center',
-      color: '#D7A94B',
-      fontSize: 22,
-      fontWeight: '900',
-    },
-
-    lab: {
-      textAlign: 'center',
-      color: '#777983',
-      fontSize: 9,
-      letterSpacing: 1,
-      marginTop: 4,
-    },
-
-    infoCard: {
-      flexDirection: 'row',
-      marginTop: 18,
-      padding: 15,
-      borderRadius: 15,
-      backgroundColor:
-        '#111217',
-      borderWidth: 1,
-      borderColor:
-        '#202229',
-    },
-
-    infoIcon: {
-      width: 38,
-      height: 38,
-      borderRadius: 19,
-      backgroundColor:
-        '#19150C',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-
-    infoBody: {
-      flex: 1,
-      marginLeft: 12,
-    },
-
-    infoTitle: {
-      color: '#EEE',
-      fontSize: 13,
-      fontWeight: '800',
-    },
-
-    infoText: {
-      color: '#777983',
-      fontSize: 11,
-      lineHeight: 17,
-      marginTop: 4,
-    },
-  });
+  saveText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+});
