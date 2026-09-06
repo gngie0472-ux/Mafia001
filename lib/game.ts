@@ -4,8 +4,27 @@ export type GamePhase = 'night' | 'day';
 
 export type GameRole =
   | 'MAFIA'
+  | 'GODFATHER'
+  | 'CONSIGLIERE'
+  | 'FRAMER'
+  | 'SILENCER'
   | 'DOCTOR'
   | 'DETECTIVE'
+  | 'SHERIFF'
+  | 'BODYGUARD'
+  | 'MEDIUM'
+  | 'VIGILANTE'
+  | 'MAYOR'
+  | 'TRACKER'
+  | 'LOOKOUT'
+  | 'SPY'
+  | 'WITCH'
+  | 'GHOUL'
+  | 'CULT_LEADER'
+  | 'CULTIST'
+  | 'JESTER'
+  | 'SERIAL_KILLER'
+  | 'SURVIVOR'
   | 'CITIZEN';
 
 export type GamePlayer = {
@@ -31,6 +50,9 @@ export type GameRoom = {
     winner?: string;
     phase?: GamePhase;
     phase_ends_at?: string;
+    previous_phase?: GamePhase;
+    ghoul_target?: string;
+    cult_converted?: string;
   } | null;
 };
 
@@ -45,6 +67,18 @@ export type MyRole = {
   alive: boolean;
 };
 
+export type NightAction =
+  | 'kill'
+  | 'protect'
+  | 'investigate'
+  | 'spy'
+  | 'guard'
+  | 'sheriff_check'
+  | 'witch_save'
+  | 'witch_kill'
+  | 'ghoul'
+  | 'cult_convert';
+
 export async function getGameState(
   roomId: string
 ): Promise<GameState> {
@@ -52,19 +86,19 @@ export async function getGameState(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      'get_mafia_game_state',
-      {
-        p_room_id: roomId,
-      }
-    );
+  const { data, error } = await supabase.rpc(
+    'get_mafia_game_state',
+    {
+      p_room_id: roomId,
+    }
+  );
 
   if (error) {
     console.error(
       'getGameState error:',
       error
     );
+
     throw error;
   }
 
@@ -84,19 +118,19 @@ export async function getMyRole(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      'get_my_mafia_role',
-      {
-        p_room_id: roomId,
-      }
-    );
+  const { data, error } = await supabase.rpc(
+    'get_my_mafia_role',
+    {
+      p_room_id: roomId,
+    }
+  );
 
   if (error) {
     console.error(
       'getMyRole error:',
       error
     );
+
     throw error;
   }
 
@@ -111,10 +145,7 @@ export async function getMyRole(
 
 export async function submitNightAction(
   roomId: string,
-  action:
-    | 'kill'
-    | 'protect'
-    | 'investigate',
+  action: NightAction,
   targetId: string
 ) {
   if (!roomId) {
@@ -140,6 +171,7 @@ export async function submitNightAction(
       'submitNightAction error:',
       error
     );
+
     throw error;
   }
 
@@ -174,6 +206,7 @@ export async function submitDayVote(
       'submitDayVote error:',
       error
     );
+
     throw error;
   }
 
@@ -200,6 +233,7 @@ export async function startMafiaGame(
       'startMafiaGame error:',
       error
     );
+
     throw error;
   }
 
@@ -226,6 +260,7 @@ export async function advanceMafiaPhase(
       'advanceMafiaPhase error:',
       error
     );
+
     throw error;
   }
 
