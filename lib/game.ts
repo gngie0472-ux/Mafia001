@@ -10,7 +10,9 @@ export type GameRole =
 
 export type GamePlayer = {
   id: string;
+  user_id: string;
   name: string;
+  avatar_url: string | null;
   alive: boolean;
 };
 
@@ -22,7 +24,6 @@ export type GameRoom = {
   game_phase: GamePhase;
   winner: string | null;
   phase_ends_at: string | null;
-
   last_event: {
     type?: string;
     player_id?: string;
@@ -36,11 +37,6 @@ export type GameRoom = {
 export type GameState = {
   room: GameRoom;
   players: GamePlayer[];
-
-  /*
-   * id الخاص بسجل اللاعب الحالي
-   * داخل room_players
-   */
   my_player_id: string | null;
 };
 
@@ -49,12 +45,6 @@ export type MyRole = {
   alive: boolean;
 };
 
-/*
- * --------------------------------------------------
- * جلب حالة اللعبة
- * --------------------------------------------------
- */
-
 export async function getGameState(
   roomId: string
 ): Promise<GameState> {
@@ -62,19 +52,19 @@ export async function getGameState(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } = await supabase.rpc(
-    'get_mafia_game_state',
-    {
-      p_room_id: roomId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'get_mafia_game_state',
+      {
+        p_room_id: roomId,
+      }
+    );
 
   if (error) {
     console.error(
       'getGameState error:',
       error
     );
-
     throw error;
   }
 
@@ -87,12 +77,6 @@ export async function getGameState(
   return data as GameState;
 }
 
-/*
- * --------------------------------------------------
- * جلب دور اللاعب الحالي
- * --------------------------------------------------
- */
-
 export async function getMyRole(
   roomId: string
 ): Promise<MyRole> {
@@ -100,19 +84,19 @@ export async function getMyRole(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } = await supabase.rpc(
-    'get_my_mafia_role',
-    {
-      p_room_id: roomId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'get_my_mafia_role',
+      {
+        p_room_id: roomId,
+      }
+    );
 
   if (error) {
     console.error(
       'getMyRole error:',
       error
     );
-
     throw error;
   }
 
@@ -124,12 +108,6 @@ export async function getMyRole(
 
   return data as MyRole;
 }
-
-/*
- * --------------------------------------------------
- * تنفيذ إجراء ليلي
- * --------------------------------------------------
- */
 
 export async function submitNightAction(
   roomId: string,
@@ -147,32 +125,26 @@ export async function submitNightAction(
     throw new Error('Missing target');
   }
 
-  const { data, error } = await supabase.rpc(
-    'mafia_submit_action',
-    {
-      p_room_id: roomId,
-      p_action: action,
-      p_target_id: targetId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'mafia_submit_action',
+      {
+        p_room_id: roomId,
+        p_action: action,
+        p_target_id: targetId,
+      }
+    );
 
   if (error) {
     console.error(
       'submitNightAction error:',
       error
     );
-
     throw error;
   }
 
   return data;
 }
-
-/*
- * --------------------------------------------------
- * التصويت النهاري
- * --------------------------------------------------
- */
 
 export async function submitDayVote(
   roomId: string,
@@ -183,34 +155,30 @@ export async function submitDayVote(
   }
 
   if (!targetId) {
-    throw new Error('Missing vote target');
+    throw new Error(
+      'Missing vote target'
+    );
   }
 
-  const { data, error } = await supabase.rpc(
-    'mafia_submit_vote',
-    {
-      p_room_id: roomId,
-      p_target_id: targetId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'mafia_submit_vote',
+      {
+        p_room_id: roomId,
+        p_target_id: targetId,
+      }
+    );
 
   if (error) {
     console.error(
       'submitDayVote error:',
       error
     );
-
     throw error;
   }
 
   return data;
 }
-
-/*
- * --------------------------------------------------
- * بدء اللعبة
- * --------------------------------------------------
- */
 
 export async function startMafiaGame(
   roomId: string
@@ -219,30 +187,24 @@ export async function startMafiaGame(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } = await supabase.rpc(
-    'start_mafia_game',
-    {
-      p_room_id: roomId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'start_mafia_game',
+      {
+        p_room_id: roomId,
+      }
+    );
 
   if (error) {
     console.error(
       'startMafiaGame error:',
       error
     );
-
     throw error;
   }
 
   return data;
 }
-
-/*
- * --------------------------------------------------
- * الانتقال بين الليل والنهار
- * --------------------------------------------------
- */
 
 export async function advanceMafiaPhase(
   roomId: string
@@ -251,19 +213,19 @@ export async function advanceMafiaPhase(
     throw new Error('Missing room ID');
   }
 
-  const { data, error } = await supabase.rpc(
-    'advance_mafia_phase',
-    {
-      p_room_id: roomId,
-    }
-  );
+  const { data, error } =
+    await supabase.rpc(
+      'advance_mafia_phase',
+      {
+        p_room_id: roomId,
+      }
+    );
 
   if (error) {
     console.error(
       'advanceMafiaPhase error:',
       error
     );
-
     throw error;
   }
 
