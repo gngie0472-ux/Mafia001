@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+
 import {
   View,
   Text,
@@ -7,7 +8,13 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
+
+import {
+  useLocalSearchParams,
+  router,
+} from "expo-router";
+
+import { supabase } from "../../lib/supabase";
 
 import {
   getRoomPlayers,
@@ -21,136 +28,313 @@ import {
 } from "../../lib/rooms";
 
 export default function RoomScreen() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  const { code } =
+    useLocalSearchParams<{ code: string }>();
 
-  const [room, setRoom] = useState<Room | null>(null);
-  const [players, setPlayers] = useState<RoomPlayer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [ready, setReadyState] = useState(false);
+  const [room, setRoom] =
+    useState<Room | null>(null);
+
+  const [players, setPlayers] =
+    useState<RoomPlayer[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [ready, setReadyState] =
+    useState(false);
+
+  const [currentUserId, setCurrentUserId] =
+    useState<string | null>(null);
+
+  const [starting, setStarting] =
+    useState(false);
 
   useEffect(() => {
-    if (!code) return;
+    if (!code) {
+      return;
+    }
 
-    let playerChannel: any;
-    let roomChannel: any;
+    let playerChannel: any = null;
+    let roomChannel: any = null;
+    let mounted = true;
 
     async function loadRoom() {
       try {
-        const { supabase } = await import("../../lib/supabase");
+        const normalizedCode =
+          code.trim().toUpperCase();
 
-        const { data: roomData, error } = await supabase
+        const {
+          data: userData,
+        } = await supabase.auth.getUser();
+
+        const user = userData.user;
+
+        if (!user) {
+          throw new Error(
+            "المستخدم غير مسجل"
+          );
+        }
+
+        if (!mounted) return;
+
+        setCurrentUserId(user.id);
+
+        const {
+          data: roomData,
+          error: roomError,
+        } = await supabase
           .from("rooms")
           .select("*")
-          .eq("code", code.toUpperCase())
+          .eq("code", normalizedCode)
           .single();
 
-        if (error) throw error;
+        if (roomError) {
+          throw roomError;
+        }
 
-        setRoom(roomData);
+        if (!roomData) {
+          throw new Error(
+            "الغرفة غير موجودة"
+          );
+        }
 
-        const roomPlayers = await getRoomPlayers(roomData.id);
+        const room = roomData as Room;
+
+        if (!mounted) return;
+
+        setRoom(room);
+
+        /**
+         * إذا كانت اللعبة بدأت بالفعل،
+         * نذهب مباشرة إلى شاشة اللعبة.
+         */
+        if (room.status === "playing") {
+          router.replace(
+            `/game/${room.code}`
+          );
+          return;
+        }
+
+        const roomPlayers =
+          await getRoomPlayers(room.id);
+
+        if (!mounted) return;
+
         setPlayers(roomPlayers);
 
-        const user = (await supabase.auth.getUser()).data.user;
-
-        const currentPlayer = roomPlayers.find(
-          (player) => player.user_id === user?.id
-        );
-
-        setReadyState(currentPlayer?.ready ?? false);
-
-        playerChannel = subscribeToRoomPlayers(roomData.id, (updated) => {
-          setPlayers(updated);
-
-          const current = updated.find(
-            (player) => player.user_id === user?.id
+        const currentPlayer =
+          roomPlayers.find(
+            (player) =>
+              player.user_id === user.id
           );
 
-          setReadyState(current?.ready ?? false);
-        });
+        setReadyState(
+          currentPlayer?.ready ?? false
+        );
 
-        roomChannel = subscribeToRoom(roomData.id, (updatedRoom) => {
-          setRoom(updatedRoom);
+        /**
+         * Realtime: players
+         */
+        playerChannel =
+          subscribeToRoomPlayers(
+            room.id,
+            (updatedPlayers) => {
+              if (!mounted) return;
 
-          if (updatedRoom.status === "playing") {
-            Alert.alert("اللعبة بدأت!", "سيتم الانتقال إلى اللعبة.");
+              setPlayers(updatedPlayers);
+
+              const current =
+                updatedPlayers.find(
+                  (player) =>
+                    player.user_id === user.id
+                );
+
+              setReadyState(
+                current?.ready ?? false
+              );
+            }
+          );
+
+        /**
+         * Realtime: room
+         */
+        roomChannel = subscribeToRoom(
+          room.id,
+          (updatedRoom) => {
+            if (!mounted) return;
+
+            setRoom(updatedRoom);
+
+            /**
+             * عندما يبدأ المضيف اللعبة،
+             * جميع الأجهزة تنتقل تلقائيًا.
+             */
+            if (
+              updatedRoom.status ===
+              "playing"
+            ) {
+              router.replace(
+                `/game/${updatedRoom.code}`
+              );
+            }
           }
-        });
+        );
       } catch (error: any) {
+        if (!mounted) return;
+
         Alert.alert(
           "خطأ",
-          error?.message || "تعذر تحميل الغرفة"
+          error?.message ||
+            "تعذر تحميل الغرفة"
         );
 
         router.back();
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }
 
     loadRoom();
 
     return () => {
+      mounted = false;
+
       if (playerChannel) {
-        import("../../lib/supabase").then(({ supabase }) => {
-          supabase.removeChannel(playerChannel);
-        });
+        supabase.removeChannel(
+          playerChannel
+        );
       }
 
       if (roomChannel) {
-        import("../../lib/supabase").then(({ supabase }) => {
-          supabase.removeChannel(roomChannel);
-        });
+        supabase.removeChannel(
+          roomChannel
+        );
       }
     };
   }, [code]);
 
+  /**
+   * READY
+   */
   async function handleReady() {
-    if (!room) return;
+    if (!room || !currentUserId) {
+      return;
+    }
+
+    const newReady = !ready;
 
     try {
-      const newReady = !ready;
-
       setReadyState(newReady);
-      await setReady(room.id, newReady);
+
+      await setReady(
+        room.id,
+        newReady
+      );
     } catch (error: any) {
       setReadyState(ready);
 
       Alert.alert(
         "خطأ",
-        error?.message || "تعذر تغيير الحالة"
+        error?.message ||
+          "تعذر تغيير الحالة"
       );
     }
   }
 
+  /**
+   * START GAME
+   */
   async function handleStartGame() {
-    if (!room) return;
+    if (!room) {
+      return;
+    }
+
+    if (starting) {
+      return;
+    }
+
+    /**
+     * تأكيد أن المستخدم هو المضيف
+     */
+    if (
+      !currentUserId ||
+      room.host_id !== currentUserId
+    ) {
+      Alert.alert(
+        "غير مسموح",
+        "فقط صاحب الغرفة يستطيع بدء اللعبة."
+      );
+
+      return;
+    }
+
+    /**
+     * تحقق إضافي من اللاعبين
+     */
+    if (players.length < 2) {
+      Alert.alert(
+        "لا يمكن بدء اللعبة",
+        "يجب أن يكون هناك لاعبان على الأقل."
+      );
+
+      return;
+    }
+
+    const allReady = players.every(
+      (player) => player.ready
+    );
+
+    if (!allReady) {
+      Alert.alert(
+        "اللاعبون غير جاهزين",
+        "يجب أن يكون جميع اللاعبين في حالة READY."
+      );
+
+      return;
+    }
 
     try {
+      setStarting(true);
+
       await startGame(room.id);
 
-      Alert.alert(
-        "بدأت اللعبة",
-        "جميع اللاعبين جاهزون!"
+      /**
+       * الانتقال مباشرة للمضيف.
+       * اللاعب الثاني سينتقل عبر Realtime.
+       */
+      router.replace(
+        `/game/${room.code}`
       );
     } catch (error: any) {
       Alert.alert(
         "لا يمكن بدء اللعبة",
-        error?.message || "حدث خطأ"
+        error?.message ||
+          "حدث خطأ أثناء بدء اللعبة"
       );
+    } finally {
+      setStarting(false);
     }
   }
 
+  /**
+   * LEAVE ROOM
+   */
   async function handleLeaveRoom() {
-    if (!room) return;
+    if (!room) {
+      return;
+    }
 
     try {
       await leaveRoom(room.id);
+
       router.replace("/");
     } catch (error: any) {
       Alert.alert(
         "خطأ",
-        error?.message || "تعذر مغادرة الغرفة"
+        error?.message ||
+          "تعذر مغادرة الغرفة"
       );
     }
   }
@@ -158,8 +342,14 @@ export default function RoomScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={styles.loadingText}>جاري تحميل الغرفة...</Text>
+        <ActivityIndicator
+          size="large"
+          color="#8f0018"
+        />
+
+        <Text style={styles.loadingText}>
+          جاري تحميل الغرفة...
+        </Text>
       </View>
     );
   }
@@ -167,81 +357,145 @@ export default function RoomScreen() {
   if (!room) {
     return (
       <View style={styles.center}>
-        <Text>الغرفة غير موجودة</Text>
+        <Text style={styles.errorText}>
+          الغرفة غير موجودة
+        </Text>
       </View>
     );
   }
 
+  /**
+   * إصلاح مهم:
+   * المضيف الحقيقي فقط يرى زر START GAME.
+   */
   const isHost =
-    room.host_id ===
-    players.find((p) => p.user_id === room.host_id)?.user_id;
+    currentUserId === room.host_id;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>MAFIA NIGHT</Text>
+      <Text style={styles.title}>
+        MAFIA NIGHT
+      </Text>
 
       <View style={styles.roomBox}>
-        <Text style={styles.roomName}>{room.name}</Text>
+        <Text style={styles.roomName}>
+          {room.name}
+        </Text>
 
-        <Text style={styles.codeLabel}>ROOM CODE</Text>
-        <Text style={styles.code}>{room.code}</Text>
+        <Text style={styles.codeLabel}>
+          ROOM CODE
+        </Text>
+
+        <Text style={styles.code}>
+          {room.code}
+        </Text>
       </View>
 
       <Text style={styles.playersTitle}>
-        PLAYERS {players.length}/{room.max_players}
+        PLAYERS {players.length}/
+        {room.max_players}
       </Text>
 
       <View style={styles.playersBox}>
-        {players.map((player, index) => (
-          <View style={styles.playerRow} key={player.id}>
-            <Text style={styles.playerNumber}>
-              {index + 1}
-            </Text>
+        {players.map((player, index) => {
+          const isPlayerHost =
+            player.user_id ===
+            room.host_id;
 
-            <Text style={styles.playerName}>
-              {player.name}
-            </Text>
-
-            <Text
-              style={[
-                styles.status,
-                player.ready
-                  ? styles.ready
-                  : styles.notReady,
-              ]}
+          return (
+            <View
+              style={styles.playerRow}
+              key={player.id}
             >
-              {player.ready ? "READY" : "NOT READY"}
-            </Text>
-          </View>
-        ))}
+              <Text
+                style={styles.playerNumber}
+              >
+                {index + 1}
+              </Text>
+
+              <View
+                style={styles.playerInfo}
+              >
+                <Text
+                  style={styles.playerName}
+                >
+                  {player.name}
+                  {player.user_id ===
+                    currentUserId
+                    ? "  (YOU)"
+                    : ""}
+                </Text>
+
+                {isPlayerHost && (
+                  <Text
+                    style={styles.hostLabel}
+                  >
+                    HOST
+                  </Text>
+                )}
+              </View>
+
+              <Text
+                style={[
+                  styles.status,
+                  player.ready
+                    ? styles.ready
+                    : styles.notReady,
+                ]}
+              >
+                {player.ready
+                  ? "READY"
+                  : "NOT READY"}
+              </Text>
+            </View>
+          );
+        })}
       </View>
 
       <TouchableOpacity
         style={[
           styles.button,
-          ready ? styles.readyButton : null,
+          ready
+            ? styles.readyButton
+            : null,
         ]}
         onPress={handleReady}
+        disabled={starting}
       >
         <Text style={styles.buttonText}>
-          {ready ? "NOT READY" : "READY"}
+          {ready
+            ? "NOT READY"
+            : "READY"}
         </Text>
       </TouchableOpacity>
 
       {isHost && (
         <TouchableOpacity
-          style={styles.startButton}
+          style={[
+            styles.startButton,
+            starting
+              ? styles.disabledButton
+              : null,
+          ]}
           onPress={handleStartGame}
+          disabled={starting}
         >
-          <Text style={styles.buttonText}>
-            START GAME
-          </Text>
+          {starting ? (
+            <ActivityIndicator
+              color="#fff"
+            />
+          ) : (
+            <Text style={styles.buttonText}>
+              START GAME
+            </Text>
+          )}
         </TouchableOpacity>
       )}
 
       <TouchableOpacity
         style={styles.leaveButton}
         onPress={handleLeaveRoom}
+        disabled={starting}
       >
         <Text style={styles.leaveText}>
           LEAVE ROOM
@@ -269,6 +523,11 @@ const styles = StyleSheet.create({
   loadingText: {
     color: "#fff",
     marginTop: 15,
+  },
+
+  errorText: {
+    color: "#fff",
+    fontSize: 18,
   },
 
   title: {
@@ -334,10 +593,21 @@ const styles = StyleSheet.create({
     width: 30,
   },
 
+  playerInfo: {
+    flex: 1,
+  },
+
   playerName: {
     color: "#fff",
     fontSize: 16,
-    flex: 1,
+  },
+
+  hostLabel: {
+    color: "#8f0018",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 2,
+    marginTop: 3,
   },
 
   status: {
@@ -371,6 +641,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     marginBottom: 12,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   buttonText: {
