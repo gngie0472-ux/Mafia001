@@ -36,12 +36,24 @@ export type GameRoom = {
 export type GameState = {
   room: GameRoom;
   players: GamePlayer[];
+
+  /*
+   * id الخاص بسجل اللاعب الحالي
+   * داخل room_players
+   */
+  my_player_id: string | null;
 };
 
 export type MyRole = {
   role: GameRole;
   alive: boolean;
 };
+
+/*
+ * --------------------------------------------------
+ * جلب حالة اللعبة
+ * --------------------------------------------------
+ */
 
 export async function getGameState(
   roomId: string
@@ -75,6 +87,12 @@ export async function getGameState(
   return data as GameState;
 }
 
+/*
+ * --------------------------------------------------
+ * جلب دور اللاعب الحالي
+ * --------------------------------------------------
+ */
+
 export async function getMyRole(
   roomId: string
 ): Promise<MyRole> {
@@ -106,6 +124,12 @@ export async function getMyRole(
 
   return data as MyRole;
 }
+
+/*
+ * --------------------------------------------------
+ * تنفيذ إجراء ليلي
+ * --------------------------------------------------
+ */
 
 export async function submitNightAction(
   roomId: string,
@@ -144,6 +168,12 @@ export async function submitNightAction(
   return data;
 }
 
+/*
+ * --------------------------------------------------
+ * التصويت النهاري
+ * --------------------------------------------------
+ */
+
 export async function submitDayVote(
   roomId: string,
   targetId: string
@@ -176,6 +206,12 @@ export async function submitDayVote(
   return data;
 }
 
+/*
+ * --------------------------------------------------
+ * بدء اللعبة
+ * --------------------------------------------------
+ */
+
 export async function startMafiaGame(
   roomId: string
 ) {
@@ -202,13 +238,12 @@ export async function startMafiaGame(
   return data;
 }
 
-/**
- * محاولة الانتقال إلى المرحلة التالية.
- *
- * السيرفر هو الذي يقرر هل انتهى الوقت فعلاً.
- * لذلك حتى لو تم استدعاء هذه الدالة كل ثانية،
- * لن تنتقل اللعبة قبل phase_ends_at.
+/*
+ * --------------------------------------------------
+ * الانتقال بين الليل والنهار
+ * --------------------------------------------------
  */
+
 export async function advanceMafiaPhase(
   roomId: string
 ) {
