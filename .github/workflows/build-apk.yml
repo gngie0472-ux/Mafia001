@@ -13,20 +13,25 @@ jobs:
 
     steps:
 
+      # ============================================
       # 1. Checkout
+      # ============================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
+      # ============================================
       # 2. Node.js
+      # ============================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
 
+      # ============================================
       # 3. Java 17
+      # ============================================
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -34,16 +39,32 @@ jobs:
           java-version: 17
 
 
-      # 4. Verify Supabase environment
-      - name: Verify Supabase environment
+      # ============================================
+      # 4. Verify project files
+      # ============================================
+      - name: Verify project files
         shell: bash
         run: |
           set -e
+
+          test -f package.json
 
           if [ ! -f .env ]; then
             echo "ERROR: .env file is missing."
             exit 1
           fi
+
+          echo "package.json found."
+          echo ".env found."
+
+
+      # ============================================
+      # 5. Load and verify Supabase environment
+      # ============================================
+      - name: Verify Supabase environment
+        shell: bash
+        run: |
+          set -e
 
           set -a
           source .env
@@ -62,48 +83,85 @@ jobs:
           EXPECTED_URL="https://bxaajugwvfgbyltutwlt.supabase.co"
 
           if [ "$EXPO_PUBLIC_SUPABASE_URL" != "$EXPECTED_URL" ]; then
-            echo "ERROR: Supabase URL does not match Mafia Night."
+            echo "ERROR: Wrong Supabase URL."
             echo "Expected: $EXPECTED_URL"
             echo "Found:    $EXPO_PUBLIC_SUPABASE_URL"
             exit 1
           fi
 
           echo "Supabase URL verified."
-          echo "Supabase anon key is present."
+          echo "Supabase anon key found."
 
 
-      # 5. Install dependencies
+      # ============================================
+      # 6. Install dependencies
+      # ============================================
       - name: Install dependencies
-        run: npm install
-
-
-      # 6. Verify Supabase packages
-      - name: Verify Supabase dependencies
+        shell: bash
         run: |
-          node -e "require.resolve('react-native-url-polyfill/auto')"
+          set -e
+
+          npm install
+
+          echo "Dependencies installed successfully."
+
+
+      # ============================================
+      # 7. Verify important dependencies
+      # ============================================
+      - name: Verify dependencies
+        shell: bash
+        run: |
+          set -e
+
+          node -e "require.resolve('expo')"
+          node -e "require.resolve('expo-router/entry')"
           node -e "require.resolve('@supabase/supabase-js')"
           node -e "require.resolve('@react-native-async-storage/async-storage')"
+          node -e "require.resolve('react-native-url-polyfill/auto')"
 
-          echo "All Supabase dependencies are installed."
+          echo "Required dependencies verified."
 
 
-      # 7. Verify Expo
+      # ============================================
+      # 8. Verify Expo configuration
+      # ============================================
       - name: Verify Expo configuration
+        shell: bash
         run: |
+          set -e
+
           npx expo --version
           npx expo config --type public
 
+          echo "Expo configuration verified."
 
-      # 8. Verify Expo Router
+
+      # ============================================
+      # 9. Verify Expo Router
+      # ============================================
       - name: Verify Expo Router
+        shell: bash
         run: |
-          node -e "const p=require('./package.json'); if(p.main!=='expo-router/entry'){throw new Error('package.json main must be expo-router/entry')}"
+          set -e
+
+          node -e "
+            const pkg = require('./package.json');
+
+            if (pkg.main !== 'expo-router/entry') {
+              console.error('ERROR: package.json main must be expo-router/entry');
+              process.exit(1);
+            }
+          "
+
           node -e "require.resolve('expo-router/entry')"
 
-          echo "Expo Router configuration is correct."
+          echo "Expo Router verified."
 
 
-      # 9. Generate Android project
+      # ============================================
+      # 10. Generate Android project
+      # ============================================
       - name: Generate Android project
         shell: bash
         run: |
@@ -118,31 +176,50 @@ jobs:
             --non-interactive \
             --clean
 
+          echo "Android project generated successfully."
 
-      # 10. Verify Android project
+
+      # ============================================
+      # 11. Verify Android project
+      # ============================================
       - name: Verify Android project
+        shell: bash
         run: |
+          set -e
+
           test -f android/gradlew
           test -f android/gradle/wrapper/gradle-wrapper.properties
+          test -f android/app/build.gradle
 
           echo "Android project verified."
 
 
-      # 11. Prepare Gradle
+      # ============================================
+      # 12. Prepare Gradle
+      # ============================================
       - name: Prepare Gradle
-        run: chmod +x android/gradlew
+        shell: bash
+        run: |
+          chmod +x android/gradlew
 
 
-      # 12. Build Release APK
+      # ============================================
+      # 13. Build Release APK
+      # ============================================
       - name: Build Release APK
         working-directory: android
+        shell: bash
         run: |
+          set -e
+
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace
 
 
-      # 13. Verify APK
+      # ============================================
+      # 14. Find generated APK
+      # ============================================
       - name: Verify APK
         shell: bash
         run: |
@@ -154,15 +231,19 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "ERROR: Release APK was not generated."
+            echo "ERROR: APK was not generated."
             exit 1
           fi
 
           echo "APK generated successfully:"
+          echo "$APK"
+
           ls -lh "$APK"
 
 
-      # 14. Prepare APK
+      # ============================================
+      # 15. Prepare final APK
+      # ============================================
       - name: Prepare APK
         shell: bash
         run: |
@@ -175,13 +256,20 @@ jobs:
             -name "*.apk" \
             | head -n 1)
 
+          if [ -z "$APK" ]; then
+            echo "ERROR: Cannot find APK."
+            exit 1
+          fi
+
           cp "$APK" release/Mafia-Night-v1.0.apk
 
           echo "Final APK:"
           ls -lh release/Mafia-Night-v1.0.apk
 
 
-      # 15. Upload APK
+      # ============================================
+      # 16. Upload APK
+      # ============================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
