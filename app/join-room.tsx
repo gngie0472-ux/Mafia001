@@ -23,7 +23,10 @@ export default function JoinRoomScreen() {
     }
 
     if (roomCode.trim().length !== 6) {
-      Alert.alert("تنبيه", "أدخل كود الغرفة المكون من 6 أحرف");
+      Alert.alert(
+        "تنبيه",
+        "أدخل كود الغرفة المكون من 6 أحرف"
+      );
       return;
     }
 
@@ -35,11 +38,23 @@ export default function JoinRoomScreen() {
         playerName.trim()
       );
 
-      router.replace(`/room/${room.code}`);
+      // مهم:
+      // room.code هو الكود القصير مثل ABC123
+      // room.id هو UUID الذي تحتاجه RPCs وقاعدة البيانات.
+      if (!room?.id) {
+        throw new Error(
+          "تم الانضمام إلى الغرفة لكن لم يتم العثور على معرف الغرفة."
+        );
+      }
+
+      router.replace(`/room/${room.id}`);
     } catch (error: any) {
+      console.error("joinRoom navigation error:", error);
+
       Alert.alert(
         "تعذر الانضمام",
-        error?.message || "حدث خطأ أثناء الانضمام إلى الغرفة"
+        error?.message ||
+          "حدث خطأ أثناء الانضمام إلى الغرفة"
       );
     } finally {
       setLoading(false);
@@ -59,6 +74,7 @@ export default function JoinRoomScreen() {
         value={playerName}
         onChangeText={setPlayerName}
         maxLength={20}
+        editable={!loading}
       />
 
       <Text style={styles.label}>Room code</Text>
@@ -73,10 +89,14 @@ export default function JoinRoomScreen() {
         }
         autoCapitalize="characters"
         maxLength={6}
+        editable={!loading}
       />
 
       <TouchableOpacity
-        style={styles.button}
+        style={[
+          styles.button,
+          loading && styles.buttonDisabled,
+        ]}
         onPress={handleJoinRoom}
         disabled={loading}
       >
@@ -137,6 +157,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     marginTop: 10,
+  },
+
+  buttonDisabled: {
+    opacity: 0.6,
   },
 
   buttonText: {
