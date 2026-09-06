@@ -106,6 +106,12 @@ const ROLE_COLORS: Record<GameRole, string> = {
   CITIZEN: "#D7A94B",
 };
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
 function getSecondsLeft(
   endsAt: string | null
 ): number {
@@ -252,11 +258,25 @@ export default function MafiaGameScreen() {
       code?: string | string[];
     }>();
 
-  const roomId = Array.isArray(
+  /*
+   * القيمة القادمة من الرابط قد تكون:
+   *
+   * 1. UUID
+   * 2. كود الغرفة مثل T2GZ6M
+   *
+   * لا نرسلها مباشرة إلى RPC.
+   */
+  const routeValue = Array.isArray(
     params.code
   )
     ? params.code[0]
     : params.code;
+
+  const [roomId, setRoomId] =
+    useState<string | null>(null);
+
+  const [resolvingRoom, setResolvingRoom] =
+    useState(true);
 
   const [loading, setLoading] =
     useState(true);
@@ -306,12 +326,6 @@ export default function MafiaGameScreen() {
   const [investigationResult, setInvestigationResult] =
     useState<string | null>(null);
 
-  /*
-   * بطاقة الدور.
-   *
-   * تظهر مرة واحدة عند بداية اللعبة
-   * لكل لاعب بشكل خاص.
-   */
   const [showRoleCard, setShowRoleCard] =
     useState(false);
 
@@ -329,6 +343,105 @@ export default function MafiaGameScreen() {
 
   const voiceRoomRef =
     useRef<Room | null>(null);
+
+  /*
+   * ----------------------------------------------------
+   * Resolve room code -> UUID
+   * ----------------------------------------------------
+   */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveRoom() {
+      const value =
+        routeValue?.trim();
+
+      if (!value) {
+        if (!cancelled) {
+          setRoomId(null);
+          setResolvingRoom(false);
+        }
+        return;
+      }
+
+      try {
+        setResolvingRoom(true);
+
+        /*
+         * إذا كان الرابط يحتوي UUID بالفعل،
+         * نستخدمه مباشرة.
+         */
+        if (isUuid(value)) {
+          if (!cancelled) {
+            setRoomId(value);
+          }
+
+          return;
+        }
+
+        /*
+         * إذا كان الرابط يحتوي كودًا قصيرًا مثل:
+         * T2GZ6M
+         *
+         * نحصل على UUID الحقيقي للغرفة.
+         */
+        const normalizedCode =
+          value.toUpperCase();
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("rooms")
+          .select("id")
+          .eq(
+            "code",
+            normalizedCode
+          )
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data?.id) {
+          throw new Error(
+            "الغرفة غير موجودة أو لم يعد رابطها صالحًا."
+          );
+        }
+
+        if (!cancelled) {
+          setRoomId(data.id);
+        }
+      } catch (error: any) {
+        console.error(
+          "resolveRoom:",
+          error
+        );
+
+        if (!cancelled) {
+          setRoomId(null);
+
+          Alert.alert(
+            "تعذر العثور على الغرفة",
+            error?.message ||
+              "تعذر تحويل كود الغرفة إلى معرفها."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setResolvingRoom(false);
+        }
+      }
+    }
+
+    resolveRoom();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeValue]);
 
   /*
    * ----------------------------------------------------
@@ -504,13 +617,6 @@ export default function MafiaGameScreen() {
           state.players
         );
 
-        /*
-         * بطاقة الدور:
-         *
-         * نستعمل room id + الجولة الحالية.
-         * بذلك تظهر البطاقة عند بداية كل لعبة/جولة توزيع
-         * ولا تظهر عند كل تحديث polling.
-         */
         const roleCardKey =
           `${state.room.id}-${state.room.game_round}`;
 
@@ -567,6 +673,10 @@ export default function MafiaGameScreen() {
   );
 
   useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
     mountedRef.current = true;
 
     loadGame(true);
@@ -576,12 +686,15 @@ export default function MafiaGameScreen() {
       mountedRef.current = false;
     };
   }, [
+    roomId,
     loadGame,
     loadMessages,
   ]);
 
   /*
-   * Polling احتياطي.
+   * ----------------------------------------------------
+   * Polling
+   * ----------------------------------------------------
    */
 
   useEffect(() => {
@@ -737,8 +850,14 @@ export default function MafiaGameScreen() {
             advancingRef.current =
               true;
 
+            if (!roomId) {
+              advancingRef.current =
+                false;
+              return;
+            }
+
             advanceMafiaPhase(
-              roomId!
+              roomId
             )
               .then(() => {
                 loadGame(false);
@@ -1359,6 +1478,74 @@ export default function MafiaGameScreen() {
         null
       );
     };
+
+  /*
+   * ----------------------------------------------------
+   * Resolving room
+   * ----------------------------------------------------
+   */
+
+  if (resolvingRoom) {
+    return (
+      <View
+        style={styles.loading}
+      >
+        <ActivityIndicator
+          size="large"
+          color="#D7A94B"
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          جاري العثور على الغرفة...
+        </Text>
+      </View>
+    );
+  }
+
+  if (!roomId) {
+    return (
+      <View
+        style={styles.loading}
+      >
+        <Ionicons
+          name="warning"
+          size={50}
+          color="#D7A94B"
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          تعذر العثور على الغرفة
+        </Text>
+
+        <Pressable
+          style={
+            styles.goldButton
+          }
+          onPress={() =>
+            router.replace(
+              "/rooms"
+            )
+          }
+        >
+          <Text
+            style={
+              styles.goldButtonText
+            }
+          >
+            العودة إلى الغرف
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   /*
    * ----------------------------------------------------
@@ -3102,10 +3289,6 @@ const styles =
     bottomSpace: {
       height: 30,
     },
-
-    /*
-     * ROLE CARD
-     */
 
     roleOverlay: {
       position: "absolute",
