@@ -72,7 +72,6 @@ function formatError(
  * تم استبعاد:
  * O و 0
  * I و 1
- * حتى يكون الكود واضحاً عند عرضه للاعبين.
  */
 function generateRoomCode(
   length = 6
@@ -95,11 +94,13 @@ function generateRoomCode(
 
 /**
  * إنشاء كود غرفة غير مستخدم حالياً.
- *
- * نحاول 10 مرات كحد أقصى لتجنب أي حلقة لا نهائية.
  */
 async function generateUniqueRoomCode(): Promise<string> {
-  for (let attempt = 0; attempt < 10; attempt++) {
+  for (
+    let attempt = 0;
+    attempt < 10;
+    attempt++
+  ) {
     const code = generateRoomCode();
 
     const {
@@ -130,32 +131,94 @@ async function generateUniqueRoomCode(): Promise<string> {
   );
 }
 
+/**
+ * التأكد من وجود مستخدم وجلسة Supabase.
+ *
+ * هذه النقطة مهمة جداً لأن RPCs التي تستخدم
+ * auth.uid() تحتاج إلى Session حقيقية.
+ */
 async function ensureUser() {
+  // --------------------------------------------------
+  // 1. محاولة استخدام الجلسة الموجودة مسبقاً
+  // --------------------------------------------------
   const {
-    data,
-  } = await supabase.auth.getUser();
+    data: sessionData,
+    error: sessionError,
+  } = await supabase.auth.getSession();
 
-  if (data.user) {
-    return data.user;
+  if (sessionError) {
+    console.warn(
+      'getSession:',
+      sessionError
+    );
   }
 
+  if (sessionData?.session?.user) {
+    return sessionData.session.user;
+  }
+
+  // --------------------------------------------------
+  // 2. لا توجد جلسة -> تسجيل دخول مجهول
+  // --------------------------------------------------
   const {
     data: authData,
-    error,
+    error: authError,
   } = await supabase.auth.signInAnonymously();
 
-  if (error || !authData.user) {
+  if (authError) {
     throw new Error(
       formatError(
-        error,
-        'تعذر إنشاء حساب اللاعب'
+        authError,
+        'تعذر إنشاء جلسة اللاعب'
       )
     );
   }
 
-  return authData.user;
+  // --------------------------------------------------
+  // 3. التأكد من وجود المستخدم
+  // --------------------------------------------------
+  if (!authData?.user) {
+    throw new Error(
+      'تعذر إنشاء حساب اللاعب'
+    );
+  }
+
+  // --------------------------------------------------
+  // 4. التأكد من أن Session أصبحت موجودة فعلاً
+  // --------------------------------------------------
+  let session = authData.session;
+
+  if (!session) {
+    const {
+      data: refreshedSession,
+      error: refreshedError,
+    } = await supabase.auth.getSession();
+
+    if (refreshedError) {
+      throw new Error(
+        formatError(
+          refreshedError,
+          'تم إنشاء اللاعب لكن تعذر الحصول على جلسة الدخول'
+        )
+      );
+    }
+
+    session =
+      refreshedSession?.session ?? null;
+  }
+
+  if (!session?.user) {
+    throw new Error(
+      'تم إنشاء حساب اللاعب لكن جلسة الدخول غير موجودة. أعد المحاولة.'
+    );
+  }
+
+  return session.user;
 }
 
+/**
+ * إنشاء/تحميل الملف الشخصي.
+ */
 async function ensureProfile(
   username?: string
 ): Promise<{
@@ -200,6 +263,9 @@ async function ensureProfile(
   };
 }
 
+/**
+ * تسجيل الدخول المجهول.
+ */
 export async function signInAnonymously() {
   return ensureUser();
 }
@@ -233,9 +299,6 @@ export async function createRoom(
     )
   );
 
-  /**
-   * إنشاء كود فريد قبل إدخال الغرفة.
-   */
   const code =
     await generateUniqueRoomCode();
 
@@ -335,9 +398,27 @@ export async function joinPublicRoom(
   roomId: string,
   playerName?: string
 ) {
+  if (!roomId) {
+    throw new Error(
+      'معرف الغرفة غير موجود'
+    );
+  }
+
   const {
+    user,
     profile,
   } = await ensureProfile(playerName);
+
+  // تأكيد الجلسة مرة أخرى قبل RPC
+  const {
+    data: currentSession,
+  } = await supabase.auth.getSession();
+
+  if (!currentSession?.session?.user) {
+    throw new Error(
+      'جلسة اللاعب غير موجودة. أعد المحاولة.'
+    );
+  }
 
   const {
     data,
@@ -358,8 +439,7 @@ export async function joinPublicRoom(
     );
   }
 
-  const user = await ensureUser();
-
+  // تحديث بيانات اللاعب بعد الانضمام
   const {
     error: syncError,
   } = await supabase
@@ -390,16 +470,28 @@ export async function joinPublicRoom(
 }
 
 /**
- * توافق مع نظام الكود القديم.
+ * الانضمام باستخدام كود الغرفة.
  */
 export async function joinRoom(
   code: string,
   playerName: string
 ): Promise<Room> {
-  await ensureProfile(playerName);
-
   const normalized =
     code.trim().toUpperCase();
+
+  if (!normalized) {
+    throw new Error(
+      'أدخل كود الغرفة'
+    );
+  }
+
+  if (normalized.length !== 6) {
+    throw new Error(
+      'كود الغرفة يجب أن يكون من 6 أحرف'
+    );
+  }
+
+  await ensureProfile(playerName);
 
   const {
     data: room,
@@ -415,8 +507,14 @@ export async function joinRoom(
     throw new Error(
       formatError(
         error,
-        'الغرفة غير موجودة'
+        'الغرفة غير موجودة أو لم تعد متاحة'
       )
+    );
+  }
+
+  if (!room.id) {
+    throw new Error(
+      'تم العثور على الغرفة لكن معرفها غير موجود'
     );
   }
 
@@ -429,11 +527,17 @@ export async function joinRoom(
 }
 
 /**
- * تحميل غرفة بواسطة ID.
+ * تحميل غرفة بواسطة UUID.
  */
 export async function getRoom(
   roomId: string
 ): Promise<Room> {
+  if (!roomId) {
+    throw new Error(
+      'معرف الغرفة غير موجود'
+    );
+  }
+
   const {
     data,
     error,
@@ -461,6 +565,14 @@ export async function getRoom(
 export async function getRoomPlayers(
   roomId: string
 ): Promise<RoomPlayer[]> {
+  if (!roomId) {
+    throw new Error(
+      'معرف الغرفة غير موجود'
+    );
+  }
+
+  await ensureUser();
+
   const {
     data,
     error,
@@ -526,22 +638,29 @@ export async function setReady(
 export async function heartbeatRoom(
   roomId: string
 ) {
-  const user = await ensureUser();
+  try {
+    const user = await ensureUser();
 
-  const {
-    error,
-  } = await supabase
-    .from('room_players')
-    .update({
-      last_seen_at:
-        new Date().toISOString(),
-    })
-    .eq('room_id', roomId)
-    .eq('user_id', user.id);
+    const {
+      error,
+    } = await supabase
+      .from('room_players')
+      .update({
+        last_seen_at:
+          new Date().toISOString(),
+      })
+      .eq('room_id', roomId)
+      .eq('user_id', user.id);
 
-  if (error) {
+    if (error) {
+      console.error(
+        'heartbeatRoom:',
+        error
+      );
+    }
+  } catch (error) {
     console.error(
-      'heartbeatRoom:',
+      'heartbeatRoom auth:',
       error
     );
   }
@@ -583,6 +702,8 @@ export async function startGame(
 export async function getMyRole(
   roomId: string
 ) {
+  await ensureUser();
+
   const {
     data,
     error,
@@ -633,11 +754,6 @@ export async function leaveRoom(
 
 /**
  * طرد لاعب من الغرفة.
- *
- * الصلاحية يتم التحقق منها داخل
- * Supabase RPC بواسطة host_id.
- *
- * يمكن تنفيذ الطرد قبل بدء اللعبة فقط.
  */
 export async function kickRoomPlayer(
   roomId: string,
