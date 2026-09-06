@@ -21,16 +21,17 @@ jobs:
 
 
       # ============================================
-      # 2. Node.js
+      # 2. Setup Node.js
       # ============================================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
 
       # ============================================
-      # 3. Java 17
+      # 3. Setup Java 17
       # ============================================
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -40,7 +41,7 @@ jobs:
 
 
       # ============================================
-      # 4. Verify project files
+      # 4. Verify project
       # ============================================
       - name: Verify project files
         shell: bash
@@ -48,23 +49,67 @@ jobs:
           set -e
 
           test -f package.json
-
-          if [ ! -f .env ]; then
-            echo "ERROR: .env file is missing."
-            exit 1
-          fi
+          test -f app.json
 
           echo "package.json found."
-          echo ".env found."
+          echo "app.json found."
 
 
       # ============================================
-      # 5. Load and verify Supabase environment
+      # 5. Verify package.json
+      # ============================================
+      - name: Verify package configuration
+        shell: bash
+        run: |
+          set -e
+
+          node <<'NODE'
+          const pkg = require('./package.json');
+
+          if (!pkg.dependencies) {
+            throw new Error('dependencies section is missing');
+          }
+
+          const required = [
+            'expo',
+            'expo-router',
+            '@supabase/supabase-js',
+            '@livekit/react-native',
+            '@livekit/react-native-webrtc',
+            '@livekit/react-native-expo-plugin',
+            'livekit-client'
+          ];
+
+          for (const name of required) {
+            if (!pkg.dependencies[name]) {
+              throw new Error(`Missing dependency: ${name}`);
+            }
+
+            console.log(`${name}: ${pkg.dependencies[name]}`);
+          }
+
+          if (pkg.main !== 'expo-router/entry') {
+            throw new Error(
+              'package.json main must be expo-router/entry'
+            );
+          }
+
+          console.log('package.json configuration verified.');
+          NODE
+
+
+      # ============================================
+      # 6. Verify Supabase environment
       # ============================================
       - name: Verify Supabase environment
         shell: bash
         run: |
           set -e
+
+          if [ ! -f .env ]; then
+            echo "ERROR: .env file is missing."
+            exit 1
+          fi
 
           set -a
           source .env
@@ -84,47 +129,78 @@ jobs:
 
           if [ "$EXPO_PUBLIC_SUPABASE_URL" != "$EXPECTED_URL" ]; then
             echo "ERROR: Wrong Supabase URL."
-            echo "Expected: $EXPECTED_URL"
-            echo "Found:    $EXPO_PUBLIC_SUPABASE_URL"
             exit 1
           fi
 
-          echo "Supabase URL verified."
-          echo "Supabase anon key found."
+          echo "Supabase environment verified."
 
 
       # ============================================
-      # 6. Install dependencies
+      # 7. Clean previous installation
+      # ============================================
+      - name: Clean dependencies
+        shell: bash
+        run: |
+          set -e
+
+          rm -rf node_modules
+
+          npm cache clean --force
+
+          echo "Dependency environment cleaned."
+
+
+      # ============================================
+      # 8. Install dependencies
       # ============================================
       - name: Install dependencies
         shell: bash
         run: |
           set -e
 
-          npm install
+          npm install --legacy-peer-deps
 
           echo "Dependencies installed successfully."
 
 
       # ============================================
-      # 7. Verify important dependencies
+      # 9. Verify Expo is actually installed
+      # ============================================
+      - name: Verify Expo installation
+        shell: bash
+        run: |
+          set -e
+
+          test -d node_modules/expo
+
+          node -e "console.log(require('expo/package.json').version)"
+
+          node -e "require.resolve('expo')"
+
+          echo "Expo installed correctly."
+
+
+      # ============================================
+      # 10. Verify important dependencies
       # ============================================
       - name: Verify dependencies
         shell: bash
         run: |
           set -e
 
-          node -e "require.resolve('expo')"
           node -e "require.resolve('expo-router/entry')"
           node -e "require.resolve('@supabase/supabase-js')"
+          node -e "require.resolve('@livekit/react-native')"
+          node -e "require.resolve('@livekit/react-native-webrtc')"
+          node -e "require.resolve('livekit-client')"
           node -e "require.resolve('@react-native-async-storage/async-storage')"
           node -e "require.resolve('react-native-url-polyfill/auto')"
 
-          echo "Required dependencies verified."
+          echo "All required dependencies verified."
 
 
       # ============================================
-      # 8. Verify Expo configuration
+      # 11. Verify Expo configuration
       # ============================================
       - name: Verify Expo configuration
         shell: bash
@@ -132,35 +208,15 @@ jobs:
           set -e
 
           npx expo --version
-          npx expo config --type public
+
+          npx expo config \
+            --type public
 
           echo "Expo configuration verified."
 
 
       # ============================================
-      # 9. Verify Expo Router
-      # ============================================
-      - name: Verify Expo Router
-        shell: bash
-        run: |
-          set -e
-
-          node -e "
-            const pkg = require('./package.json');
-
-            if (pkg.main !== 'expo-router/entry') {
-              console.error('ERROR: package.json main must be expo-router/entry');
-              process.exit(1);
-            }
-          "
-
-          node -e "require.resolve('expo-router/entry')"
-
-          echo "Expo Router verified."
-
-
-      # ============================================
-      # 10. Generate Android project
+      # 12. Generate Android project
       # ============================================
       - name: Generate Android project
         shell: bash
@@ -180,7 +236,7 @@ jobs:
 
 
       # ============================================
-      # 11. Verify Android project
+      # 13. Verify Android project
       # ============================================
       - name: Verify Android project
         shell: bash
@@ -188,23 +244,27 @@ jobs:
           set -e
 
           test -f android/gradlew
-          test -f android/gradle/wrapper/gradle-wrapper.properties
           test -f android/app/build.gradle
+          test -f android/gradle/wrapper/gradle-wrapper.properties
 
           echo "Android project verified."
 
 
       # ============================================
-      # 12. Prepare Gradle
+      # 14. Prepare Gradle
       # ============================================
       - name: Prepare Gradle
         shell: bash
         run: |
+          set -e
+
           chmod +x android/gradlew
+
+          echo "Gradle prepared."
 
 
       # ============================================
-      # 13. Build Release APK
+      # 15. Build Release APK
       # ============================================
       - name: Build Release APK
         working-directory: android
@@ -216,16 +276,19 @@ jobs:
             --no-daemon \
             --stacktrace
 
+          echo "Release APK build completed."
+
 
       # ============================================
-      # 14. Find generated APK
+      # 16. Verify APK
       # ============================================
       - name: Verify APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find android/app/build/outputs/apk/release \
+          APK=$(find \
+            android/app/build/outputs/apk/release \
             -type f \
             -name "*.apk" \
             | head -n 1)
@@ -242,7 +305,7 @@ jobs:
 
 
       # ============================================
-      # 15. Prepare final APK
+      # 17. Prepare final APK
       # ============================================
       - name: Prepare APK
         shell: bash
@@ -251,7 +314,8 @@ jobs:
 
           mkdir -p release
 
-          APK=$(find android/app/build/outputs/apk/release \
+          APK=$(find \
+            android/app/build/outputs/apk/release \
             -type f \
             -name "*.apk" \
             | head -n 1)
@@ -261,14 +325,17 @@ jobs:
             exit 1
           fi
 
-          cp "$APK" release/Mafia-Night-v1.0.apk
+          cp "$APK" \
+            release/Mafia-Night-v1.0.apk
 
-          echo "Final APK:"
-          ls -lh release/Mafia-Night-v1.0.apk
+          echo "Final APK prepared."
+
+          ls -lh \
+            release/Mafia-Night-v1.0.apk
 
 
       # ============================================
-      # 16. Upload APK
+      # 18. Upload APK
       # ============================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
