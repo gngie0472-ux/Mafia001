@@ -632,6 +632,56 @@ export async function leaveRoom(
 }
 
 /**
+ * طرد لاعب من الغرفة.
+ *
+ * الصلاحية يتم التحقق منها داخل
+ * Supabase RPC بواسطة host_id.
+ *
+ * يمكن تنفيذ الطرد قبل بدء اللعبة فقط.
+ */
+export async function kickRoomPlayer(
+  roomId: string,
+  playerUserId: string
+) {
+  await ensureUser();
+
+  if (!roomId) {
+    throw new Error(
+      'معرف الغرفة غير موجود'
+    );
+  }
+
+  if (!playerUserId) {
+    throw new Error(
+      'معرف اللاعب غير موجود'
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'kick_room_player',
+    {
+      p_room_id: roomId,
+      p_player_user_id:
+        playerUserId,
+    }
+  );
+
+  if (error) {
+    throw new Error(
+      formatError(
+        error,
+        'تعذر طرد اللاعب'
+      )
+    );
+  }
+
+  return data;
+}
+
+/**
  * Realtime للاعبين داخل الغرفة.
  */
 export function subscribeToRoomPlayers(
