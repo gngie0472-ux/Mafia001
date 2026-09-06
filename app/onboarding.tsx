@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+
 import {
   Animated,
   Dimensions,
@@ -8,13 +9,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { router } from 'expo-router';
 
 const { width } = Dimensions.get('window');
 
-const ONBOARDING_KEY = '@mafia_night_onboarding_seen';
+const ONBOARDING_KEY =
+  '@mafia_night_onboarding_done';
 
 const slides = [
   {
@@ -42,18 +47,40 @@ export default function OnboardingScreen() {
 
   const listRef = useRef<FlatList>(null);
 
+  const finishingRef = useRef(false);
+
   const finishOnboarding = async () => {
-    try {
-      await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    } catch (error) {
-      console.log('Onboarding storage error:', error);
+    if (finishingRef.current) {
+      return;
     }
 
-    router.replace('/');
+    finishingRef.current = true;
+
+    try {
+      await AsyncStorage.setItem(
+        ONBOARDING_KEY,
+        'true'
+      );
+    } catch (error) {
+      console.error(
+        'Onboarding storage error:',
+        error
+      );
+    }
+
+    // مهم جدًا:
+    // لا نعود إلى "/"
+    // لأن "/" هو بوابة التطبيق.
+    // بعد انتهاء الملاحظات نذهب مباشرة إلى الصفحة الرئيسية.
+    router.replace('/rooms');
   };
 
   const nextSlide = () => {
-    if (currentIndex === slides.length - 1) {
+    if (finishingRef.current) {
+      return;
+    }
+
+    if (currentIndex >= slides.length - 1) {
       finishOnboarding();
       return;
     }
@@ -69,12 +96,18 @@ export default function OnboardingScreen() {
   };
 
   const handleScroll = (event: any) => {
-    const index = Math.round(
-      event.nativeEvent.contentOffset.x / width
+    const offsetX =
+      event.nativeEvent.contentOffset.x;
+
+    const index = Math.round(offsetX / width);
+
+    const safeIndex = Math.max(
+      0,
+      Math.min(index, slides.length - 1)
     );
 
-    if (index !== currentIndex) {
-      setCurrentIndex(index);
+    if (safeIndex !== currentIndex) {
+      setCurrentIndex(safeIndex);
     }
   };
 
@@ -95,6 +128,7 @@ export default function OnboardingScreen() {
 
         <TouchableOpacity
           style={styles.skipButton}
+          activeOpacity={0.7}
           onPress={finishOnboarding}
         >
           <Text style={styles.skipText}>
@@ -106,11 +140,14 @@ export default function OnboardingScreen() {
       <FlatList
         ref={listRef}
         data={slides}
-        keyExtractor={(_, index) => String(index)}
+        keyExtractor={(_, index) =>
+          String(index)
+        }
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScroll}
+        scrollEventThrottle={16}
         renderItem={({ item }) => (
           <View style={styles.slide}>
             <View style={styles.iconOuter}>
@@ -235,10 +272,12 @@ const styles = StyleSheet.create({
     height: 190,
     borderRadius: 95,
     borderWidth: 1,
-    borderColor: 'rgba(215,169,75,0.25)',
+    borderColor:
+      'rgba(215,169,75,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(215,169,75,0.04)',
+    backgroundColor:
+      'rgba(215,169,75,0.04)',
   },
 
   iconInner: {
