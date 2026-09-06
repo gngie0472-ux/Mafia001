@@ -27,7 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
 
 
       # ============================================
@@ -41,7 +40,7 @@ jobs:
 
 
       # ============================================
-      # 4. Verify project
+      # 4. Verify project files
       # ============================================
       - name: Verify project files
         shell: bash
@@ -56,7 +55,7 @@ jobs:
 
 
       # ============================================
-      # 5. Verify package.json
+      # 5. Verify package configuration
       # ============================================
       - name: Verify package configuration
         shell: bash
@@ -85,7 +84,9 @@ jobs:
               throw new Error(`Missing dependency: ${name}`);
             }
 
-            console.log(`${name}: ${pkg.dependencies[name]}`);
+            console.log(
+              `${name}: ${pkg.dependencies[name]}`
+            );
           }
 
           if (pkg.main !== 'expo-router/entry') {
@@ -94,7 +95,9 @@ jobs:
             );
           }
 
-          console.log('package.json configuration verified.');
+          console.log(
+            'package.json configuration verified.'
+          );
           NODE
 
 
@@ -136,7 +139,7 @@ jobs:
 
 
       # ============================================
-      # 7. Clean previous installation
+      # 7. Clean dependencies
       # ============================================
       - name: Clean dependencies
         shell: bash
@@ -164,7 +167,7 @@ jobs:
 
 
       # ============================================
-      # 9. Verify Expo is actually installed
+      # 9. Verify Expo
       # ============================================
       - name: Verify Expo installation
         shell: bash
@@ -173,9 +176,11 @@ jobs:
 
           test -d node_modules/expo
 
-          node -e "console.log(require('expo/package.json').version)"
+          node -e \
+            "console.log('Expo:', require('expo/package.json').version)"
 
-          node -e "require.resolve('expo')"
+          node -e \
+            "require.resolve('expo')"
 
           echo "Expo installed correctly."
 
@@ -188,13 +193,26 @@ jobs:
         run: |
           set -e
 
-          node -e "require.resolve('expo-router/entry')"
-          node -e "require.resolve('@supabase/supabase-js')"
-          node -e "require.resolve('@livekit/react-native')"
-          node -e "require.resolve('@livekit/react-native-webrtc')"
-          node -e "require.resolve('livekit-client')"
-          node -e "require.resolve('@react-native-async-storage/async-storage')"
-          node -e "require.resolve('react-native-url-polyfill/auto')"
+          node -e \
+            "require.resolve('expo-router/entry')"
+
+          node -e \
+            "require.resolve('@supabase/supabase-js')"
+
+          node -e \
+            "require.resolve('@livekit/react-native')"
+
+          node -e \
+            "require.resolve('@livekit/react-native-webrtc')"
+
+          node -e \
+            "require.resolve('livekit-client')"
+
+          node -e \
+            "require.resolve('@react-native-async-storage/async-storage')"
+
+          node -e \
+            "require.resolve('react-native-url-polyfill/auto')"
 
           echo "All required dependencies verified."
 
@@ -209,8 +227,7 @@ jobs:
 
           npx expo --version
 
-          npx expo config \
-            --type public
+          npx expo config --type public
 
           echo "Expo configuration verified."
 
@@ -244,8 +261,11 @@ jobs:
           set -e
 
           test -f android/gradlew
+
+          test -f \
+            android/gradle/wrapper/gradle-wrapper.properties
+
           test -f android/app/build.gradle
-          test -f android/gradle/wrapper/gradle-wrapper.properties
 
           echo "Android project verified."
 
