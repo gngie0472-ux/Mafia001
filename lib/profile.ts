@@ -7,43 +7,52 @@ export type Profile = {
   wins: number;
   games: number;
   rating: number;
-  created_at?: string;
-  updated_at?: string;
 };
 
 async function ensureAuth() {
-  const { data } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  if (data.user) {
-    return data.user;
+  if (error) {
+    throw error;
   }
 
-  const { data: authData, error } =
-    await supabase.auth.signInAnonymously();
-
-  if (error || !authData.user) {
+  if (!user) {
     throw new Error(
-      error?.message || 'تعذر إنشاء حساب اللاعب'
+      'يجب تسجيل الدخول أولاً.'
     );
   }
 
-  return authData.user;
+  return user;
+}
+
+export async function getCurrentUserId(): Promise<string> {
+  const user = await ensureAuth();
+  return user.id;
 }
 
 export async function getMyProfile(): Promise<Profile> {
   await ensureAuth();
 
   const { data, error } =
-    await supabase.rpc('get_my_profile');
+    await supabase.rpc(
+      'get_my_profile'
+    );
 
   if (error) {
-    throw new Error(
-      error.message || 'تعذر تحميل الملف الشخصي'
+    console.error(
+      'getMyProfile error:',
+      error
     );
+    throw error;
   }
 
   if (!data) {
-    throw new Error('لم يتم العثور على الملف الشخصي');
+    throw new Error(
+      'لم يتم العثور على الملف الشخصي.'
+    );
   }
 
   return data as Profile;
@@ -55,87 +64,103 @@ export async function saveMyProfile(
 ): Promise<Profile> {
   await ensureAuth();
 
-  const cleanName = username.trim();
+  const cleanName =
+    username.trim();
 
-  if (cleanName.length < 2) {
+  if (!cleanName) {
     throw new Error(
-      'اسم اللاعب يجب أن يحتوي على حرفين على الأقل'
-    );
-  }
-
-  if (cleanName.length > 24) {
-    throw new Error(
-      'اسم اللاعب يجب ألا يتجاوز 24 حرفًا'
+      'اسم اللاعب مطلوب.'
     );
   }
 
   const { data, error } =
-    await supabase.rpc('ensure_my_profile', {
-      p_username: cleanName,
-      p_avatar_url: avatarUrl || null,
-    });
+    await supabase.rpc(
+      'ensure_my_profile',
+      {
+        p_username: cleanName,
+        p_avatar_url:
+          avatarUrl ?? null,
+      }
+    );
 
   if (error) {
+    console.error(
+      'saveMyProfile error:',
+      error
+    );
+    throw error;
+  }
+
+  if (!data) {
     throw new Error(
-      error.message || 'تعذر حفظ الملف الشخصي'
+      'تعذر حفظ الملف الشخصي.'
     );
   }
 
   return data as Profile;
 }
 
-/**
- * رفع صورة اللاعب إلى Supabase Storage.
- *
- * imageUri:
- *   المسار المحلي للصورة المختارة من الهاتف.
- */
 export async function uploadAvatar(
   imageUri: string
 ): Promise<string> {
   const user = await ensureAuth();
 
   if (!imageUri) {
-    throw new Error('لم يتم اختيار صورة.');
+    throw new Error(
+      'لم يتم اختيار صورة.'
+    );
   }
 
-  const response = await fetch(imageUri);
+  const response =
+    await fetch(imageUri);
 
   if (!response.ok) {
-    throw new Error('تعذر قراءة صورة الملف الشخصي.');
+    throw new Error(
+      'تعذر قراءة الصورة.'
+    );
   }
 
-  const arrayBuffer = await response.arrayBuffer();
+  const arrayBuffer =
+    await response.arrayBuffer();
 
-  const filePath = `${user.id}/avatar.jpg`;
+  const filePath =
+    `${user.id}/avatar-${Date.now()}.jpg`;
 
   const { error: uploadError } =
     await supabase.storage
       .from('avatars')
-      .upload(filePath, arrayBuffer, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      });
+      .upload(
+        filePath,
+        arrayBuffer,
+        {
+          contentType:
+            'image/jpeg',
+          upsert: true,
+        }
+      );
 
   if (uploadError) {
-    throw new Error(
-      uploadError.message ||
-        'تعذر رفع صورة الملف الشخصي.'
+    console.error(
+      'uploadAvatar error:',
+      uploadError
     );
+    throw uploadError;
   }
 
-  const { data } =
+  const {
+    data: publicData,
+  } =
     supabase.storage
       .from('avatars')
       .getPublicUrl(filePath);
 
-  if (!data?.publicUrl) {
+  if (!publicData?.publicUrl) {
     throw new Error(
-      'تعذر الحصول على رابط صورة الملف الشخصي.'
+      'تعذر الحصول على رابط الصورة.'
     );
   }
 
-  return `${data.publicUrl}?t=${Date.now()}`;
+  return publicData.publicUrl;
 }
 
 export async function saveMyProfileWithAvatar(
@@ -145,16 +170,25 @@ export async function saveMyProfileWithAvatar(
   let avatarUrl: string | null = null;
 
   if (imageUri) {
-    avatarUrl = await uploadAvatar(imageUri);
+    avatarUrl =
+      await uploadAvatar(
+        imageUri
+      );
+  } else {
+    try {
+      const current =
+        await getMyProfile();
+
+      avatarUrl =
+        current.avatar_url ||
+        null;
+    } catch {
+      avatarUrl = null;
+    }
   }
 
   return saveMyProfile(
     username,
     avatarUrl
   );
-}
-
-export async function getCurrentUserId() {
-  const user = await ensureAuth();
-  return user.id;
 }
