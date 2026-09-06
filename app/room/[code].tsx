@@ -36,6 +36,10 @@ import {
   submitNightAction,
 } from '../../lib/game';
 
+import {
+  kickRoomPlayer,
+} from '../../lib/rooms';
+
 type Message = {
   id: string;
   room_id: string;
@@ -260,6 +264,9 @@ export default function MafiaGameScreen() {
   const [messagesLoading, setMessagesLoading] =
     useState(false);
 
+  const [kickingUserId, setKickingUserId] =
+    useState<string | null>(null);
+
   const lastAdvanceRef =
     useRef<number>(0);
 
@@ -401,6 +408,64 @@ export default function MafiaGameScreen() {
         }
 
         try {
+          /*
+           * التحقق أولًا من أن المستخدم ما زال
+           * عضوًا في الغرفة.
+           *
+           * هذا مهم حتى يتم إخراج اللاعب المطرود
+           * من الشاشة تلقائيًا.
+           */
+          const {
+            data: membership,
+            error: membershipError,
+          } = await supabase
+            .from('room_players')
+            .select('id')
+            .eq(
+              'room_id',
+              roomId
+            )
+            .eq(
+              'user_id',
+              (
+                await supabase.auth.getUser()
+              ).data.user?.id || ''
+            )
+            .maybeSingle();
+
+          if (
+            membershipError
+          ) {
+            console.error(
+              'membership check error:',
+              membershipError
+            );
+          }
+
+          if (
+            !membership &&
+            isMountedRef.current
+          ) {
+            Alert.alert(
+              'تم طردك من الغرفة',
+              'قام منشئ الغرفة بإزالتك من هذه الغرفة.',
+              [
+                {
+                  text: 'حسنًا',
+                  onPress: () =>
+                    router.replace(
+                      '/rooms'
+                    ),
+                },
+              ],
+              {
+                cancelable: false,
+              }
+            );
+
+            return;
+          }
+
           const state =
             await getGameState(
               roomId
@@ -445,9 +510,51 @@ export default function MafiaGameScreen() {
           if (
             isMountedRef.current
           ) {
+            const message =
+              error?.message ||
+              '';
+
+            /*
+             * إذا أصبح المستخدم غير عضو في الغرفة،
+             * نعيده إلى قائمة الغرف.
+             */
+            if (
+              message.includes(
+                'not a member'
+              ) ||
+              message.includes(
+                'player not found'
+              ) ||
+              message.includes(
+                'لاعب'
+              ) &&
+                message.includes(
+                  'الغرفة'
+                )
+            ) {
+              Alert.alert(
+                'تم إخراجك من الغرفة',
+                'لم تعد عضوًا في هذه الغرفة.',
+                [
+                  {
+                    text: 'حسنًا',
+                    onPress: () =>
+                      router.replace(
+                        '/rooms'
+                      ),
+                  },
+                ],
+                {
+                  cancelable: false,
+                }
+              );
+
+              return;
+            }
+
             Alert.alert(
               'تعذر تحميل اللعبة',
-              error?.message ||
+              message ||
                 'حدث خطأ أثناء تحميل حالة اللعبة.'
             );
           }
@@ -463,6 +570,7 @@ export default function MafiaGameScreen() {
       [
         roomId,
         loadProfiles,
+        router,
       ]
     );
 
@@ -558,10 +666,6 @@ export default function MafiaGameScreen() {
                     error?.message ||
                     '';
 
-                  /*
-                   * إذا سبق جهاز آخر ونقل المرحلة،
-                   * لا نعتبر ذلك خطأ للمستخدم.
-                   */
                   if (
                     !message.includes(
                       'phase_not_finished'
@@ -758,6 +862,21 @@ export default function MafiaGameScreen() {
       ]
     );
 
+  const isHost =
+    Boolean(
+      room &&
+        myPlayer &&
+        room.host_id ===
+          myPlayer.user_id
+    );
+
+  const canKick =
+    Boolean(
+      isHost &&
+        room?.status ===
+          'waiting'
+    );
+
   const isNight =
     room?.game_phase ===
     'night';
@@ -818,6 +937,113 @@ export default function MafiaGameScreen() {
       room?.last_event ||
         null
     );
+
+  /*
+   * طرد لاعب.
+   *
+   * نرسل user_id وليس room_players.id
+   * لأن RPC تعتمد على user_id.
+   */
+  const kickPlayer =
+    async (
+      player: GamePlayer
+    ) => {
+      if (
+        !roomId ||
+        !room ||
+        !canKick
+      ) {
+        return;
+      }
+
+      if (
+        player.user_id ===
+        myPlayer?.user_id
+      ) {
+        return;
+      }
+
+      const playerName =
+        profiles[
+          player.user_id
+        ]?.username ||
+        player.name ||
+        'هذا اللاعب';
+
+      Alert.alert(
+        'طرد اللاعب',
+        `هل تريد طرد ${playerName} من الغرفة؟`,
+        [
+          {
+            text: 'إلغاء',
+            style: 'cancel',
+          },
+          {
+            text: 'طرد',
+            style: 'destructive',
+            onPress: async () => {
+              if (
+                !roomId ||
+                !isMountedRef.current
+              ) {
+                return;
+              }
+
+              setKickingUserId(
+                player.user_id
+              );
+
+              try {
+                await kickRoomPlayer(
+                  roomId,
+                  player.user_id
+                );
+
+                if (
+                  !isMountedRef.current
+                ) {
+                  return;
+                }
+
+                Alert.alert(
+                  'تم الطرد',
+                  `تم طرد ${playerName} من الغرفة.`
+                );
+
+                await loadGame(
+                  false
+                );
+              } catch (
+                error: any
+              ) {
+                console.error(
+                  'kickPlayer error:',
+                  error
+                );
+
+                if (
+                  isMountedRef.current
+                ) {
+                  Alert.alert(
+                    'تعذر الطرد',
+                    error?.message ||
+                      'حدث خطأ أثناء طرد اللاعب.'
+                  );
+                }
+              } finally {
+                if (
+                  isMountedRef.current
+                ) {
+                  setKickingUserId(
+                    null
+                  );
+                }
+              }
+            },
+          },
+        ]
+      );
+    };
 
   const selectTarget =
     (playerId: string) => {
@@ -1500,6 +1726,22 @@ export default function MafiaGameScreen() {
             </Text>
           </View>
 
+          {canKick && (
+            <View
+              style={
+                styles.hostNotice
+              }
+            >
+              <Text
+                style={
+                  styles.hostNoticeText
+                }
+              >
+                👑 أنت منشئ الغرفة — يمكنك طرد اللاعبين قبل بدء اللعبة.
+              </Text>
+            </View>
+          )}
+
           {players.map(
             (player) => {
               const profile =
@@ -1528,23 +1770,20 @@ export default function MafiaGameScreen() {
                       )
                 );
 
+              const canKickThisPlayer =
+                canKick &&
+                !isMe &&
+                player.user_id !==
+                  myPlayer?.user_id;
+
+              const isBeingKicked =
+                kickingUserId ===
+                player.user_id;
+
               return (
-                <Pressable
+                <View
                   key={
                     player.id
-                  }
-                  onPress={() => {
-                    if (
-                      selectable
-                    ) {
-                      selectTarget(
-                        player.id
-                      );
-                    }
-                  }}
-                  disabled={
-                    !selectable ||
-                    busy
                   }
                   style={[
                     styles.playerCard,
@@ -1554,70 +1793,133 @@ export default function MafiaGameScreen() {
                       styles.selectedPlayerCard,
                   ]}
                 >
-                  <PlayerAvatar
-                    player={
-                      player
+                  <Pressable
+                    onPress={() => {
+                      if (
+                        selectable
+                      ) {
+                        selectTarget(
+                          player.id
+                        );
+                      }
+                    }}
+                    disabled={
+                      !selectable ||
+                      busy
                     }
-                    profile={
-                      profile
-                    }
-                    size={48}
-                  />
-
-                  <View
                     style={
-                      styles.playerInfo
+                      styles.playerMain
                     }
                   >
+                    <PlayerAvatar
+                      player={
+                        player
+                      }
+                      profile={
+                        profile
+                      }
+                      size={48}
+                    />
+
                     <View
                       style={
-                        styles.playerNameRow
+                        styles.playerInfo
                       }
                     >
-                      <Text
-                        style={[
-                          styles.playerName,
-                          !player.alive &&
-                            styles.deadName,
-                        ]}
+                      <View
+                        style={
+                          styles.playerNameRow
+                        }
                       >
-                        {profile?.username ||
-                          player.name ||
-                          'Player'}
-                      </Text>
-
-                      {isMe && (
                         <Text
-                          style={
-                            styles.youBadge
-                          }
+                          style={[
+                            styles.playerName,
+                            !player.alive &&
+                              styles.deadName,
+                          ]}
                         >
-                          أنت
+                          {profile?.username ||
+                            player.name ||
+                            'Player'}
                         </Text>
-                      )}
+
+                        {isMe && (
+                          <Text
+                            style={
+                              styles.youBadge
+                            }
+                          >
+                            أنت
+                          </Text>
+                        )}
+
+                        {room.host_id ===
+                          player.user_id && (
+                          <Text
+                            style={
+                              styles.hostBadge
+                            }
+                          >
+                            👑 منشئ
+                          </Text>
+                        )}
+                      </View>
+
+                      <Text
+                        style={
+                          styles.playerStatus
+                        }
+                      >
+                        {player.alive
+                          ? '🟢 حي'
+                          : '💀 مات'}
+                      </Text>
                     </View>
 
-                    <Text
-                      style={
-                        styles.playerStatus
-                      }
-                    >
-                      {player.alive
-                        ? '🟢 حي'
-                        : '💀 مات'}
-                    </Text>
-                  </View>
+                    {selected && (
+                      <Text
+                        style={
+                          styles.selectedMark
+                        }
+                      >
+                        ✓
+                      </Text>
+                    )}
+                  </Pressable>
 
-                  {selected && (
-                    <Text
-                      style={
-                        styles.selectedMark
+                  {canKickThisPlayer && (
+                    <Pressable
+                      style={[
+                        styles.kickButton,
+                        isBeingKicked &&
+                          styles.kickButtonDisabled,
+                      ]}
+                      disabled={
+                        isBeingKicked
+                      }
+                      onPress={() =>
+                        kickPlayer(
+                          player
+                        )
                       }
                     >
-                      ✓
-                    </Text>
+                      {isBeingKicked ? (
+                        <ActivityIndicator
+                          size="small"
+                          color="#fff"
+                        />
+                      ) : (
+                        <Text
+                          style={
+                            styles.kickButtonText
+                          }
+                        >
+                          🚫 طرد
+                        </Text>
+                      )}
+                    </Pressable>
                   )}
-                </Pressable>
+                </View>
               );
             }
           )}
@@ -2469,6 +2771,23 @@ const styles =
       fontSize: 13,
     },
 
+    hostNotice: {
+      backgroundColor: '#1b170c',
+      borderWidth: 1,
+      borderColor: '#5c481b',
+      borderRadius: 12,
+      padding: 11,
+      marginBottom: 9,
+    },
+
+    hostNoticeText: {
+      color: '#d9b85c',
+      fontSize: 12,
+      lineHeight: 18,
+      textAlign: 'center',
+      fontWeight: '700',
+    },
+
     playerCard: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -2476,8 +2795,14 @@ const styles =
       borderWidth: 1,
       borderColor: '#24262c',
       borderRadius: 15,
-      padding: 11,
+      padding: 10,
       marginBottom: 8,
+    },
+
+    playerMain: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
     },
 
     deadPlayerCard: {
@@ -2517,6 +2842,7 @@ const styles =
     playerNameRow: {
       flexDirection: 'row',
       alignItems: 'center',
+      flexWrap: 'wrap',
     },
 
     playerName: {
@@ -2541,6 +2867,17 @@ const styles =
       fontWeight: '800',
     },
 
+    hostBadge: {
+      color: '#e5c35e',
+      backgroundColor: '#2b2513',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+      marginLeft: 6,
+      fontSize: 10,
+      fontWeight: '800',
+    },
+
     playerStatus: {
       color: '#888',
       fontSize: 12,
@@ -2552,6 +2889,27 @@ const styles =
       fontSize: 24,
       fontWeight: '900',
       marginLeft: 8,
+    },
+
+    kickButton: {
+      minWidth: 62,
+      height: 38,
+      backgroundColor: '#7f2530',
+      borderRadius: 9,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 8,
+      marginLeft: 8,
+    },
+
+    kickButtonDisabled: {
+      opacity: 0.45,
+    },
+
+    kickButtonText: {
+      color: '#fff',
+      fontSize: 11,
+      fontWeight: '900',
     },
 
     actionCard: {
