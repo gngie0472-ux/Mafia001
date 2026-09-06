@@ -66,6 +66,70 @@ function formatError(
     .join(' | ') || fallback;
 }
 
+/**
+ * إنشاء كود غرفة عشوائي من 6 أحرف.
+ *
+ * تم استبعاد:
+ * O و 0
+ * I و 1
+ * حتى يكون الكود واضحاً عند عرضه للاعبين.
+ */
+function generateRoomCode(
+  length = 6
+): string {
+  const chars =
+    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  let code = '';
+
+  for (let i = 0; i < length; i++) {
+    const index = Math.floor(
+      Math.random() * chars.length
+    );
+
+    code += chars.charAt(index);
+  }
+
+  return code;
+}
+
+/**
+ * إنشاء كود غرفة غير مستخدم حالياً.
+ *
+ * نحاول 10 مرات كحد أقصى لتجنب أي حلقة لا نهائية.
+ */
+async function generateUniqueRoomCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateRoomCode();
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from('rooms')
+      .select('id')
+      .eq('code', code)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(
+        formatError(
+          error,
+          'تعذر التحقق من كود الغرفة'
+        )
+      );
+    }
+
+    if (!data) {
+      return code;
+    }
+  }
+
+  throw new Error(
+    'تعذر إنشاء كود غرفة فريد، حاول مرة أخرى'
+  );
+}
+
 async function ensureUser() {
   const {
     data,
@@ -169,12 +233,19 @@ export async function createRoom(
     )
   );
 
+  /**
+   * إنشاء كود فريد قبل إدخال الغرفة.
+   */
+  const code =
+    await generateUniqueRoomCode();
+
   const {
     data,
     error,
   } = await supabase
     .from('rooms')
     .insert({
+      code,
       name,
       max_players: max,
       status: 'waiting',
