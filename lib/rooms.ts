@@ -36,6 +36,15 @@ export type RoomPlayer = {
   created_at?: string;
 };
 
+export type PlayerProfile = {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+  wins?: number;
+  games?: number;
+  rating?: number;
+};
+
 function formatError(
   error: any,
   fallback: string
@@ -64,8 +73,10 @@ async function ensureUser() {
     return data.user;
   }
 
-  const { data: authData, error } =
-    await supabase.auth.signInAnonymously();
+  const {
+    data: authData,
+    error,
+  } = await supabase.auth.signInAnonymously();
 
   if (error || !authData.user) {
     throw new Error(
@@ -79,23 +90,32 @@ async function ensureUser() {
   return authData.user;
 }
 
+/**
+ * يتأكد من وجود حساب اللاعب ويعيد
+ * بيانات الملف الشخصي كاملة.
+ */
 async function ensureProfile(
   username?: string
-) {
+): Promise<{
+  user: any;
+  profile: PlayerProfile;
+}> {
   const user = await ensureUser();
 
-  const name =
+  const fallbackName =
     username?.trim() ||
     `Player_${user.id.slice(0, 5)}`;
 
-  const { data, error } =
-    await supabase.rpc(
-      'ensure_my_profile',
-      {
-        p_username: name,
-        p_avatar_url: null,
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'ensure_my_profile',
+    {
+      p_username: fallbackName,
+      p_avatar_url: null,
+    }
+  );
 
   if (error) {
     throw new Error(
@@ -106,9 +126,15 @@ async function ensureProfile(
     );
   }
 
+  if (!data) {
+    throw new Error(
+      'تعذر تحميل الملف الشخصي'
+    );
+  }
+
   return {
     user,
-    profile: data,
+    profile: data as PlayerProfile,
   };
 }
 
@@ -116,13 +142,21 @@ export async function signInAnonymously() {
   return ensureUser();
 }
 
+/**
+ * إنشاء غرفة عامة.
+ *
+ * اسم اللاعب الموجود في الحساب الشخصي
+ * هو الاسم المستخدم داخل الغرفة.
+ */
 export async function createRoom(
   roomName: string,
   playerName: string,
   maxPlayers = 8
 ) {
-  const { user } =
-    await ensureProfile(playerName);
+  const {
+    user,
+    profile,
+  } = await ensureProfile(playerName);
 
   const name = roomName.trim();
 
@@ -134,7 +168,10 @@ export async function createRoom(
 
   const max = Math.max(
     4,
-    Math.min(20, Number(maxPlayers) || 8)
+    Math.min(
+      20,
+      Number(maxPlayers) || 8
+    )
   );
 
   const { data, error } =
@@ -158,17 +195,29 @@ export async function createRoom(
     );
   }
 
-  const { error: playerError } =
-    await supabase
-      .from('room_players')
-      .insert({
-        room_id: data.id,
-        user_id: user.id,
-        name:
-          playerName.trim() ||
-          'Host',
-        ready: false,
-      });
+  /*
+   * نستخدم بيانات الحساب الشخصي
+   * وليس اسمًا منفصلًا للغرفة.
+   */
+  const playerNameToUse =
+    profile.username?.trim() ||
+    playerName.trim() ||
+    'Host';
+
+  const {
+    error: playerError,
+  } = await supabase
+    .from('room_players')
+    .insert({
+      room_id: data.id,
+      user_id: user.id,
+      name: playerNameToUse,
+      ready: false,
+      avatar_url:
+        profile.avatar_url || null,
+      last_seen_at:
+        new Date().toISOString(),
+    });
 
   if (playerError) {
     await supabase
@@ -187,15 +236,20 @@ export async function createRoom(
   return data as Room;
 }
 
+/**
+ * تحميل الغرف العامة المتاحة.
+ */
 export async function getPublicRooms(): Promise<
   PublicRoom[]
 > {
   await ensureUser();
 
-  const { data, error } =
-    await supabase.rpc(
-      'get_public_rooms'
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'get_public_rooms'
+  );
 
   if (error) {
     throw new Error(
@@ -209,25 +263,67 @@ export async function getPublicRooms(): Promise<
   return (data ?? []) as PublicRoom[];
 }
 
+/**
+ * الانضمام إلى غرفة عامة.
+ *
+ * الاسم والصورة يؤخذان من الملف الشخصي.
+ */
 export async function joinPublicRoom(
   roomId: string,
-  playerName: string
+  playerName?: string
 ) {
-  await ensureProfile(playerName);
+  const {
+    profile,
+  } = await ensureProfile(playerName);
 
-  const { data, error } =
-    await supabase.rpc(
-      'join_public_room',
-      {
-        p_room_id: roomId,
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'join_public_room',
+    {
+      p_room_id: roomId,
+    }
+  );
 
   if (error) {
     throw new Error(
       formatError(
         error,
         'تعذر الانضمام إلى الغرفة'
+      )
+    );
+  }
+
+  /*
+   * بعد نجاح RPC، نتأكد أن بيانات
+   * الاسم والصورة في room_players
+   * متزامنة مع الحساب الشخصي.
+   */
+  const user = await ensureUser();
+
+  const {
+    error: syncError,
+  } = await supabase
+    .from('room_players')
+    .update({
+      name:
+        profile.username?.trim() ||
+        playerName?.trim() ||
+        `Player_${user.id.slice(0, 5)}`,
+      avatar_url:
+        profile.avatar_url || null,
+      last_seen_at:
+        new Date().toISOString(),
+    })
+    .eq('room_id', roomId)
+    .eq('user_id', user.id);
+
+  if (syncError) {
+    throw new Error(
+      formatError(
+        syncError,
+        'تم الانضمام لكن تعذر تحديث بيانات اللاعب'
       )
     );
   }
@@ -247,13 +343,15 @@ export async function joinRoom(
   const normalized =
     code.trim().toUpperCase();
 
-  const { data: room, error } =
-    await supabase
-      .from('rooms')
-      .select('*')
-      .eq('code', normalized)
-      .eq('status', 'waiting')
-      .single();
+  const {
+    data: room,
+    error,
+  } = await supabase
+    .from('rooms')
+    .select('*')
+    .eq('code', normalized)
+    .eq('status', 'waiting')
+    .single();
 
   if (error || !room) {
     throw new Error(
@@ -264,21 +362,28 @@ export async function joinRoom(
     );
   }
 
-  return joinPublicRoom(
+  await joinPublicRoom(
     room.id,
     playerName
-  ).then(() => room as Room);
+  );
+
+  return room as Room;
 }
 
+/**
+ * تحميل غرفة بواسطة ID.
+ */
 export async function getRoom(
   roomId: string
 ) {
-  const { data, error } =
-    await supabase
-      .from('rooms')
-      .select('*')
-      .eq('id', roomId)
-      .single();
+  const {
+    data,
+    error,
+  } = await supabase
+    .from('rooms')
+    .select('*')
+    .eq('id', roomId)
+    .single();
 
   if (error || !data) {
     throw new Error(
@@ -292,17 +397,22 @@ export async function getRoom(
   return data as Room;
 }
 
+/**
+ * تحميل جميع لاعبي الغرفة.
+ */
 export async function getRoomPlayers(
   roomId: string
 ): Promise<RoomPlayer[]> {
-  const { data, error } =
-    await supabase
-      .from('room_players')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', {
-        ascending: true,
-      });
+  const {
+    data,
+    error,
+  } = await supabase
+    .from('room_players')
+    .select('*')
+    .eq('room_id', roomId)
+    .order('created_at', {
+      ascending: true,
+    });
 
   if (error) {
     throw new Error(
@@ -316,24 +426,29 @@ export async function getRoomPlayers(
   return (data ?? []) as RoomPlayer[];
 }
 
+/**
+ * تغيير جاهزية اللاعب.
+ */
 export async function setReady(
   roomId: string,
   ready: boolean
 ) {
   const user = await ensureUser();
 
-  const { data, error } =
-    await supabase
-      .from('room_players')
-      .update({
-        ready,
-        last_seen_at:
-          new Date().toISOString(),
-      })
-      .eq('room_id', roomId)
-      .eq('user_id', user.id)
-      .select('*')
-      .single();
+  const {
+    data,
+    error,
+  } = await supabase
+    .from('room_players')
+    .update({
+      ready,
+      last_seen_at:
+        new Date().toISOString(),
+    })
+    .eq('room_id', roomId)
+    .eq('user_id', user.id)
+    .select('*')
+    .single();
 
   if (error) {
     throw new Error(
@@ -347,6 +462,9 @@ export async function setReady(
   return data as RoomPlayer;
 }
 
+/**
+ * تحديث آخر ظهور للاعب.
+ */
 export async function heartbeatRoom(
   roomId: string
 ) {
@@ -362,18 +480,23 @@ export async function heartbeatRoom(
     .eq('user_id', user.id);
 }
 
+/**
+ * بدء اللعبة.
+ */
 export async function startGame(
   roomId: string
 ) {
   await ensureUser();
 
-  const { data, error } =
-    await supabase.rpc(
-      'start_mafia_game',
-      {
-        p_room_id: roomId,
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'start_mafia_game',
+    {
+      p_room_id: roomId,
+    }
+  );
 
   if (error) {
     throw new Error(
@@ -387,16 +510,21 @@ export async function startGame(
   return data;
 }
 
+/**
+ * الحصول على دور اللاعب.
+ */
 export async function getMyRole(
   roomId: string
 ) {
-  const { data, error } =
-    await supabase.rpc(
-      'get_my_mafia_role',
-      {
-        p_room_id: roomId,
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'get_my_mafia_role',
+    {
+      p_room_id: roomId,
+    }
+  );
 
   if (error) {
     throw new Error(
@@ -410,17 +538,21 @@ export async function getMyRole(
   return data;
 }
 
+/**
+ * مغادرة الغرفة.
+ */
 export async function leaveRoom(
   roomId: string
 ) {
   const user = await ensureUser();
 
-  const { error } =
-    await supabase
-      .from('room_players')
-      .delete()
-      .eq('room_id', roomId)
-      .eq('user_id', user.id);
+  const {
+    error,
+  } = await supabase
+    .from('room_players')
+    .delete()
+    .eq('room_id', roomId)
+    .eq('user_id', user.id);
 
   if (error) {
     throw new Error(
@@ -432,6 +564,9 @@ export async function leaveRoom(
   }
 }
 
+/**
+ * Realtime للاعبين داخل الغرفة.
+ */
 export function subscribeToRoomPlayers(
   roomId: string,
   callback: (
@@ -455,10 +590,13 @@ export function subscribeToRoomPlayers(
         async () => {
           try {
             callback(
-              await getRoomPlayers(roomId)
+              await getRoomPlayers(
+                roomId
+              )
             );
           } catch (error) {
             console.error(
+              'room players realtime:',
               error
             );
           }
@@ -469,9 +607,14 @@ export function subscribeToRoomPlayers(
   return channel;
 }
 
+/**
+ * Realtime للغرفة نفسها.
+ */
 export function subscribeToRoom(
   roomId: string,
-  callback: (room: Room) => void
+  callback: (
+    room: Room
+  ) => void
 ) {
   const channel =
     supabase
@@ -500,6 +643,9 @@ export function subscribeToRoom(
   return channel;
 }
 
+/**
+ * إزالة قناة Realtime.
+ */
 export async function unsubscribeFromRoom(
   channel: any
 ) {
