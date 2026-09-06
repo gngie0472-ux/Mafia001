@@ -2,23 +2,22 @@ import {
   AudioModule,
   RecordingPresets,
   setAudioModeAsync,
-  useAudioRecorder,
 } from 'expo-audio';
 
-export async function requestMicrophonePermission() {
+export async function requestMicrophonePermission(): Promise<boolean> {
   const result =
     await AudioModule.requestRecordingPermissionsAsync();
 
   return result.granted;
 }
 
-export async function prepareMicrophone() {
+export async function prepareMicrophone(): Promise<boolean> {
   const granted =
     await requestMicrophonePermission();
 
   if (!granted) {
     throw new Error(
-      'لم يتم السماح باستخدام الميكروفون'
+      'لم يتم السماح باستخدام الميكروفون.'
     );
   }
 
@@ -28,6 +27,13 @@ export async function prepareMicrophone() {
   });
 
   return true;
+}
+
+export async function checkMicrophonePermission(): Promise<boolean> {
+  const result =
+    await AudioModule.getRecordingPermissionsAsync();
+
+  return result.granted;
 }
 
 export { RecordingPresets };
