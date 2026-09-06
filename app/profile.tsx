@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,6 +23,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [username, setUsername] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [newAvatarUri, setNewAvatarUri] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -39,6 +41,7 @@ export default function ProfileScreen() {
       setProfile(data);
       setUsername(data.username || '');
       setAvatarUri(data.avatar_url || null);
+      setNewAvatarUri(null);
     } catch (error: any) {
       Alert.alert(
         'خطأ',
@@ -78,6 +81,7 @@ export default function ProfileScreen() {
         result.assets?.[0]?.uri;
 
       if (selected) {
+        setNewAvatarUri(selected);
         setAvatarUri(selected);
       }
     } catch (error: any) {
@@ -111,28 +115,22 @@ export default function ProfileScreen() {
       setSaving(true);
 
       /*
-       * إذا كانت avatarUri صورة محلية من الهاتف،
-       * سيتم رفعها إلى Supabase.
+       * نرفع الصورة فقط إذا اختار المستخدم
+       * صورة جديدة من الهاتف.
        *
-       * إذا كانت بالفعل صورة Supabase،
-       * سيتم الاحتفاظ بها.
+       * إذا لم يختر صورة جديدة، تبقى الصورة
+       * الموجودة في Supabase كما هي.
        */
-      const isLocalImage =
-        avatarUri &&
-        (
-          avatarUri.startsWith('file://') ||
-          avatarUri.startsWith('content://')
-        );
-
       const updated =
         await saveMyProfileWithAvatar(
           cleanName,
-          isLocalImage ? avatarUri : null
+          newAvatarUri
         );
 
       setProfile(updated);
-      setUsername(updated.username);
-      setAvatarUri(updated.avatar_url);
+      setUsername(updated.username || '');
+      setAvatarUri(updated.avatar_url || null);
+      setNewAvatarUri(null);
 
       Alert.alert(
         'تم الحفظ',
@@ -152,7 +150,11 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator
+          size="large"
+          color="#b00020"
+        />
+
         <Text style={styles.loadingText}>
           جاري تحميل الملف الشخصي...
         </Text>
@@ -161,7 +163,11 @@ export default function ProfileScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>
           الملف الشخصي
@@ -188,6 +194,7 @@ export default function ProfileScreen() {
               <Ionicons
                 name="person"
                 size={54}
+                color="#777"
               />
             </View>
           )}
@@ -215,11 +222,16 @@ export default function ProfileScreen() {
           value={username}
           onChangeText={setUsername}
           placeholder="اكتب اسمك"
-          placeholderTextColor="#777"
+          placeholderTextColor="#666"
           maxLength={24}
           editable={!saving}
+          autoCapitalize="none"
           style={styles.input}
         />
+
+        <Text style={styles.counter}>
+          {username.length}/24
+        </Text>
       </View>
 
       {profile && (
@@ -269,9 +281,7 @@ export default function ProfileScreen() {
         disabled={saving}
       >
         {saving ? (
-          <ActivityIndicator
-            color="#fff"
-          />
+          <ActivityIndicator color="#fff" />
         ) : (
           <>
             <Ionicons
@@ -286,7 +296,12 @@ export default function ProfileScreen() {
           </>
         )}
       </Pressable>
-    </View>
+
+      <Text style={styles.infoText}>
+        اسمك وصورتك سيظهران للاعبين داخل الغرف
+        وأثناء المباراة.
+      </Text>
+    </ScrollView>
   );
 }
 
@@ -294,8 +309,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#080808',
+  },
+
+  content: {
     paddingHorizontal: 20,
     paddingTop: 60,
+    paddingBottom: 40,
   },
 
   loadingContainer: {
@@ -396,6 +415,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
+  counter: {
+    color: '#666',
+    fontSize: 11,
+    textAlign: 'right',
+    marginTop: 6,
+  },
+
   statsCard: {
     backgroundColor: '#151515',
     borderRadius: 18,
@@ -447,5 +473,13 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  infoText: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 19,
   },
 });
