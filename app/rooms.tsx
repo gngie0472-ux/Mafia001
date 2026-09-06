@@ -1,5 +1,3 @@
-// app/rooms.tsx
-
 import React, {
   useCallback,
   useEffect,
@@ -101,12 +99,13 @@ export default function RoomsScreen() {
   }, [loadRooms]);
 
   /*
-   * تحديث قائمة الغرف تلقائيًا.
+   * تحديث قائمة الغرف تلقائيًا كل 5 ثوانٍ.
    */
   useEffect(() => {
-    const interval = setInterval(() => {
-      loadRooms(false);
-    }, 5000);
+    const interval =
+      setInterval(() => {
+        loadRooms(false);
+      }, 5000);
 
     return () => {
       clearInterval(interval);
@@ -116,147 +115,179 @@ export default function RoomsScreen() {
   /*
    * إنشاء غرفة عامة.
    */
-  const handleCreateRoom = async () => {
-    const cleanName =
-      roomName.trim();
+  const handleCreateRoom =
+    async () => {
+      const cleanName =
+        roomName.trim();
 
-    const parsedMax =
-      Number(maxPlayers);
+      const parsedMax =
+        Number(maxPlayers);
 
-    if (cleanName.length < 2) {
-      Alert.alert(
-        'اسم الغرفة',
-        'اكتب اسمًا من حرفين على الأقل.'
-      );
-      return;
-    }
-
-    if (
-      !Number.isInteger(parsedMax) ||
-      parsedMax < 4 ||
-      parsedMax > 20
-    ) {
-      Alert.alert(
-        'عدد اللاعبين',
-        'عدد اللاعبين يجب أن يكون بين 4 و20.'
-      );
-      return;
-    }
-
-    try {
-      setCreating(true);
-
-      const room =
-        await createRoom(
-          cleanName,
-          parsedMax
+      if (cleanName.length < 2) {
+        Alert.alert(
+          'اسم الغرفة',
+          'اكتب اسمًا من حرفين على الأقل.'
         );
-
-      setShowCreate(false);
-
-      /*
-       * createRoom قد يرجع الغرفة نفسها
-       * أو بيانات تحتوي على id/code.
-       */
-      const roomCode =
-        (room as any)?.code ??
-        (room as any)?.id;
-
-      if (!roomCode) {
-        throw new Error(
-          'تم إنشاء الغرفة لكن لم يتم العثور على معرفها.'
-        );
+        return;
       }
 
-      router.push(
-        `/game/${roomCode}`
-      );
-    } catch (error: any) {
-      console.error(
-        'createRoom:',
-        error
-      );
+      if (
+        !Number.isInteger(
+          parsedMax
+        ) ||
+        parsedMax < 4 ||
+        parsedMax > 20
+      ) {
+        Alert.alert(
+          'عدد اللاعبين',
+          'عدد اللاعبين يجب أن يكون بين 4 و20.'
+        );
+        return;
+      }
 
-      Alert.alert(
-        'تعذر إنشاء الغرفة',
-        error?.message ||
-          'حدث خطأ أثناء إنشاء الغرفة.'
-      );
-    } finally {
-      setCreating(false);
-    }
-  };
+      if (!profile?.username?.trim()) {
+        Alert.alert(
+          'الملف الشخصي',
+          'يجب تحديد اسم اللاعب من الملف الشخصي أولًا.'
+        );
+        return;
+      }
+
+      try {
+        setCreating(true);
+
+        /*
+         * createRoom يحتاج:
+         * 1. اسم الغرفة
+         * 2. اسم اللاعب
+         * 3. الحد الأقصى للاعبين
+         */
+        const room =
+          await createRoom(
+            cleanName,
+            profile.username.trim(),
+            parsedMax
+          );
+
+        setShowCreate(false);
+
+        /*
+         * نستخدم code للانتقال إلى Lobby.
+         * إذا لم يوجد code نستخدم id كحل احتياطي.
+         */
+        const roomCode =
+          (room as any)?.code ??
+          (room as any)?.id;
+
+        if (!roomCode) {
+          throw new Error(
+            'تم إنشاء الغرفة لكن لم يتم العثور على معرفها.'
+          );
+        }
+
+        /*
+         * مهم:
+         * لا نذهب مباشرة إلى اللعبة.
+         * نذهب إلى Lobby حتى يتمكن اللاعبون
+         * من رؤية بعضهم والاستعداد قبل بدء اللعبة.
+         */
+        router.push(
+          `/room/${roomCode}`
+        );
+      } catch (error: any) {
+        console.error(
+          'createRoom:',
+          error
+        );
+
+        Alert.alert(
+          'تعذر إنشاء الغرفة',
+          error?.message ||
+            'حدث خطأ أثناء إنشاء الغرفة.'
+        );
+      } finally {
+        setCreating(false);
+      }
+    };
 
   /*
    * الانضمام إلى غرفة عامة.
    */
-  const handleJoinRoom = async (
-    room: PublicRoom
-  ) => {
-    if (
-      room.player_count >=
-      room.max_players
-    ) {
-      Alert.alert(
-        'الغرفة ممتلئة',
-        'لا توجد أماكن متاحة في هذه الغرفة.'
-      );
-      return;
-    }
+  const handleJoinRoom =
+    async (
+      room: PublicRoom
+    ) => {
+      if (
+        room.player_count >=
+        room.max_players
+      ) {
+        Alert.alert(
+          'الغرفة ممتلئة',
+          'لا توجد أماكن متاحة في هذه الغرفة.'
+        );
+        return;
+      }
 
-    if (
-      room.status &&
-      room.status !== 'waiting'
-    ) {
-      Alert.alert(
-        'اللعبة بدأت',
-        'لا يمكن الانضمام إلى هذه الغرفة الآن.'
-      );
-      return;
-    }
+      if (
+        room.status &&
+        room.status !== 'waiting'
+      ) {
+        Alert.alert(
+          'اللعبة بدأت',
+          'لا يمكن الانضمام إلى هذه الغرفة الآن.'
+        );
+        return;
+      }
 
-    try {
-      setJoiningRoomId(room.id);
+      try {
+        setJoiningRoomId(
+          room.id
+        );
 
-      await joinPublicRoom(
-        room.id
-      );
+        await joinPublicRoom(
+          room.id
+        );
 
-      /*
-       * نستخدم code إن وجد،
-       * وإلا نستخدم id.
-       */
-      const roomCode =
-        room.code ??
-        room.id;
+        /*
+         * نستخدم code للدخول إلى Lobby.
+         * Lobby هو الذي يتولى بعد ذلك
+         * الانتقال إلى game/[code] عند بدء اللعبة.
+         */
+        const roomCode =
+          room.code ??
+          room.id;
 
-      router.push(
-        `/game/${roomCode}`
-      );
-    } catch (error: any) {
-      console.error(
-        'joinPublicRoom:',
-        error
-      );
+        router.push(
+          `/room/${roomCode}`
+        );
+      } catch (error: any) {
+        console.error(
+          'joinPublicRoom:',
+          error
+        );
 
-      Alert.alert(
-        'تعذر الانضمام',
-        error?.message ||
-          'حدث خطأ أثناء الانضمام إلى الغرفة.'
-      );
-    } finally {
-      setJoiningRoomId(null);
-    }
-  };
+        Alert.alert(
+          'تعذر الانضمام',
+          error?.message ||
+            'حدث خطأ أثناء الانضمام إلى الغرفة.'
+        );
+      } finally {
+        setJoiningRoomId(
+          null
+        );
+      }
+    };
 
-  const onRefresh = async () => {
-    try {
-      setRefreshing(true);
-      await loadRooms(false);
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  const onRefresh =
+    async () => {
+      try {
+        setRefreshing(true);
+
+        await loadRooms(false);
+      } finally {
+        setRefreshing(false);
+      }
+    };
 
   const renderRoom = ({
     item,
@@ -274,17 +305,39 @@ export default function RoomsScreen() {
       joiningRoomId === item.id;
 
     return (
-      <View style={styles.roomCard}>
-        <View style={styles.roomTop}>
-          <View style={styles.roomIcon}>
-            <Text style={styles.roomIconText}>
+      <View
+        style={
+          styles.roomCard
+        }
+      >
+        <View
+          style={
+            styles.roomTop
+          }
+        >
+          <View
+            style={
+              styles.roomIcon
+            }
+          >
+            <Text
+              style={
+                styles.roomIconText
+              }
+            >
               🎭
             </Text>
           </View>
 
-          <View style={styles.roomInfo}>
+          <View
+            style={
+              styles.roomInfo
+            }
+          >
             <Text
-              style={styles.roomName}
+              style={
+                styles.roomName
+              }
               numberOfLines={1}
             >
               {item.name ||
@@ -292,7 +345,9 @@ export default function RoomsScreen() {
             </Text>
 
             <Text
-              style={styles.hostName}
+              style={
+                styles.hostName
+              }
               numberOfLines={1}
             >
               المضيف:{' '}
@@ -309,7 +364,9 @@ export default function RoomsScreen() {
             ]}
           >
             <Text
-              style={styles.statusText}
+              style={
+                styles.statusText
+              }
             >
               {unavailable
                 ? 'بدأت'
@@ -318,10 +375,16 @@ export default function RoomsScreen() {
           </View>
         </View>
 
-        <View style={styles.roomBottom}>
+        <View
+          style={
+            styles.roomBottom
+          }
+        >
           <View>
             <Text
-              style={styles.playerCount}
+              style={
+                styles.playerCount
+              }
             >
               👥 {item.player_count}/
               {item.max_players}
@@ -335,7 +398,9 @@ export default function RoomsScreen() {
               joining
             }
             onPress={() =>
-              handleJoinRoom(item)
+              handleJoinRoom(
+                item
+              )
             }
             style={[
               styles.joinButton,
@@ -370,12 +435,20 @@ export default function RoomsScreen() {
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View
+        style={
+          styles.center
+        }
+      >
         <ActivityIndicator
           size="large"
         />
 
-        <Text style={styles.loadingText}>
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
           جاري تحميل الغرف...
         </Text>
       </View>
@@ -383,25 +456,49 @@ export default function RoomsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={
+        styles.container
+      }
+    >
       {/* HEADER */}
 
-      <View style={styles.header}>
-        <View style={styles.headerTitleBox}>
-          <Text style={styles.title}>
+      <View
+        style={
+          styles.header
+        }
+      >
+        <View
+          style={
+            styles.headerTitleBox
+          }
+        >
+          <Text
+            style={
+              styles.title
+            }
+          >
             MAFIA NIGHT
           </Text>
 
-          <Text style={styles.subtitle}>
+          <Text
+            style={
+              styles.subtitle
+            }
+          >
             اختر غرفة وابدأ اللعبة
           </Text>
         </View>
 
         {profile && (
           <Pressable
-            style={styles.profileButton}
+            style={
+              styles.profileButton
+            }
             onPress={() =>
-              router.push('/profile')
+              router.push(
+                '/profile'
+              )
             }
           >
             {profile.avatar_url ? (
@@ -409,7 +506,9 @@ export default function RoomsScreen() {
                 source={{
                   uri: profile.avatar_url,
                 }}
-                style={styles.profileAvatar}
+                style={
+                  styles.profileAvatar
+                }
               />
             ) : (
               <View
@@ -435,19 +534,27 @@ export default function RoomsScreen() {
         )}
       </View>
 
-      {/* PLAYER NAME */}
+      {/* PLAYER PROFILE */}
 
       {profile && (
-        <View style={styles.welcomeCard}>
+        <View
+          style={
+            styles.welcomeCard
+          }
+        >
           <View>
             <Text
-              style={styles.welcomeSmall}
+              style={
+                styles.welcomeSmall
+              }
             >
               مرحبًا
             </Text>
 
             <Text
-              style={styles.welcomeName}
+              style={
+                styles.welcomeName
+              }
               numberOfLines={1}
             >
               {profile.username}
@@ -455,37 +562,59 @@ export default function RoomsScreen() {
           </View>
 
           <View
-            style={styles.statsContainer}
+            style={
+              styles.statsContainer
+            }
           >
-            <Text style={styles.statText}>
+            <Text
+              style={
+                styles.statText
+              }
+            >
               🏆 {profile.wins}
             </Text>
 
-            <Text style={styles.statText}>
+            <Text
+              style={
+                styles.statText
+              }
+            >
               ⭐ {profile.rating}
             </Text>
           </View>
         </View>
       )}
 
-      {/* CREATE */}
+      {/* CREATE ROOM */}
 
       {!showCreate ? (
         <Pressable
-          style={styles.createButton}
+          style={
+            styles.createButton
+          }
           onPress={() =>
             setShowCreate(true)
           }
         >
           <Text
-            style={styles.createButtonText}
+            style={
+              styles.createButtonText
+            }
           >
             ＋ إنشاء غرفة عامة
           </Text>
         </Pressable>
       ) : (
-        <View style={styles.createCard}>
-          <Text style={styles.createTitle}>
+        <View
+          style={
+            styles.createCard
+          }
+        >
+          <Text
+            style={
+              styles.createTitle
+            }
+          >
             إنشاء غرفة جديدة
           </Text>
 
@@ -497,7 +626,9 @@ export default function RoomsScreen() {
             placeholder="اسم الغرفة"
             placeholderTextColor="#777"
             maxLength={40}
-            style={styles.input}
+            style={
+              styles.input
+            }
           />
 
           <TextInput
@@ -509,14 +640,20 @@ export default function RoomsScreen() {
             placeholderTextColor="#777"
             keyboardType="number-pad"
             maxLength={2}
-            style={styles.input}
+            style={
+              styles.input
+            }
           />
 
           <View
-            style={styles.createActions}
+            style={
+              styles.createActions
+            }
           >
             <Pressable
-              style={styles.cancelButton}
+              style={
+                styles.cancelButton
+              }
               onPress={() =>
                 setShowCreate(false)
               }
@@ -532,7 +669,9 @@ export default function RoomsScreen() {
             </Pressable>
 
             <Pressable
-              style={styles.confirmButton}
+              style={
+                styles.confirmButton
+              }
               onPress={
                 handleCreateRoom
               }
@@ -558,12 +697,24 @@ export default function RoomsScreen() {
 
       {/* ROOMS */}
 
-      <View style={styles.listHeader}>
-        <Text style={styles.listTitle}>
+      <View
+        style={
+          styles.listHeader
+        }
+      >
+        <Text
+          style={
+            styles.listTitle
+          }
+        >
           الغرف العامة
         </Text>
 
-        <Text style={styles.roomTotal}>
+        <Text
+          style={
+            styles.roomTotal
+          }
+        >
           {rooms.length} غرفة
         </Text>
       </View>
@@ -573,14 +724,20 @@ export default function RoomsScreen() {
         keyExtractor={(item) =>
           item.id
         }
-        renderItem={renderRoom}
+        renderItem={
+          renderRoom
+        }
         showsVerticalScrollIndicator={
           false
         }
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
+            refreshing={
+              refreshing
+            }
+            onRefresh={
+              onRefresh
+            }
           />
         }
         contentContainerStyle={
@@ -589,17 +746,31 @@ export default function RoomsScreen() {
             : styles.listContent
         }
         ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyIcon}>
+          <View
+            style={
+              styles.emptyBox
+            }
+          >
+            <Text
+              style={
+                styles.emptyIcon
+              }
+            >
               🎭
             </Text>
 
-            <Text style={styles.emptyTitle}>
+            <Text
+              style={
+                styles.emptyTitle
+              }
+            >
               لا توجد غرف حاليًا
             </Text>
 
             <Text
-              style={styles.emptySubtitle}
+              style={
+                styles.emptySubtitle
+              }
             >
               أنشئ أول غرفة وابدأ اللعب.
             </Text>
@@ -627,335 +798,371 @@ export default function RoomsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#08090d',
-    paddingHorizontal: 16,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        '#08090d',
+      paddingHorizontal: 16,
+    },
 
-  center: {
-    flex: 1,
-    backgroundColor: '#08090d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    center: {
+      flex: 1,
+      backgroundColor:
+        '#08090d',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+    },
 
-  loadingText: {
-    color: '#999',
-    marginTop: 14,
-    fontSize: 15,
-  },
+    loadingText: {
+      color: '#999',
+      marginTop: 14,
+      fontSize: 15,
+    },
 
-  header: {
-    paddingTop: 18,
-    paddingBottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+    header: {
+      paddingTop: 18,
+      paddingBottom: 14,
+      flexDirection:
+        'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+    },
 
-  headerTitleBox: {
-    flex: 1,
-  },
+    headerTitleBox: {
+      flex: 1,
+    },
 
-  title: {
-    color: '#fff',
-    fontSize: 25,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
+    title: {
+      color: '#fff',
+      fontSize: 25,
+      fontWeight: '900',
+      letterSpacing: 2,
+    },
 
-  subtitle: {
-    color: '#777',
-    fontSize: 13,
-    marginTop: 3,
-  },
+    subtitle: {
+      color: '#777',
+      fontSize: 13,
+      marginTop: 3,
+    },
 
-  profileButton: {
-    marginLeft: 12,
-  },
+    profileButton: {
+      marginLeft: 12,
+    },
 
-  profileAvatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-  },
+    profileAvatar: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+    },
 
-  profilePlaceholder: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#292c35',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+    profilePlaceholder: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor:
+        '#292c35',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+    },
 
-  profileLetter: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
+    profileLetter: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '900',
+    },
 
-  welcomeCard: {
-    backgroundColor: '#111217',
-    borderWidth: 1,
-    borderColor: '#22242c',
-    borderRadius: 15,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
+    welcomeCard: {
+      backgroundColor:
+        '#111217',
+      borderWidth: 1,
+      borderColor:
+        '#22242c',
+      borderRadius: 15,
+      padding: 14,
+      flexDirection:
+        'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+      marginBottom: 12,
+    },
 
-  welcomeSmall: {
-    color: '#777',
-    fontSize: 11,
-  },
+    welcomeSmall: {
+      color: '#777',
+      fontSize: 11,
+    },
 
-  welcomeName: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '800',
-    marginTop: 2,
-    maxWidth: 190,
-  },
+    welcomeName: {
+      color: '#fff',
+      fontSize: 17,
+      fontWeight: '800',
+      marginTop: 2,
+      maxWidth: 190,
+    },
 
-  statsContainer: {
-    alignItems: 'flex-end',
-  },
+    statsContainer: {
+      alignItems:
+        'flex-end',
+    },
 
-  statText: {
-    color: '#aaa',
-    fontSize: 12,
-    marginVertical: 2,
-  },
+    statText: {
+      color: '#aaa',
+      fontSize: 12,
+      marginVertical: 2,
+    },
 
-  createButton: {
-    backgroundColor: '#252833',
-    borderRadius: 14,
-    paddingVertical: 15,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
+    createButton: {
+      backgroundColor:
+        '#252833',
+      borderRadius: 14,
+      paddingVertical: 15,
+      alignItems: 'center',
+      marginBottom: 16,
+    },
 
-  createButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '900',
-  },
+    createButtonText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '900',
+    },
 
-  createCard: {
-    backgroundColor: '#111217',
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#292b34',
-  },
+    createCard: {
+      backgroundColor:
+        '#111217',
+      borderRadius: 15,
+      padding: 15,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor:
+        '#292b34',
+    },
 
-  createTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-    marginBottom: 12,
-  },
+    createTitle: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '900',
+      marginBottom: 12,
+    },
 
-  input: {
-    backgroundColor: '#191a20',
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: '#292b34',
-    color: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 9,
-    fontSize: 15,
-  },
+    input: {
+      backgroundColor:
+        '#191a20',
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor:
+        '#292b34',
+      color: '#fff',
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      marginBottom: 9,
+      fontSize: 15,
+    },
 
-  createActions: {
-    flexDirection: 'row',
-    gap: 9,
-    marginTop: 3,
-  },
+    createActions: {
+      flexDirection:
+        'row',
+      gap: 9,
+      marginTop: 3,
+    },
 
-  cancelButton: {
-    flex: 1,
-    backgroundColor: '#1c1d23',
-    borderRadius: 11,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
+    cancelButton: {
+      flex: 1,
+      backgroundColor:
+        '#1c1d23',
+      borderRadius: 11,
+      paddingVertical: 13,
+      alignItems: 'center',
+    },
 
-  cancelButtonText: {
-    color: '#aaa',
-    fontWeight: '800',
-  },
+    cancelButtonText: {
+      color: '#aaa',
+      fontWeight: '800',
+    },
 
-  confirmButton: {
-    flex: 1,
-    backgroundColor: '#30333e',
-    borderRadius: 11,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
+    confirmButton: {
+      flex: 1,
+      backgroundColor:
+        '#30333e',
+      borderRadius: 11,
+      paddingVertical: 13,
+      alignItems: 'center',
+    },
 
-  confirmButtonText: {
-    color: '#fff',
-    fontWeight: '900',
-  },
+    confirmButtonText: {
+      color: '#fff',
+      fontWeight: '900',
+    },
 
-  listHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 9,
-  },
+    listHeader: {
+      flexDirection:
+        'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+      marginBottom: 9,
+    },
 
-  listTitle: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
+    listTitle: {
+      color: '#fff',
+      fontSize: 19,
+      fontWeight: '900',
+    },
 
-  roomTotal: {
-    color: '#666',
-    fontSize: 12,
-  },
+    roomTotal: {
+      color: '#666',
+      fontSize: 12,
+    },
 
-  listContent: {
-    paddingBottom: 30,
-  },
+    listContent: {
+      paddingBottom: 30,
+    },
 
-  roomCard: {
-    backgroundColor: '#111217',
-    borderRadius: 15,
-    padding: 14,
-    marginBottom: 9,
-    borderWidth: 1,
-    borderColor: '#22242c',
-  },
+    roomCard: {
+      backgroundColor:
+        '#111217',
+      borderRadius: 15,
+      padding: 14,
+      marginBottom: 9,
+      borderWidth: 1,
+      borderColor:
+        '#22242c',
+    },
 
-  roomTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+    roomTop: {
+      flexDirection:
+        'row',
+      alignItems: 'center',
+    },
 
-  roomIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#1b1c24',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 11,
-  },
+    roomIcon: {
+      width: 46,
+      height: 46,
+      borderRadius: 12,
+      backgroundColor:
+        '#1b1c24',
+      alignItems: 'center',
+      justifyContent:
+        'center',
+      marginRight: 11,
+    },
 
-  roomIconText: {
-    fontSize: 23,
-  },
+    roomIconText: {
+      fontSize: 23,
+    },
 
-  roomInfo: {
-    flex: 1,
-  },
+    roomInfo: {
+      flex: 1,
+    },
 
-  roomName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-  },
+    roomName: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: '900',
+    },
 
-  hostName: {
-    color: '#777',
-    fontSize: 12,
-    marginTop: 4,
-  },
+    hostName: {
+      color: '#777',
+      fontSize: 12,
+      marginTop: 4,
+    },
 
-  statusBadge: {
-    backgroundColor: '#18231d',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-  },
+    statusBadge: {
+      backgroundColor:
+        '#18231d',
+      borderRadius: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 5,
+    },
 
-  statusPlaying: {
-    backgroundColor: '#2a1b1d',
-  },
+    statusPlaying: {
+      backgroundColor:
+        '#2a1b1d',
+    },
 
-  statusText: {
-    color: '#aaa',
-    fontSize: 10,
-    fontWeight: '800',
-  },
+    statusText: {
+      color: '#aaa',
+      fontSize: 10,
+      fontWeight: '800',
+    },
 
-  roomBottom: {
-    marginTop: 13,
-    paddingTop: 11,
-    borderTopWidth: 1,
-    borderTopColor: '#202129',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+    roomBottom: {
+      marginTop: 13,
+      paddingTop: 11,
+      borderTopWidth: 1,
+      borderTopColor:
+        '#202129',
+      flexDirection:
+        'row',
+      alignItems: 'center',
+      justifyContent:
+        'space-between',
+    },
 
-  playerCount: {
-    color: '#888',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+    playerCount: {
+      color: '#888',
+      fontSize: 12,
+      fontWeight: '700',
+    },
 
-  joinButton: {
-    backgroundColor: '#252833',
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    minWidth: 90,
-    alignItems: 'center',
-  },
+    joinButton: {
+      backgroundColor:
+        '#252833',
+      borderRadius: 10,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      minWidth: 90,
+      alignItems: 'center',
+    },
 
-  disabledButton: {
-    opacity: 0.4,
-  },
+    disabledButton: {
+      opacity: 0.4,
+    },
 
-  joinButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-  },
+    joinButtonText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '900',
+    },
 
-  emptyContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
+    emptyContainer: {
+      flexGrow: 1,
+      justifyContent:
+        'center',
+    },
 
-  emptyBox: {
-    alignItems: 'center',
-    padding: 25,
-  },
+    emptyBox: {
+      alignItems: 'center',
+      padding: 25,
+    },
 
-  emptyIcon: {
-    fontSize: 46,
-    marginBottom: 12,
-  },
+    emptyIcon: {
+      fontSize: 46,
+      marginBottom: 12,
+    },
 
-  emptyTitle: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
+    emptyTitle: {
+      color: '#fff',
+      fontSize: 19,
+      fontWeight: '900',
+    },
 
-  emptySubtitle: {
-    color: '#777',
-    fontSize: 13,
-    marginTop: 6,
-    marginBottom: 16,
-  },
+    emptySubtitle: {
+      color: '#777',
+      fontSize: 13,
+      marginTop: 6,
+      marginBottom: 16,
+    },
 
-  emptyCreateButton: {
-    backgroundColor: '#252833',
-    borderRadius: 11,
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-  },
-});
+    emptyCreateButton: {
+      backgroundColor:
+        '#252833',
+      borderRadius: 11,
+      paddingHorizontal: 22,
+      paddingVertical: 12,
+    },
+  });
