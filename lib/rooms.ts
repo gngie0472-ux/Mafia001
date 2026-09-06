@@ -28,9 +28,6 @@ function generateRoomCode(length = 6) {
   return code;
 }
 
-/**
- * تحويل خطأ Supabase إلى رسالة مفيدة
- */
 function formatSupabaseError(error: any, fallback: string) {
   if (!error) {
     return fallback;
@@ -50,7 +47,8 @@ function formatSupabaseError(error: any, fallback: string) {
  * تسجيل دخول مجهول
  */
 export async function signInAnonymously() {
-  const { data, error } = await supabase.auth.signInAnonymously();
+  const { data, error } =
+    await supabase.auth.signInAnonymously();
 
   if (error) {
     throw new Error(
@@ -74,9 +72,6 @@ export async function createRoom(
 ) {
   let user = (await supabase.auth.getUser()).data.user;
 
-  /**
-   * إذا لم يوجد مستخدم، نحاول إنشاء مستخدم مجهول
-   */
   if (!user) {
     user = await signInAnonymously();
   }
@@ -85,16 +80,11 @@ export async function createRoom(
     throw new Error("تعذر إنشاء المستخدم");
   }
 
-  let code = "";
   let room: Room | null = null;
   let lastError: any = null;
 
-  /**
-   * نحاول حتى 10 مرات فقط إذا كان الخطأ
-   * بسبب تكرار كود الغرفة.
-   */
   for (let attempt = 0; attempt < 10; attempt++) {
-    code = generateRoomCode();
+    const code = generateRoomCode();
 
     const { data, error } = await supabase
       .from("rooms")
@@ -109,19 +99,12 @@ export async function createRoom(
       .single();
 
     if (!error) {
-      room = data;
+      room = data as Room;
       break;
     }
 
     lastError = error;
 
-    /**
-     * 23505 = duplicate key
-     *
-     * في هذه الحالة فقط نولد كودًا جديدًا.
-     * أما بقية الأخطاء فهي أخطاء حقيقية في
-     * قاعدة البيانات أو RLS ولا فائدة من إعادة المحاولة.
-     */
     if (error.code !== "23505") {
       break;
     }
@@ -136,9 +119,6 @@ export async function createRoom(
     );
   }
 
-  /**
-   * إضافة صاحب الغرفة كلاعب
-   */
   const { error: playerError } = await supabase
     .from("room_players")
     .insert({
@@ -149,10 +129,6 @@ export async function createRoom(
     });
 
   if (playerError) {
-    /**
-     * إذا فشلت إضافة المضيف، نحذف الغرفة التي أنشأناها
-     * حتى لا تبقى غرفة فارغة في قاعدة البيانات.
-     */
     await supabase
       .from("rooms")
       .delete()
@@ -186,12 +162,15 @@ export async function joinRoom(
     throw new Error("تعذر إنشاء المستخدم");
   }
 
-  const { data: room, error: roomError } = await supabase
-    .from("rooms")
-    .select("*")
-    .eq("code", code.trim().toUpperCase())
-    .eq("status", "waiting")
-    .single();
+  const normalizedCode = code.trim().toUpperCase();
+
+  const { data: room, error: roomError } =
+    await supabase
+      .from("rooms")
+      .select("*")
+      .eq("code", normalizedCode)
+      .eq("status", "waiting")
+      .single();
 
   if (roomError || !room) {
     throw new Error(
@@ -204,16 +183,14 @@ export async function joinRoom(
     );
   }
 
-  /**
-   * عدد اللاعبين الحاليين
-   */
-  const { count, error: countError } = await supabase
-    .from("room_players")
-    .select("*", {
-      count: "exact",
-      head: true,
-    })
-    .eq("room_id", room.id);
+  const { count, error: countError } =
+    await supabase
+      .from("room_players")
+      .select("*", {
+        count: "exact",
+        head: true,
+      })
+      .eq("room_id", room.id);
 
   if (countError) {
     throw new Error(
@@ -228,25 +205,24 @@ export async function joinRoom(
     throw new Error("الغرفة ممتلئة");
   }
 
-  /**
-   * التأكد من أن المستخدم ليس موجودًا بالفعل
-   */
-  const { data: existingPlayer } = await supabase
-    .from("room_players")
-    .select("*")
-    .eq("room_id", room.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { data: existingPlayer } =
+    await supabase
+      .from("room_players")
+      .select("*")
+      .eq("room_id", room.id)
+      .eq("user_id", user.id)
+      .maybeSingle();
 
   if (!existingPlayer) {
-    const { error: playerError } = await supabase
-      .from("room_players")
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        name: playerName,
-        ready: false,
-      });
+    const { error: playerError } =
+      await supabase
+        .from("room_players")
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          name: playerName,
+          ready: false,
+        });
 
     if (playerError) {
       throw new Error(
@@ -258,13 +234,15 @@ export async function joinRoom(
     }
   }
 
-  return room;
+  return room as Room;
 }
 
 /**
  * جلب لاعبي الغرفة
  */
-export async function getRoomPlayers(roomId: string) {
+export async function getRoomPlayers(
+  roomId: string
+) {
   const { data, error } = await supabase
     .from("room_players")
     .select("*")
@@ -277,7 +255,7 @@ export async function getRoomPlayers(roomId: string) {
     throw error;
   }
 
-  return data as RoomPlayer[];
+  return (data ?? []) as RoomPlayer[];
 }
 
 /**
@@ -304,14 +282,22 @@ export async function setReady(
     .single();
 
   if (error) {
-    throw error;
+    throw new Error(
+      formatSupabaseError(
+        error,
+        "تعذر تغيير حالة الجاهزية"
+      )
+    );
   }
 
-  return data;
+  return data as RoomPlayer;
 }
 
 /**
  * بدء اللعبة
+ *
+ * يتم تنفيذ توزيع الأدوار داخل Supabase
+ * عن طريق الدالة الآمنة start_mafia_game.
  */
 export async function startGame(roomId: string) {
   const user = (await supabase.auth.getUser()).data.user;
@@ -320,62 +306,51 @@ export async function startGame(roomId: string) {
     throw new Error("المستخدم غير مسجل");
   }
 
-  const { data: room, error: roomError } = await supabase
-    .from("rooms")
-    .select("*")
-    .eq("id", roomId)
-    .single();
-
-  if (roomError || !room) {
-    throw new Error("الغرفة غير موجودة");
-  }
-
-  if (room.host_id !== user.id) {
-    throw new Error(
-      "فقط صاحب الغرفة يستطيع بدء اللعبة"
-    );
-  }
-
-  const { data: players, error: playersError } =
-    await supabase
-      .from("room_players")
-      .select("*")
-      .eq("room_id", roomId);
-
-  if (playersError) {
-    throw playersError;
-  }
-
-  if (!players || players.length < 2) {
-    throw new Error(
-      "يجب أن يكون هناك لاعبان على الأقل"
-    );
-  }
-
-  const allReady = players.every(
-    (player) => player.ready
+  const { data, error } = await supabase.rpc(
+    "start_mafia_game",
+    {
+      p_room_id: roomId,
+    }
   );
 
-  if (!allReady) {
-    throw new Error(
-      "يجب أن يكون جميع اللاعبين Ready"
-    );
-  }
-
-  const { data, error } = await supabase
-    .from("rooms")
-    .update({
-      status: "playing",
-    })
-    .eq("id", roomId)
-    .select()
-    .single();
-
   if (error) {
-    throw error;
+    throw new Error(
+      formatSupabaseError(
+        error,
+        "تعذر بدء اللعبة"
+      )
+    );
   }
 
   return data;
+}
+
+/**
+ * جلب دور اللاعب الحالي فقط
+ *
+ * لا يمكن لهذه الدالة إرجاع دور لاعب آخر.
+ */
+export async function getMyRole(roomId: string) {
+  const { data, error } = await supabase.rpc(
+    "get_my_mafia_role",
+    {
+      p_room_id: roomId,
+    }
+  );
+
+  if (error) {
+    throw new Error(
+      formatSupabaseError(
+        error,
+        "تعذر تحميل دورك"
+      )
+    );
+  }
+
+  return data as {
+    role: string;
+    alive: boolean;
+  };
 }
 
 /**
@@ -395,7 +370,12 @@ export async function leaveRoom(roomId: string) {
     .eq("user_id", user.id);
 
   if (error) {
-    throw error;
+    throw new Error(
+      formatSupabaseError(
+        error,
+        "تعذر مغادرة الغرفة"
+      )
+    );
   }
 }
 
@@ -453,7 +433,9 @@ export function subscribeToRoom(
         filter: `id=eq.${roomId}`,
       },
       (payload) => {
-        callback(payload.new as Room);
+        if (payload.new) {
+          callback(payload.new as Room);
+        }
       }
     )
     .subscribe();
@@ -467,5 +449,7 @@ export function subscribeToRoom(
 export async function unsubscribeFromRoom(
   channel: any
 ) {
-  await supabase.removeChannel(channel);
+  if (channel) {
+    await supabase.removeChannel(channel);
+  }
 }
