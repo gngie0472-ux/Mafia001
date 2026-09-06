@@ -1,50 +1,80 @@
-import React, { useState } from "react";
+import React, {
+  useState,
+} from 'react';
+
 import {
-  Alert,
   ActivityIndicator,
+  Alert,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
-} from "react-native";
-import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
+} from 'react-native';
 
-import { createRoom } from "../lib/rooms";
+import {
+  router,
+} from 'expo-router';
+
+import {
+  Ionicons,
+} from '@expo/vector-icons';
+
+import {
+  SafeAreaView,
+} from 'react-native-safe-area-context';
+
+import {
+  createRoom,
+} from '../lib/rooms';
+
+import {
+  getMyProfile,
+} from '../lib/profile';
 
 export default function CreateRoom() {
-  const [roomName, setRoomName] = useState("");
-  const [players, setPlayers] = useState("8");
-  const [loading, setLoading] = useState(false);
+  const [roomName, setRoomName] =
+    useState('');
 
-  async function handleCreateRoom() {
-    const name = roomName.trim();
+  const [players, setPlayers] =
+    useState('8');
+
+  const [loading, setLoading] =
+    useState(false);
+
+  async function handleCreate() {
+    const name =
+      roomName.trim();
 
     if (!name) {
-      Alert.alert("Missing room name", "Please enter a room name.");
+      Alert.alert(
+        'Room name',
+        'Enter a name for the room.'
+      );
       return;
     }
-
-    if (loading) return;
 
     try {
       setLoading(true);
 
-      const room = await createRoom(
-        name,
-        "Host",
-        Number(players)
+      const profile =
+        await getMyProfile();
+
+      const room =
+        await createRoom(
+          name,
+          profile.username,
+          Number(players)
+        );
+
+      router.replace(
+        `/room/${room.id}`
       );
-
-      router.replace(`/room/${room.code}`);
     } catch (error: any) {
-      console.error("Create room error:", error);
-
       Alert.alert(
-        "Could not create room",
-        error?.message || "Something went wrong."
+        'Could not create room',
+        error?.message ||
+          'Something went wrong.'
       );
     } finally {
       setLoading(false);
@@ -52,11 +82,17 @@ export default function CreateRoom() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
+    <SafeAreaView
+      style={styles.safe}
+    >
+      <View
+        style={styles.container}
+      >
         <Pressable
-          onPress={() => router.back()}
           style={styles.back}
+          onPress={() =>
+            router.back()
+          }
           disabled={loading}
         >
           <Ionicons
@@ -64,46 +100,84 @@ export default function CreateRoom() {
             size={22}
             color="#EEE"
           />
-          <Text style={styles.backText}>Back</Text>
+
+          <Text
+            style={styles.backText}
+          >
+            Back
+          </Text>
         </Pressable>
 
-        <Text style={styles.kicker}>HOST A GAME</Text>
-
-        <Text style={styles.title}>Create Room</Text>
-
-        <Text style={styles.sub}>
-          Set the rules, invite your crew, and let the night begin.
+        <Text
+          style={styles.kicker}
+        >
+          HOST A GAME
         </Text>
 
-        <Text style={styles.label}>ROOM NAME</Text>
+        <Text
+          style={styles.title}
+        >
+          Create Room
+        </Text>
+
+        <Text
+          style={styles.sub}
+        >
+          Create a public Mafia game.
+          Other players will see it
+          immediately.
+        </Text>
+
+        <Text
+          style={styles.label}
+        >
+          ROOM NAME
+        </Text>
 
         <TextInput
           value={roomName}
-          onChangeText={setRoomName}
+          onChangeText={
+            setRoomName
+          }
           placeholder="Friday Night"
           placeholderTextColor="#666872"
           style={styles.input}
-          editable={!loading}
           maxLength={40}
+          editable={!loading}
         />
 
-        <Text style={styles.label}>PLAYERS</Text>
+        <Text
+          style={styles.label}
+        >
+          PLAYERS
+        </Text>
 
-        <View style={styles.row}>
-          {["6", "8", "10", "12"].map((n) => (
+        <View
+          style={styles.row}
+        >
+          {[
+            '6',
+            '8',
+            '10',
+            '12',
+            '16',
+          ].map((n) => (
             <Pressable
               key={n}
-              onPress={() => setPlayers(n)}
-              disabled={loading}
+              onPress={() =>
+                setPlayers(n)
+              }
               style={[
                 styles.choice,
-                players === n && styles.choiceOn,
+                players === n &&
+                  styles.choiceOn,
               ]}
             >
               <Text
                 style={[
                   styles.choiceText,
-                  players === n && styles.choiceTextOn,
+                  players === n &&
+                    styles.choiceTextOn,
                 ]}
               >
                 {n}
@@ -112,22 +186,35 @@ export default function CreateRoom() {
           ))}
         </View>
 
-        <Text style={styles.label}>MODE</Text>
+        <Text
+          style={styles.label}
+        >
+          MODE
+        </Text>
 
-        <View style={styles.mode}>
+        <View
+          style={styles.mode}
+        >
           <Ionicons
             name="moon"
-            size={22}
+            size={24}
             color="#D7A94B"
           />
 
-          <View style={{ flex: 1 }}>
-            <Text style={styles.modeTitle}>
+          <View
+            style={styles.modeInfo}
+          >
+            <Text
+              style={styles.modeTitle}
+            >
               Classic Mafia
             </Text>
 
-            <Text style={styles.modeSub}>
-              Night & day • hidden roles • voting
+            <Text
+              style={styles.modeSub}
+            >
+              Night • Day • Roles •
+              Investigation • Voting
             </Text>
           </View>
 
@@ -138,28 +225,49 @@ export default function CreateRoom() {
           />
         </View>
 
+        <View
+          style={styles.publicBox}
+        >
+          <Ionicons
+            name="globe-outline"
+            size={20}
+            color="#D7A94B"
+          />
+
+          <Text
+            style={styles.publicText}
+          >
+            Public room — anyone can
+            join while the lobby is open.
+          </Text>
+        </View>
+
         <Pressable
           style={[
             styles.button,
-            loading && styles.buttonDisabled,
+            loading &&
+              styles.disabled,
           ]}
-          onPress={handleCreateRoom}
+          onPress={handleCreate}
           disabled={loading}
         >
           {loading ? (
             <>
               <ActivityIndicator
-                size="small"
                 color="#090A0D"
               />
 
-              <Text style={styles.buttonText}>
+              <Text
+                style={styles.buttonText}
+              >
                 CREATING...
               </Text>
             </>
           ) : (
             <>
-              <Text style={styles.buttonText}>
+              <Text
+                style={styles.buttonText}
+              >
                 CREATE ROOM
               </Text>
 
@@ -176,138 +284,185 @@ export default function CreateRoom() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#090A0D",
-  },
+const styles =
+  StyleSheet.create({
+    safe: {
+      flex: 1,
+      backgroundColor:
+        '#090A0D',
+    },
 
-  container: {
-    padding: 20,
-  },
+    container: {
+      padding: 20,
+    },
 
-  back: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 34,
-  },
+    back: {
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
+      gap: 8,
+      marginBottom: 32,
+    },
 
-  backText: {
-    color: "#AAA",
-    fontSize: 13,
-  },
+    backText: {
+      color: '#AAA',
+    },
 
-  kicker: {
-    fontSize: 10,
-    letterSpacing: 2,
-    color: "#B5222E",
-    fontWeight: "900",
-  },
+    kicker: {
+      color: '#B5222E',
+      fontSize: 10,
+      letterSpacing: 2,
+      fontWeight: '900',
+    },
 
-  title: {
-    fontSize: 34,
-    color: "#F4F1EF",
-    fontWeight: "900",
-    marginTop: 5,
-  },
+    title: {
+      color: '#F4F1EF',
+      fontSize: 34,
+      fontWeight: '900',
+      marginTop: 4,
+    },
 
-  sub: {
-    color: "#898A92",
-    lineHeight: 20,
-    marginTop: 7,
-    marginBottom: 28,
-  },
+    sub: {
+      color: '#898A92',
+      lineHeight: 20,
+      marginTop: 7,
+      marginBottom: 22,
+    },
 
-  label: {
-    fontSize: 10,
-    letterSpacing: 1.5,
-    color: "#777983",
-    fontWeight: "900",
-    marginTop: 14,
-    marginBottom: 9,
-  },
+    label: {
+      color: '#777983',
+      fontSize: 10,
+      letterSpacing: 1.5,
+      fontWeight: '900',
+      marginTop: 13,
+      marginBottom: 9,
+    },
 
-  input: {
-    height: 52,
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: "#292B32",
-    backgroundColor: "#14151A",
-    paddingHorizontal: 15,
-    color: "#EEE",
-  },
+    input: {
+      height: 52,
+      borderRadius: 13,
+      borderWidth: 1,
+      borderColor:
+        '#292B32',
+      backgroundColor:
+        '#14151A',
+      paddingHorizontal: 15,
+      color: '#EEE',
+    },
 
-  row: {
-    flexDirection: "row",
-    gap: 9,
-  },
+    row: {
+      flexDirection:
+        'row',
+      gap: 7,
+    },
 
-  choice: {
-    flex: 1,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#292B32",
-    backgroundColor: "#14151A",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    choice: {
+      flex: 1,
+      height: 47,
+      borderRadius: 11,
+      borderWidth: 1,
+      borderColor:
+        '#292B32',
+      backgroundColor:
+        '#14151A',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+    },
 
-  choiceOn: {
-    borderColor: "#D7A94B",
-    backgroundColor: "#2A2110",
-  },
+    choiceOn: {
+      borderColor:
+        '#D7A94B',
+      backgroundColor:
+        '#2A2110',
+    },
 
-  choiceText: {
-    color: "#888993",
-    fontWeight: "800",
-  },
+    choiceText: {
+      color: '#888993',
+      fontWeight: '800',
+    },
 
-  choiceTextOn: {
-    color: "#D7A94B",
-  },
+    choiceTextOn: {
+      color: '#D7A94B',
+    },
 
-  mode: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 13,
-    padding: 15,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#292B32",
-    backgroundColor: "#14151A",
-  },
+    mode: {
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
+      gap: 12,
+      padding: 15,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor:
+        '#292B32',
+      backgroundColor:
+        '#14151A',
+    },
 
-  modeTitle: {
-    color: "#EEE",
-    fontWeight: "800",
-  },
+    modeInfo: {
+      flex: 1,
+    },
 
-  modeSub: {
-    color: "#777983",
-    fontSize: 10,
-    marginTop: 3,
-  },
+    modeTitle: {
+      color: '#EEE',
+      fontWeight: '900',
+    },
 
-  button: {
-    marginTop: 34,
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: "#D7A94B",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-  },
+    modeSub: {
+      color: '#777983',
+      fontSize: 10,
+      marginTop: 4,
+    },
 
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+    publicBox: {
+      marginTop: 13,
+      padding: 14,
+      borderRadius: 13,
+      backgroundColor:
+        '#15130E',
+      borderWidth: 1,
+      borderColor:
+        '#4A3B1B',
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
+      gap: 10,
+    },
 
-  buttonText: {
-    fontWeight: "900",
-    letterSpacing: 1,
-    color: "#090A0D",
-  },
-});
+    publicText: {
+      flex: 1,
+      color: '#AAA',
+      fontSize: 11,
+      lineHeight: 17,
+    },
+
+    button: {
+      marginTop: 27,
+      height: 54,
+      borderRadius: 14,
+      backgroundColor:
+        '#D7A94B',
+      flexDirection:
+        'row',
+      alignItems:
+        'center',
+      justifyContent:
+        'center',
+      gap: 10,
+    },
+
+    disabled: {
+      opacity: 0.55,
+    },
+
+    buttonText: {
+      color: '#090A0D',
+      fontWeight: '900',
+      letterSpacing: 1,
+    },
+  });
