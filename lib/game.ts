@@ -21,11 +21,15 @@ export type GameRoom = {
   game_round: number;
   game_phase: GamePhase;
   winner: string | null;
+  phase_ends_at: string | null;
+
   last_event: {
     type?: string;
     player_id?: string;
     round?: number;
     winner?: string;
+    phase?: GamePhase;
+    phase_ends_at?: string;
   } | null;
 };
 
@@ -189,6 +193,39 @@ export async function startMafiaGame(
   if (error) {
     console.error(
       'startMafiaGame error:',
+      error
+    );
+
+    throw error;
+  }
+
+  return data;
+}
+
+/**
+ * محاولة الانتقال إلى المرحلة التالية.
+ *
+ * السيرفر هو الذي يقرر هل انتهى الوقت فعلاً.
+ * لذلك حتى لو تم استدعاء هذه الدالة كل ثانية،
+ * لن تنتقل اللعبة قبل phase_ends_at.
+ */
+export async function advanceMafiaPhase(
+  roomId: string
+) {
+  if (!roomId) {
+    throw new Error('Missing room ID');
+  }
+
+  const { data, error } = await supabase.rpc(
+    'advance_mafia_phase',
+    {
+      p_room_id: roomId,
+    }
+  );
+
+  if (error) {
+    console.error(
+      'advanceMafiaPhase error:',
       error
     );
 
