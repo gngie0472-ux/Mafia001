@@ -84,6 +84,76 @@ export async function saveMyProfile(
   return data as Profile;
 }
 
+/**
+ * رفع صورة اللاعب إلى Supabase Storage.
+ *
+ * imageUri:
+ *   المسار المحلي للصورة المختارة من الهاتف.
+ */
+export async function uploadAvatar(
+  imageUri: string
+): Promise<string> {
+  const user = await ensureAuth();
+
+  if (!imageUri) {
+    throw new Error('لم يتم اختيار صورة.');
+  }
+
+  const response = await fetch(imageUri);
+
+  if (!response.ok) {
+    throw new Error('تعذر قراءة صورة الملف الشخصي.');
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+
+  const filePath = `${user.id}/avatar.jpg`;
+
+  const { error: uploadError } =
+    await supabase.storage
+      .from('avatars')
+      .upload(filePath, arrayBuffer, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+  if (uploadError) {
+    throw new Error(
+      uploadError.message ||
+        'تعذر رفع صورة الملف الشخصي.'
+    );
+  }
+
+  const { data } =
+    supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
+
+  if (!data?.publicUrl) {
+    throw new Error(
+      'تعذر الحصول على رابط صورة الملف الشخصي.'
+    );
+  }
+
+  return `${data.publicUrl}?t=${Date.now()}`;
+}
+
+export async function saveMyProfileWithAvatar(
+  username: string,
+  imageUri?: string | null
+): Promise<Profile> {
+  let avatarUrl: string | null = null;
+
+  if (imageUri) {
+    avatarUrl = await uploadAvatar(imageUri);
+  }
+
+  return saveMyProfile(
+    username,
+    avatarUrl
+  );
+}
+
 export async function getCurrentUserId() {
   const user = await ensureAuth();
   return user.id;
