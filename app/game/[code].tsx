@@ -106,12 +106,6 @@ const ROLE_COLORS: Record<GameRole, string> = {
   CITIZEN: "#D7A94B",
 };
 
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
-}
-
 function getSecondsLeft(
   endsAt: string | null
 ): number {
@@ -191,6 +185,16 @@ function getEventText(
   }
 }
 
+function isUuid(value?: string | null) {
+  if (!value) {
+    return false;
+  }
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
 function PlayerAvatar({
   player,
   profile,
@@ -259,12 +263,15 @@ export default function MafiaGameScreen() {
     }>();
 
   /*
-   * القيمة القادمة من الرابط قد تكون:
+   * قد يكون الرابط:
    *
-   * 1. UUID
-   * 2. كود الغرفة مثل T2GZ6M
+   * /game/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
    *
-   * لا نرسلها مباشرة إلى RPC.
+   * أو:
+   *
+   * /game/T2GZ6M
+   *
+   * لذلك لا نستعمل قيمة route مباشرة كـ UUID.
    */
   const routeValue = Array.isArray(
     params.code
@@ -354,10 +361,10 @@ export default function MafiaGameScreen() {
     let cancelled = false;
 
     async function resolveRoom() {
-      const value =
+      const normalized =
         routeValue?.trim();
 
-      if (!value) {
+      if (!normalized) {
         if (!cancelled) {
           setRoomId(null);
           setResolvingRoom(false);
@@ -365,41 +372,33 @@ export default function MafiaGameScreen() {
         return;
       }
 
+      /*
+       * إذا كان UUID بالفعل نستعمله مباشرة.
+       */
+      if (isUuid(normalized)) {
+        if (!cancelled) {
+          setRoomId(normalized);
+          setResolvingRoom(false);
+        }
+        return;
+      }
+
+      /*
+       * وإلا نفترض أنه كود غرفة مثل T2GZ6M
+       * ونبحث عن UUID الحقيقي.
+       */
       try {
         setResolvingRoom(true);
 
-        /*
-         * إذا كان الرابط يحتوي UUID بالفعل،
-         * نستخدمه مباشرة.
-         */
-        if (isUuid(value)) {
-          if (!cancelled) {
-            setRoomId(value);
-          }
-
-          return;
-        }
-
-        /*
-         * إذا كان الرابط يحتوي كودًا قصيرًا مثل:
-         * T2GZ6M
-         *
-         * نحصل على UUID الحقيقي للغرفة.
-         */
-        const normalizedCode =
-          value.toUpperCase();
-
-        const {
-          data,
-          error,
-        } = await supabase
-          .from("rooms")
-          .select("id")
-          .eq(
-            "code",
-            normalizedCode
-          )
-          .maybeSingle();
+        const { data, error } =
+          await supabase
+            .from("rooms")
+            .select("id")
+            .eq(
+              "code",
+              normalized.toUpperCase()
+            )
+            .maybeSingle();
 
         if (error) {
           throw error;
@@ -407,7 +406,7 @@ export default function MafiaGameScreen() {
 
         if (!data?.id) {
           throw new Error(
-            "الغرفة غير موجودة أو لم يعد رابطها صالحًا."
+            "الغرفة غير موجودة أو أن كود الغرفة غير صحيح."
           );
         }
 
@@ -426,7 +425,7 @@ export default function MafiaGameScreen() {
           Alert.alert(
             "تعذر العثور على الغرفة",
             error?.message ||
-              "تعذر تحويل كود الغرفة إلى معرفها."
+              "تعذر تحويل كود الغرفة إلى معرف صالح."
           );
         }
       } finally {
@@ -672,8 +671,14 @@ export default function MafiaGameScreen() {
     ]
   );
 
+  /*
+   * يبدأ تحميل اللعبة فقط بعد الحصول على UUID الحقيقي.
+   */
   useEffect(() => {
-    if (!roomId) {
+    if (
+      resolvingRoom ||
+      !roomId
+    ) {
       return;
     }
 
@@ -686,6 +691,7 @@ export default function MafiaGameScreen() {
       mountedRef.current = false;
     };
   }, [
+    resolvingRoom,
     roomId,
     loadGame,
     loadMessages,
@@ -698,7 +704,10 @@ export default function MafiaGameScreen() {
    */
 
   useEffect(() => {
-    if (!roomId) {
+    if (
+      resolvingRoom ||
+      !roomId
+    ) {
       return;
     }
 
@@ -713,6 +722,7 @@ export default function MafiaGameScreen() {
       );
     };
   }, [
+    resolvingRoom,
     roomId,
     loadGame,
   ]);
@@ -724,7 +734,10 @@ export default function MafiaGameScreen() {
    */
 
   useEffect(() => {
-    if (!roomId) {
+    if (
+      resolvingRoom ||
+      !roomId
+    ) {
       return;
     }
 
@@ -777,6 +790,7 @@ export default function MafiaGameScreen() {
       );
     };
   }, [
+    resolvingRoom,
     roomId,
     loadGame,
     loadMessages,
@@ -834,7 +848,8 @@ export default function MafiaGameScreen() {
           remaining <= 0 &&
           gameState.room.status ===
             "playing" &&
-          !advancingRef.current
+          !advancingRef.current &&
+          roomId
         ) {
           const now =
             Date.now();
@@ -849,12 +864,6 @@ export default function MafiaGameScreen() {
 
             advancingRef.current =
               true;
-
-            if (!roomId) {
-              advancingRef.current =
-                false;
-              return;
-            }
 
             advanceMafiaPhase(
               roomId
@@ -919,7 +928,10 @@ export default function MafiaGameScreen() {
     let cancelled = false;
 
     async function connectVoice() {
-      if (!roomId) {
+      if (
+        resolvingRoom ||
+        !roomId
+      ) {
         return;
       }
 
@@ -1041,7 +1053,10 @@ export default function MafiaGameScreen() {
         () => {}
       );
     };
-  }, [roomId]);
+  }, [
+    resolvingRoom,
+    roomId,
+  ]);
 
   /*
    * يمنع الميكروفون خارج النهار.
@@ -1481,7 +1496,7 @@ export default function MafiaGameScreen() {
 
   /*
    * ----------------------------------------------------
-   * Resolving room
+   * Resolve loading
    * ----------------------------------------------------
    */
 
@@ -3290,6 +3305,10 @@ const styles =
       height: 30,
     },
 
+    /*
+     * ROLE CARD
+     */
+
     roleOverlay: {
       position: "absolute",
       left: 0,
@@ -3420,3 +3439,6 @@ const styles =
       fontWeight: "900",
     },
   });
+
+[/code]
+[/writing]
