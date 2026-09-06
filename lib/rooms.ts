@@ -133,14 +133,8 @@ async function generateUniqueRoomCode(): Promise<string> {
 
 /**
  * التأكد من وجود مستخدم وجلسة Supabase.
- *
- * هذه النقطة مهمة جداً لأن RPCs التي تستخدم
- * auth.uid() تحتاج إلى Session حقيقية.
  */
 async function ensureUser() {
-  // --------------------------------------------------
-  // 1. محاولة استخدام الجلسة الموجودة مسبقاً
-  // --------------------------------------------------
   const {
     data: sessionData,
     error: sessionError,
@@ -157,9 +151,6 @@ async function ensureUser() {
     return sessionData.session.user;
   }
 
-  // --------------------------------------------------
-  // 2. لا توجد جلسة -> تسجيل دخول مجهول
-  // --------------------------------------------------
   const {
     data: authData,
     error: authError,
@@ -174,18 +165,12 @@ async function ensureUser() {
     );
   }
 
-  // --------------------------------------------------
-  // 3. التأكد من وجود المستخدم
-  // --------------------------------------------------
   if (!authData?.user) {
     throw new Error(
       'تعذر إنشاء حساب اللاعب'
     );
   }
 
-  // --------------------------------------------------
-  // 4. التأكد من أن Session أصبحت موجودة فعلاً
-  // --------------------------------------------------
   let session = authData.session;
 
   if (!session) {
@@ -366,6 +351,10 @@ export async function createRoom(
 
 /**
  * تحميل الغرف العامة المتاحة.
+ *
+ * ملاحظة:
+ * دالة get_public_rooms في Supabase هي التي تحدد
+ * اللاعبين النشطين فعلياً اعتماداً على last_seen_at.
  */
 export async function getPublicRooms(): Promise<
   PublicRoom[]
@@ -388,7 +377,22 @@ export async function getPublicRooms(): Promise<
     );
   }
 
-  return (data ?? []) as PublicRoom[];
+  /**
+   * حماية إضافية في التطبيق:
+   * لا نعرض غرفة عدد لاعبيها صفر.
+   */
+  return (data ?? [])
+    .filter(
+      (room: PublicRoom) =>
+        Number(room.player_count) > 0
+    )
+    .map(
+      (room: PublicRoom) => ({
+        ...room,
+        player_count:
+          Number(room.player_count) || 0,
+      })
+    ) as PublicRoom[];
 }
 
 /**
@@ -409,7 +413,6 @@ export async function joinPublicRoom(
     profile,
   } = await ensureProfile(playerName);
 
-  // تأكيد الجلسة مرة أخرى قبل RPC
   const {
     data: currentSession,
   } = await supabase.auth.getSession();
@@ -439,7 +442,6 @@ export async function joinPublicRoom(
     );
   }
 
-  // تحديث بيانات اللاعب بعد الانضمام
   const {
     error: syncError,
   } = await supabase
@@ -561,6 +563,10 @@ export async function getRoom(
 
 /**
  * تحميل جميع لاعبي الغرفة.
+ *
+ * لا نستخدم last_seen_at هنا لأن هذه الدالة
+ * تحتاج جميع لاعبي اللعبة، بما في ذلك اللاعبين
+ * الذين ماتوا أو انقطعوا مؤقتاً.
  */
 export async function getRoomPlayers(
   roomId: string
