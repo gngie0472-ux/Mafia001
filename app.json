@@ -23,8 +23,7 @@
           "photosPermission": "Allow Mafia Night to access your profile photo."
         }
       ],
-      "@livekit/react-native-expo-plugin",
-      "@config-plugins/react-native-webrtc"
+      "@livekit/react-native-expo-plugin"
     ],
 
     "android": {
