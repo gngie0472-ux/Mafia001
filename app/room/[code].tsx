@@ -408,12 +408,24 @@ export default function MafiaGameScreen() {
         }
 
         try {
+          const {
+            data: userData,
+          } =
+            await supabase.auth.getUser();
+
+          const currentUserId =
+            userData.user?.id;
+
+          if (!currentUserId) {
+            throw new Error(
+              'يجب تسجيل الدخول أولًا.'
+            );
+          }
+
           /*
-           * التحقق أولًا من أن المستخدم ما زال
-           * عضوًا في الغرفة.
-           *
-           * هذا مهم حتى يتم إخراج اللاعب المطرود
-           * من الشاشة تلقائيًا.
+           * التحقق من العضوية.
+           * إذا قام المضيف بطرد اللاعب، يتم إخراجه
+           * من شاشة الغرفة تلقائيًا.
            */
           const {
             data: membership,
@@ -427,9 +439,7 @@ export default function MafiaGameScreen() {
             )
             .eq(
               'user_id',
-              (
-                await supabase.auth.getUser()
-              ).data.user?.id || ''
+              currentUserId
             )
             .maybeSingle();
 
@@ -444,6 +454,7 @@ export default function MafiaGameScreen() {
 
           if (
             !membership &&
+            !membershipError &&
             isMountedRef.current
           ) {
             Alert.alert(
@@ -479,24 +490,36 @@ export default function MafiaGameScreen() {
 
           setGameState(state);
 
-          const role =
-            await getMyRole(
-              roomId
+          /*
+           * قبل بدء اللعبة لا توجد أدوار بعد.
+           * لذلك لا نستدعي getMyRole في waiting.
+           */
+          if (
+            state.room.status ===
+            'waiting'
+          ) {
+            setMyRole(null);
+            setMyAlive(true);
+          } else {
+            const role =
+              await getMyRole(
+                roomId
+              );
+
+            if (
+              !isMountedRef.current
+            ) {
+              return;
+            }
+
+            setMyRole(
+              role.role
             );
 
-          if (
-            !isMountedRef.current
-          ) {
-            return;
+            setMyAlive(
+              role.alive
+            );
           }
-
-          setMyRole(
-            role.role
-          );
-
-          setMyAlive(
-            role.alive
-          );
 
           await loadProfiles(
             state.players
@@ -514,10 +537,6 @@ export default function MafiaGameScreen() {
               error?.message ||
               '';
 
-            /*
-             * إذا أصبح المستخدم غير عضو في الغرفة،
-             * نعيده إلى قائمة الغرف.
-             */
             if (
               message.includes(
                 'not a member'
@@ -525,12 +544,14 @@ export default function MafiaGameScreen() {
               message.includes(
                 'player not found'
               ) ||
-              message.includes(
-                'لاعب'
-              ) &&
+              (
+                message.includes(
+                  'لاعب'
+                ) &&
                 message.includes(
                   'الغرفة'
                 )
+              )
             ) {
               Alert.alert(
                 'تم إخراجك من الغرفة',
@@ -877,6 +898,10 @@ export default function MafiaGameScreen() {
           'waiting'
     );
 
+  const isWaiting =
+    room?.status ===
+    'waiting';
+
   const isNight =
     room?.game_phase ===
     'night';
@@ -889,6 +914,25 @@ export default function MafiaGameScreen() {
     room?.status ===
       'finished' ||
     Boolean(room?.winner);
+
+  /*
+   * الدردشة:
+   * - waiting: متاحة لكل أعضاء الغرفة.
+   * - day: متاحة للاعبين الأحياء.
+   * - night: مغلقة.
+   */
+  const canChat =
+    Boolean(
+      room &&
+        !gameFinished &&
+        (
+          isWaiting ||
+          (
+            isDay &&
+            myAlive
+          )
+        )
+    );
 
   const selectablePlayers =
     useMemo(
@@ -923,14 +967,14 @@ export default function MafiaGameScreen() {
   const roleLabel =
     myRole
       ? ROLE_LABELS[myRole]
-      : 'جارٍ التحميل';
+      : 'لم يتم توزيع الدور بعد';
 
   const roleDescription =
     myRole
       ? ROLE_DESCRIPTIONS[
           myRole
         ]
-      : '';
+      : 'سيتم توزيع دورك تلقائيًا عند بدء اللعبة.';
 
   const eventText =
     getEventText(
@@ -940,9 +984,6 @@ export default function MafiaGameScreen() {
 
   /*
    * طرد لاعب.
-   *
-   * نرسل user_id وليس room_players.id
-   * لأن RPC تعتمد على user_id.
    */
   const kickPlayer =
     async (
@@ -1319,6 +1360,15 @@ export default function MafiaGameScreen() {
       }
     };
 
+  /*
+   * إرسال رسالة.
+   *
+   * قبل بدء اللعبة:
+   * جميع أعضاء الغرفة يستطيعون الكتابة.
+   *
+   * أثناء اللعبة:
+   * اللاعب الحي يستطيع الكتابة أثناء النهار فقط.
+   */
   const sendMessage =
     async () => {
       const text =
@@ -1327,9 +1377,7 @@ export default function MafiaGameScreen() {
       if (
         !text ||
         !room?.id ||
-        !isDay ||
-        !myAlive ||
-        gameFinished ||
+        !canChat ||
         busy
       ) {
         return;
@@ -1374,7 +1422,7 @@ export default function MafiaGameScreen() {
   const leaveGame =
     () => {
       Alert.alert(
-        'الخروج من اللعبة',
+        'الخروج من الغرفة',
         'هل تريد العودة إلى قائمة الغرف؟',
         [
           {
@@ -1527,58 +1575,91 @@ export default function MafiaGameScreen() {
           </Pressable>
         </View>
 
-        <View
-          style={[
-            styles.phaseCard,
-            isNight
-              ? styles.nightCard
-              : styles.dayCard,
-          ]}
-        >
-          <Text
-            style={
-              styles.phaseTitle
-            }
+        {isWaiting ? (
+          <View
+            style={[
+              styles.phaseCard,
+              styles.waitingCard,
+            ]}
           >
-            {gameFinished
-              ? 'انتهت اللعبة'
-              : isNight
-              ? '🌙 الليل'
-              : '☀️ النهار'}
-          </Text>
+            <Text
+              style={
+                styles.phaseTitle
+              }
+            >
+              ⏳ انتظار بدء اللعبة
+            </Text>
 
-          {!gameFinished && (
-            <>
-              <Text
-                style={
-                  styles.timer
-                }
-              >
-                {formatTime(
-                  secondsLeft
-                )}
-              </Text>
+            <Text
+              style={
+                styles.waitingText
+              }
+            >
+              يمكنكم التحدث هنا مع باقي اللاعبين قبل بدء اللعبة.
+            </Text>
 
-              <Text
-                style={
-                  styles.timerCaption
-                }
-              >
-                الوقت المتبقي
-              </Text>
-            </>
-          )}
-
-          <Text
-            style={
-              styles.roundText
-            }
+            <Text
+              style={
+                styles.roundText
+              }
+            >
+              عدد اللاعبين: {players.length}
+            </Text>
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.phaseCard,
+              isNight
+                ? styles.nightCard
+                : styles.dayCard,
+            ]}
           >
-            الجولة{' '}
-            {room.game_round ||
-              1}
-          </Text>
-        </View>
+            <Text
+              style={
+                styles.phaseTitle
+              }
+            >
+              {gameFinished
+                ? 'انتهت اللعبة'
+                : isNight
+                ? '🌙 الليل'
+                : '☀️ النهار'}
+            </Text>
+
+            {!gameFinished && (
+              <>
+                <Text
+                  style={
+                    styles.timer
+                  }
+                >
+                  {formatTime(
+                    secondsLeft
+                  )}
+                </Text>
+
+                <Text
+                  style={
+                    styles.timerCaption
+                  }
+                >
+                  الوقت المتبقي
+                </Text>
+              </>
+            )}
+
+            <Text
+              style={
+                styles.roundText
+              }
+            >
+              الجولة{' '}
+              {room.game_round ||
+                1}
+            </Text>
+          </View>
+        )}
 
         {gameFinished && (
           <View
@@ -1606,72 +1687,74 @@ export default function MafiaGameScreen() {
           </View>
         )}
 
-        <View
-          style={
-            styles.roleCard
-          }
-        >
+        {!isWaiting && (
           <View
             style={
-              styles.roleHeader
+              styles.roleCard
             }
           >
-            <Text
-              style={
-                styles.roleTitle
-              }
-            >
-              دورك
-            </Text>
-
-            {myPlayer && (
-              <PlayerAvatar
-                player={
-                  myPlayer
-                }
-                profile={
-                  profiles[
-                    myPlayer
-                      .user_id
-                  ]
-                }
-                size={54}
-              />
-            )}
-          </View>
-
-          <Text
-            style={
-              styles.roleName
-            }
-          >
-            {roleLabel}
-          </Text>
-
-          <Text
-            style={
-              styles.roleDescription
-            }
-          >
-            {roleDescription}
-          </Text>
-
-          {!myAlive && (
             <View
               style={
-                styles.deadBanner
+                styles.roleHeader
               }
             >
               <Text
                 style={
-                  styles.deadBannerText
+                  styles.roleTitle
                 }
               >
-                💀 لقد مت — يمكنك متابعة اللعبة، لكن لا يمكنك تنفيذ المهام أو التصويت أو التحدث.
+                دورك
               </Text>
+
+              {myPlayer && (
+                <PlayerAvatar
+                  player={
+                    myPlayer
+                  }
+                  profile={
+                    profiles[
+                      myPlayer
+                        .user_id
+                    ]
+                  }
+                  size={54}
+                />
+              )}
             </View>
-          )}
-        </View>
+
+            <Text
+              style={
+                styles.roleName
+              }
+            >
+              {roleLabel}
+            </Text>
+
+            <Text
+              style={
+                styles.roleDescription
+              }
+            >
+              {roleDescription}
+            </Text>
+
+            {!myAlive && (
+              <View
+                style={
+                  styles.deadBanner
+                }
+              >
+                <Text
+                  style={
+                    styles.deadBannerText
+                  }
+                >
+                  💀 لقد مت — يمكنك متابعة اللعبة، لكن لا يمكنك تنفيذ المهام أو التصويت أو التحدث.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {eventText && (
           <View
@@ -2185,7 +2268,7 @@ export default function MafiaGameScreen() {
             </View>
           )}
 
-        {isDay && (
+        {canChat && (
           <View
             style={
               styles.chatCard
@@ -2202,7 +2285,9 @@ export default function MafiaGameScreen() {
                     styles.chatTitle
                   }
                 >
-                  💬 دردشة النهار
+                  {isWaiting
+                    ? '💬 دردشة الغرفة'
+                    : '💬 دردشة النهار'}
                 </Text>
 
                 <Text
@@ -2210,7 +2295,9 @@ export default function MafiaGameScreen() {
                     styles.chatSubtitle
                   }
                 >
-                  التواصل متاح أثناء النهار فقط
+                  {isWaiting
+                    ? 'التواصل متاح لجميع اللاعبين قبل بدء اللعبة'
+                    : 'التواصل متاح أثناء النهار فقط'}
                 </Text>
               </View>
 
@@ -2341,45 +2428,53 @@ export default function MafiaGameScreen() {
               )}
             </View>
 
-            {myAlive &&
-            !gameFinished ? (
-              <View
+            <View
+              style={
+                styles.messageComposer
+              }
+            >
+              <TextInput
+                value={
+                  messageText
+                }
+                onChangeText={
+                  setMessageText
+                }
+                placeholder={
+                  isWaiting
+                    ? 'اكتب رسالة للاعبين...'
+                    : 'اكتب رسالتك...'
+                }
+                placeholderTextColor="#777"
                 style={
-                  styles.messageComposer
+                  styles.messageInput
+                }
+                multiline
+                maxLength={500}
+                editable={!busy}
+              />
+
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  (!messageText.trim() ||
+                    busy) &&
+                    styles.disabledButton,
+                ]}
+                disabled={
+                  !messageText.trim() ||
+                  busy
+                }
+                onPress={
+                  sendMessage
                 }
               >
-                <TextInput
-                  value={
-                    messageText
-                  }
-                  onChangeText={
-                    setMessageText
-                  }
-                  placeholder="اكتب رسالتك..."
-                  placeholderTextColor="#777"
-                  style={
-                    styles.messageInput
-                  }
-                  multiline
-                  maxLength={500}
-                  editable={!busy}
-                />
-
-                <Pressable
-                  style={[
-                    styles.sendButton,
-                    (!messageText.trim() ||
-                      busy) &&
-                      styles.disabledButton,
-                  ]}
-                  disabled={
-                    !messageText.trim() ||
-                    busy
-                  }
-                  onPress={
-                    sendMessage
-                  }
-                >
+                {busy ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#fff"
+                  />
+                ) : (
                   <Text
                     style={
                       styles.sendButtonText
@@ -2387,23 +2482,9 @@ export default function MafiaGameScreen() {
                   >
                     إرسال
                   </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View
-                style={
-                  styles.chatClosed
-                }
-              >
-                <Text
-                  style={
-                    styles.chatClosedText
-                  }
-                >
-                  💀 لا يمكنك إرسال الرسائل.
-                </Text>
-              </View>
-            )}
+                )}
+              </Pressable>
+            </View>
           </View>
         )}
 
@@ -2432,7 +2513,8 @@ export default function MafiaGameScreen() {
             </View>
           )}
 
-        {!myAlive &&
+        {!isWaiting &&
+          !myAlive &&
           !gameFinished && (
             <View
               style={
@@ -2629,10 +2711,24 @@ const styles =
       borderColor: '#574522',
     },
 
+    waitingCard: {
+      backgroundColor: '#11151a',
+      borderColor: '#39434f',
+    },
+
+    waitingText: {
+      color: '#aaa',
+      fontSize: 14,
+      lineHeight: 21,
+      textAlign: 'center',
+      marginTop: 9,
+    },
+
     phaseTitle: {
       color: '#fff',
       fontSize: 25,
       fontWeight: '900',
+      textAlign: 'center',
     },
 
     timer: {
@@ -3123,18 +3219,6 @@ const styles =
       fontWeight: '900',
     },
 
-    chatClosed: {
-      borderTopWidth: 1,
-      borderTopColor: '#282a30',
-      paddingTop: 12,
-    },
-
-    chatClosedText: {
-      color: '#777',
-      textAlign: 'center',
-      fontSize: 12,
-    },
-
     closedChatCard: {
       backgroundColor: '#111216',
       borderWidth: 1,
@@ -3222,3 +3306,97 @@ const styles =
       height: 30,
     },
   });
+
+:::end
+
+2. مهم جدًا: قاعدة البيانات
+
+الكود أعلاه يستخدم دالة "send_room_message" الموجودة عندك. لكن يجب أن تكون الدالة تمنع الشخص الذي ليس عضوًا في الغرفة من إرسال رسالة.
+
+نفّذ هذا في Supabase SQL Editor:
+
+DROP FUNCTION IF EXISTS public.send_room_message(uuid, text);
+
+CREATE OR REPLACE FUNCTION public.send_room_message(
+  p_room_id uuid,
+  p_message text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $function$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_message text;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'يجب تسجيل الدخول أولاً';
+  END IF;
+
+  v_message := btrim(coalesce(p_message, ''));
+
+  IF v_message = '' THEN
+    RAISE EXCEPTION 'الرسالة فارغة';
+  END IF;
+
+  IF length(v_message) > 500 THEN
+    RAISE EXCEPTION 'الرسالة طويلة جدًا';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.room_players
+    WHERE room_id = p_room_id
+      AND user_id = v_uid
+  ) THEN
+    RAISE EXCEPTION 'لست عضوًا في هذه الغرفة';
+  END IF;
+
+  INSERT INTO public.room_messages (
+    room_id,
+    user_id,
+    message
+  )
+  VALUES (
+    p_room_id,
+    v_uid,
+    v_message
+  );
+
+  RETURN jsonb_build_object(
+    'success', true
+  );
+END;
+$function$;
+
+REVOKE ALL
+ON FUNCTION public.send_room_message(uuid, text)
+FROM PUBLIC;
+
+GRANT EXECUTE
+ON FUNCTION public.send_room_message(uuid, text)
+TO authenticated;
+
+مهم: وضعت "DROP FUNCTION" أولًا حتى لا نكرر خطأ "42P13" الذي ظهر معنا سابقًا.
+
+3. لا تبنِ APK مباشرة
+
+بعد استبدال الملف وتنفيذ SQL:
+
+1. احفظ "app/room/[code].tsx".
+2. نفّذ SQL.
+3. اعمل Commit وPush إلى "main".
+4. شغّل Build APK.
+5. اختبر بحسابين:
+   - اللاعب الأول ينشئ الغرفة.
+   - اللاعب الثاني يدخل الغرفة.
+   - لا تبدأ اللعبة.
+   - أرسل رسالة من الأول.
+   - يجب أن تظهر فورًا عند الثاني.
+   - أرسل رسالة من الثاني.
+   - يجب أن تظهر عند الأول.
+   - جرّب طرد اللاعب الثاني.
+   - يجب أن يخرج من الغرفة ولا يستطيع إرسال رسائل فيها.
+
+لا ننتقل للمايك الآن حتى نتأكد أن الدردشة النصية قبل بدء اللعبة تعمل بشكل صحيح.
