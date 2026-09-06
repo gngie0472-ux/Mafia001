@@ -4,37 +4,46 @@ import React, {
   useMemo,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
 import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
-} from 'react-native';
+} from "react-native";
 
 import {
   useLocalSearchParams,
   useRouter,
-} from 'expo-router';
+} from "expo-router";
 
-import { supabase } from '../../lib/supabase';
+import { Ionicons } from "@expo/vector-icons";
+
+import { supabase } from "../../lib/supabase";
 
 import {
   advanceMafiaPhase,
   GamePlayer,
+  GameRole,
   GameState,
   getGameState,
   getMyRole,
-  GameRole,
   submitDayVote,
   submitNightAction,
-} from '../../lib/game';
+} from "../../lib/game";
+
+import {
+  prepareMicrophone,
+  checkMicrophonePermission,
+} from "../../lib/voice";
 
 type Message = {
   id: string;
@@ -44,89 +53,104 @@ type Message = {
   created_at: string;
 };
 
-type ProfileMap = Record<
-  string,
-  {
-    username: string;
-    avatar_url: string | null;
-  }
->;
+type Profile = {
+  username: string;
+  avatar_url: string | null;
+};
+
+type ProfileMap = Record<string, Profile>;
 
 const ROLE_LABELS: Record<GameRole, string> = {
-  MAFIA: 'المافيا',
-  DOCTOR: 'الطبيب',
-  DETECTIVE: 'المحقق',
-  CITIZEN: 'المواطن',
+  MAFIA: "المافيا",
+  DOCTOR: "الطبيب",
+  DETECTIVE: "المحقق",
+  CITIZEN: "المواطن",
 };
 
 const ROLE_DESCRIPTIONS: Record<GameRole, string> = {
   MAFIA:
-    'اقتل أحد اللاعبين ليلًا وحاول السيطرة على المدينة.',
+    "أنت من المافيا. اختر لاعبًا لقتله خلال الليل.",
   DOCTOR:
-    'احمِ لاعبًا واحدًا كل ليلة من القتل.',
+    "احمِ لاعبًا واحدًا خلال الليل من القتل.",
   DETECTIVE:
-    'تحقق من لاعب واحد كل ليلة لمعرفة هل هو من المافيا.',
+    "تحقق من لاعب واحد فقط كل ليلة لمعرفة هل هو من المافيا.",
   CITIZEN:
-    'راقب اللاعبين وصوّت لاكتشاف المافيا.',
+    "راقب اللاعبين واستخدم التصويت خلال النهار لاكتشاف المافيا.",
 };
 
 function getSecondsLeft(
   endsAt: string | null
 ): number {
-  if (!endsAt) return 0;
+  if (!endsAt) {
+    return 0;
+  }
 
-  const end = new Date(endsAt).getTime();
-  const now = Date.now();
+  const end =
+    new Date(endsAt).getTime();
 
   return Math.max(
     0,
-    Math.ceil((end - now) / 1000)
+    Math.ceil(
+      (end - Date.now()) / 1000
+    )
   );
 }
 
-function formatTime(seconds: number) {
-  const safe = Math.max(0, seconds);
+function formatTime(
+  seconds: number
+): string {
+  const safe =
+    Math.max(0, seconds);
 
-  const minutes = Math.floor(safe / 60);
-  const remaining = safe % 60;
+  const minutes =
+    Math.floor(safe / 60);
 
-  return `${String(minutes).padStart(2, '0')}:${String(
-    remaining
-  ).padStart(2, '0')}`;
+  const remaining =
+    safe % 60;
+
+  return `${String(minutes).padStart(
+    2,
+    "0"
+  )}:${String(remaining).padStart(
+    2,
+    "0"
+  )}`;
 }
 
 function getEventText(
-  event: GameState['room']['last_event']
+  event: GameState["room"]["last_event"]
 ) {
-  if (!event) return null;
+  if (!event) {
+    return null;
+  }
 
-  if (typeof event === 'string') {
+  if (typeof event === "string") {
     return event;
   }
 
   switch (event.type) {
-    case 'night_started':
-      return 'بدأ الليل. كل دور عليه تنفيذ مهمته.';
+    case "night_started":
+      return "بدأ الليل. الأدوار الليلية تعمل الآن.";
 
-    case 'day_started':
-      return 'انتهى الليل وبدأ النهار. تحدثوا واكتشفوا المافيا.';
+    case "day_started":
+      return "انتهى الليل وبدأ النهار. تحدثوا واكتشفوا المافيا.";
 
-    case 'night_kill':
-      return 'حدثت عملية قتل خلال الليل.';
+    case "night_kill":
+      return "حدثت عملية قتل خلال الليل.";
 
-    case 'night_saved':
-      return 'الطبيب أنقذ اللاعب المستهدف.';
+    case "night_saved":
+      return "الطبيب أنقذ اللاعب المستهدف.";
 
-    case 'day_vote':
-      return 'تم تنفيذ نتيجة التصويت.';
+    case "day_vote":
+      return "تم تنفيذ نتيجة التصويت.";
 
-    case 'day_tie':
-      return 'حدث تعادل في التصويت ولم يمت أحد.';
+    case "day_tie":
+      return "حدث تعادل في التصويت ولم يمت أحد.";
 
-    case 'winner':
+    case "winner":
       return event.winner
         ? `انتهت اللعبة. الفائز: ${event.winner}`
-        : 'انتهت اللعبة.';
+        : "انتهت اللعبة.";
 
     default:
       return null;
@@ -136,21 +160,19 @@ function getEventText(
 function PlayerAvatar({
   player,
   profile,
-  size = 48,
+  size = 52,
 }: {
   player: GamePlayer;
-  profile?: ProfileMap[string];
+  profile?: Profile;
   size?: number;
 }) {
-  const uri =
-    profile?.avatar_url ||
-    player.avatar_url ||
-    null;
+  const image =
+    profile?.avatar_url;
 
-  if (uri) {
+  if (image) {
     return (
       <Image
-        source={{ uri }}
+        source={{ uri: image }}
         style={[
           styles.avatar,
           {
@@ -158,7 +180,8 @@ function PlayerAvatar({
             height: size,
             borderRadius: size / 2,
           },
-          !player.alive && styles.deadAvatar,
+          !player.alive &&
+            styles.deadAvatar,
         ]}
       />
     );
@@ -167,20 +190,25 @@ function PlayerAvatar({
   return (
     <View
       style={[
-        styles.avatarPlaceholder,
+        styles.avatarFallback,
         {
           width: size,
           height: size,
           borderRadius: size / 2,
         },
-        !player.alive && styles.deadAvatar,
+        !player.alive &&
+          styles.deadAvatar,
       ]}
     >
-      <Text style={styles.avatarText}>
-        {(profile?.username || player.name || 'P')
-          .charAt(0)
-          .toUpperCase()}
-      </Text>
+      <Ionicons
+        name="person"
+        size={Math.max(18, size * 0.42)}
+        color={
+          player.alive
+            ? "#D7A94B"
+            : "#686A70"
+        }
+      />
     </View>
   );
 }
@@ -189,14 +217,17 @@ export default function MafiaGameScreen() {
   const router = useRouter();
 
   const params =
-    useLocalSearchParams<{ code?: string }>();
+    useLocalSearchParams<{
+      code?: string | string[];
+    }>();
 
-  const roomCode = Array.isArray(params.code)
-    ? params.code[0]
-    : params.code;
+  const roomId =
+    Array.isArray(params.code)
+      ? params.code[0]
+      : params.code;
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] =
+    useState(true);
 
   const [gameState, setGameState] =
     useState<GameState | null>(null);
@@ -223,243 +254,240 @@ export default function MafiaGameScreen() {
     useState<Message[]>([]);
 
   const [messageText, setMessageText] =
-    useState('');
+    useState("");
 
   const [messagesLoading, setMessagesLoading] =
     useState(false);
 
-  const lastAdvanceRef =
-    useRef<number>(0);
+  const [sendingMessage, setSendingMessage] =
+    useState(false);
 
-  const isMountedRef =
+  const [micEnabled, setMicEnabled] =
+    useState(false);
+
+  const [investigationResult, setInvestigationResult] =
+    useState<string | null>(null);
+
+  const mountedRef =
     useRef(true);
 
-  const loadProfiles = useCallback(
-    async (players: GamePlayer[]) => {
-      if (!players.length) {
-        setProfiles({});
-        return;
-      }
+  const advancingRef =
+    useRef(false);
 
-      const userIds = players
-        .map((player) => player.user_id)
-        .filter(Boolean);
+  const lastAdvanceRef =
+    useRef(0);
 
-      if (!userIds.length) return;
+  const loadProfiles =
+    useCallback(
+      async (players: GamePlayer[]) => {
+        const ids =
+          players
+            .map(
+              (player) =>
+                player.user_id
+            )
+            .filter(Boolean);
 
-      const { data, error } =
-        await supabase
-          .from('profiles')
+        if (ids.length === 0) {
+          setProfiles({});
+          return;
+        }
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("profiles")
           .select(
-            'user_id, username, avatar_url'
+            "user_id, username, avatar_url"
           )
-          .in('user_id', userIds);
+          .in("user_id", ids);
 
-      if (error) {
-        console.error(
-          'loadProfiles error:',
-          error
-        );
-        return;
-      }
+        if (error) {
+          console.error(
+            "loadProfiles:",
+            error
+          );
+          return;
+        }
 
-      const map: ProfileMap = {};
+        const map: ProfileMap = {};
 
-      for (const profile of data || []) {
-        map[profile.user_id] = {
-          username:
-            profile.username || 'Player',
-          avatar_url:
-            profile.avatar_url || null,
-        };
-      }
+        for (const row of data || []) {
+          map[row.user_id] = {
+            username:
+              row.username ||
+              "Player",
+            avatar_url:
+              row.avatar_url ||
+              null,
+          };
+        }
 
-      setProfiles(map);
-    },
-    []
-  );
+        if (mountedRef.current) {
+          setProfiles(map);
+        }
+      },
+      []
+    );
 
-  const loadMessages = useCallback(
-    async () => {
-      if (!roomCode || !gameState?.room?.id) {
-        return;
-      }
+  const loadMessages =
+    useCallback(
+      async () => {
+        if (!roomId) {
+          return;
+        }
 
-      setMessagesLoading(true);
+        setMessagesLoading(true);
 
-      const { data, error } =
-        await supabase
-          .from('room_messages')
+        const {
+          data,
+          error,
+        } = await supabase
+          .from("room_messages")
           .select(
-            'id, room_id, user_id, message, created_at'
+            "id, room_id, user_id, message, created_at"
           )
-          .eq(
-            'room_id',
-            gameState.room.id
+          .eq("room_id", roomId)
+          .order(
+            "created_at",
+            {
+              ascending: true,
+            }
           )
-          .order('created_at', {
-            ascending: true,
-          })
           .limit(100);
 
-      if (error) {
-        console.error(
-          'loadMessages error:',
-          error
-        );
-      } else if (isMountedRef.current) {
-        setMessages(
-          (data || []) as Message[]
-        );
-      }
-
-      if (isMountedRef.current) {
-        setMessagesLoading(false);
-      }
-    },
-    [gameState?.room?.id, roomCode]
-  );
-
-  const loadGame = useCallback(
-    async (showLoader = false) => {
-      if (!roomCode) {
-        Alert.alert(
-          'خطأ',
-          'رمز الغرفة غير موجود.'
-        );
-        return;
-      }
-
-      if (showLoader) {
-        setRefreshing(true);
-      }
-
-      try {
-        const state =
-          await getGameState(roomCode);
-
-        if (!isMountedRef.current) return;
-
-        setGameState(state);
-
-        const role =
-          await getMyRole(roomCode);
-
-        if (!isMountedRef.current) return;
-
-        setMyRole(role.role);
-        setMyAlive(role.alive);
-
-        await loadProfiles(state.players);
-      } catch (error: any) {
-        console.error(
-          'loadGame error:',
-          error
-        );
-
-        if (isMountedRef.current) {
-          Alert.alert(
-            'تعذر تحميل اللعبة',
-            error?.message ||
-              'حدث خطأ أثناء تحميل حالة اللعبة.'
+        if (error) {
+          console.error(
+            "loadMessages:",
+            error
+          );
+        } else if (mountedRef.current) {
+          setMessages(
+            (data || []) as Message[]
           );
         }
-      } finally {
-        if (isMountedRef.current) {
-          setLoading(false);
-          setRefreshing(false);
+
+        if (mountedRef.current) {
+          setMessagesLoading(false);
         }
-      }
-    },
-    [loadProfiles, roomCode]
-  );
+      },
+      [roomId]
+    );
+
+  const loadGame =
+    useCallback(
+      async (
+        showLoader = false
+      ) => {
+        if (!roomId) {
+          Alert.alert(
+            "خطأ",
+            "معرف الغرفة غير موجود."
+          );
+          return;
+        }
+
+        try {
+          if (showLoader) {
+            setLoading(true);
+          }
+
+          const state =
+            await getGameState(
+              roomId
+            );
+
+          if (!mountedRef.current) {
+            return;
+          }
+
+          setGameState(state);
+
+          const role =
+            await getMyRole(
+              roomId
+            );
+
+          if (!mountedRef.current) {
+            return;
+          }
+
+          setMyRole(
+            role.role
+          );
+
+          setMyAlive(
+            role.alive
+          );
+
+          await loadProfiles(
+            state.players
+          );
+
+          if (
+            state.room.status ===
+            "finished"
+          ) {
+            setSelectedTarget(null);
+          }
+        } catch (error: any) {
+          console.error(
+            "loadGame:",
+            error
+          );
+
+          if (mountedRef.current) {
+            Alert.alert(
+              "تعذر تحميل اللعبة",
+              error?.message ||
+                "حدث خطأ أثناء تحميل حالة اللعبة."
+            );
+          }
+        } finally {
+          if (
+            mountedRef.current &&
+            showLoader
+          ) {
+            setLoading(false);
+          }
+        }
+      },
+      [
+        roomId,
+        loadProfiles,
+      ]
+    );
 
   useEffect(() => {
-    isMountedRef.current = true;
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!roomCode) return;
+    mountedRef.current = true;
 
     loadGame(true);
-  }, [roomCode, loadGame]);
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [loadGame]);
 
   useEffect(() => {
-    if (!gameState?.room?.phase_ends_at) {
-      setSecondsLeft(0);
+    if (!roomId) {
       return;
     }
 
-    const updateTimer = () => {
-      const remaining =
-        getSecondsLeft(
-          gameState.room.phase_ends_at
-        );
-
-      setSecondsLeft(remaining);
-
-      if (
-        remaining <= 0 &&
-        gameState.room.status === 'playing'
-      ) {
-        const now = Date.now();
-
-        if (
-          now - lastAdvanceRef.current >
-          3000
-        ) {
-          lastAdvanceRef.current = now;
-
-          advanceMafiaPhase(roomCode || '')
-            .then(() => {
-              loadGame(false);
-            })
-            .catch((error) => {
-              console.error(
-                'advanceMafiaPhase error:',
-                error
-              );
-
-              loadGame(false);
-            });
-        }
-      }
-    };
-
-    updateTimer();
-
-    const interval = setInterval(
-      updateTimer,
-      1000
-    );
+    const poll =
+      setInterval(() => {
+        loadGame(false);
+      }, 2500);
 
     return () => {
-      clearInterval(interval);
+      clearInterval(poll);
     };
-  }, [
-    gameState?.room?.phase_ends_at,
-    gameState?.room?.status,
-    roomCode,
-    loadGame,
-  ]);
+  }, [roomId, loadGame]);
 
   useEffect(() => {
-    if (!gameState?.room?.id) return;
-
-    loadMessages();
-  }, [
-    gameState?.room?.id,
-    loadMessages,
-  ]);
-
-  useEffect(() => {
-    if (!gameState?.room?.id) return;
-
-    const roomId = gameState.room.id;
+    if (!roomId) {
+      return;
+    }
 
     const channel =
       supabase
@@ -467,11 +495,11 @@ export default function MafiaGameScreen() {
           `mafia-game-${roomId}`
         )
         .on(
-          'postgres_changes',
+          "postgres_changes",
           {
-            event: '*',
-            schema: 'public',
-            table: 'rooms',
+            event: "*",
+            schema: "public",
+            table: "rooms",
             filter: `id=eq.${roomId}`,
           },
           () => {
@@ -479,11 +507,11 @@ export default function MafiaGameScreen() {
           }
         )
         .on(
-          'postgres_changes',
+          "postgres_changes",
           {
-            event: '*',
-            schema: 'public',
-            table: 'room_players',
+            event: "*",
+            schema: "public",
+            table: "room_players",
             filter: `room_id=eq.${roomId}`,
           },
           () => {
@@ -491,117 +519,555 @@ export default function MafiaGameScreen() {
           }
         )
         .on(
-          'postgres_changes',
+          "postgres_changes",
           {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'room_messages',
+            event: "*",
+            schema: "public",
+            table: "room_messages",
             filter: `room_id=eq.${roomId}`,
           },
-          (payload) => {
-            const newMessage =
-              payload.new as Message;
-
-            setMessages((current) => {
-              if (
-                current.some(
-                  (message) =>
-                    message.id ===
-                    newMessage.id
-                )
-              ) {
-                return current;
-              }
-
-              return [
-                ...current,
-                newMessage,
-              ];
-            });
+          () => {
+            loadMessages();
           }
         )
         .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
   }, [
-    gameState?.room?.id,
+    roomId,
+    loadGame,
+    loadMessages,
+  ]);
+
+  useEffect(() => {
+    if (!gameState) {
+      return;
+    }
+
+    setSecondsLeft(
+      getSecondsLeft(
+        gameState.room
+          .phase_ends_at
+      );
+
+      // noop
+    );
+  }, [gameState]);
+
+  useEffect(() => {
+    if (!gameState?.room) {
+      return;
+    }
+
+    const endsAt =
+      gameState.room
+        .phase_ends_at;
+
+    if (!endsAt) {
+      setSecondsLeft(0);
+      return;
+    }
+
+    const update =
+      () => {
+        const remaining =
+          getSecondsLeft(
+            endsAt
+          );
+
+        if (mountedRef.current) {
+          setSecondsLeft(
+            remaining
+          );
+        }
+
+        if (
+          remaining <= 0 &&
+          gameState.room.status ===
+            "playing" &&
+          !advancingRef.current
+        ) {
+          const now =
+            Date.now();
+
+          if (
+            now -
+              lastAdvanceRef.current >
+            1500
+          ) {
+            lastAdvanceRef.current =
+              now;
+
+            advancingRef.current =
+              true;
+
+            advanceMafiaPhase(
+              roomId!
+            )
+              .then(() => {
+                loadGame(false);
+              })
+              .catch((error: any) => {
+                const message =
+                  error?.message ||
+                  "";
+
+                /*
+                 * قد تكون عميلة أخرى
+                 * سبقتنا في الانتقال.
+                 * لذلك لا نظهر خطأ للمستخدم
+                 * في هذه الحالة.
+                 */
+                if (
+                  !message.includes(
+                    "phase_not_finished"
+                  )
+                ) {
+                  console.error(
+                    "advance phase:",
+                    error
+                  );
+                }
+              })
+              .finally(() => {
+                advancingRef.current =
+                  false;
+              });
+          }
+        }
+      };
+
+    update();
+
+    const timer =
+      setInterval(
+        update,
+        500
+      );
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [
+    gameState?.room?.phase_ends_at,
+    gameState?.room?.status,
+    roomId,
     loadGame,
   ]);
 
-  const room = gameState?.room;
+  useEffect(() => {
+    if (!gameState) {
+      return;
+    }
+
+    loadMessages();
+  }, [
+    gameState?.room?.id,
+    loadMessages,
+  ]);
+
+  const room =
+    gameState?.room ||
+    null;
 
   const players =
-    gameState?.players || [];
+    gameState?.players ||
+    [];
 
-  const alivePlayers = useMemo(
-    () =>
-      players.filter(
-        (player) => player.alive
-      ),
-    [players]
-  );
+  const alivePlayers =
+    useMemo(
+      () =>
+        players.filter(
+          (player) =>
+            player.alive
+        ),
+      [players]
+    );
 
-  const myPlayer = useMemo(
-    () =>
-      players.find(
-        (player) =>
-          player.id ===
-          gameState?.my_player_id
-      ) || null,
-    [players, gameState?.my_player_id]
-  );
+  const deadPlayers =
+    useMemo(
+      () =>
+        players.filter(
+          (player) =>
+            !player.alive
+        ),
+      [players]
+    );
+
+  const myPlayer =
+    useMemo(
+      () =>
+        players.find(
+          (player) =>
+            player.id ===
+            gameState?.my_player_id
+        ),
+      [
+        players,
+        gameState?.my_player_id,
+      ]
+    );
 
   const isNight =
-    room?.game_phase === 'night';
+    room?.game_phase ===
+    "night";
 
   const isDay =
-    room?.game_phase === 'day';
+    room?.game_phase ===
+    "day";
 
   const gameFinished =
-    room?.status === 'finished' ||
+    room?.status ===
+      "finished" ||
     Boolean(room?.winner);
 
   const selectablePlayers =
-    useMemo(() => {
-      return alivePlayers.filter(
-        (player) =>
-          player.id !==
-          gameState?.my_player_id
-      );
-    }, [
-      alivePlayers,
-      gameState?.my_player_id,
-    ]);
-
-  const canNightAction =
-    Boolean(
-      isNight &&
-        myAlive &&
-        myRole &&
-        ['MAFIA', 'DOCTOR', 'DETECTIVE'].includes(
-          myRole
-        )
+    useMemo(
+      () =>
+        alivePlayers.filter(
+          (player) =>
+            player.id !==
+            gameState?.my_player_id
+        ),
+      [
+        alivePlayers,
+        gameState?.my_player_id,
+      ]
     );
-
-  const roleLabel = myRole
-    ? ROLE_LABELS[myRole]
-    : 'جارٍ التحميل';
-
-  const roleDescription = myRole
-    ? ROLE_DESCRIPTIONS[myRole]
-    : '';
 
   const eventText =
     getEventText(
-      room?.last_event || null
+      room?.last_event ||
+        null
     );
 
-  const selectTarget = (
+  const selectedPlayer =
+    players.find(
+      (player) =>
+        player.id ===
+        selectedTarget
+    );
+
+  const canNightAction =
+    Boolean(
+      room &&
+        isNight &&
+        !gameFinished &&
+        myAlive &&
+        !busy &&
+        myRole &&
+        (
+          myRole ===
+            "MAFIA" ||
+          myRole ===
+            "DOCTOR" ||
+          myRole ===
+            "DETECTIVE"
+        )
+    );
+
+  const canVote =
+    Boolean(
+      room &&
+        isDay &&
+        !gameFinished &&
+        myAlive &&
+        !busy
+    );
+
+  const canChat =
+    Boolean(
+      room &&
+        isDay &&
+        !gameFinished &&
+        myAlive &&
+        !sendingMessage
+    );
+
+  async function performNightAction(
+    action:
+      | "kill"
+      | "protect"
+      | "investigate"
+  ) {
+    if (
+      !roomId ||
+      !selectedTarget ||
+      !canNightAction
+    ) {
+      return;
+    }
+
+    if (
+      !selectedPlayer ||
+      !selectedPlayer.alive
+    ) {
+      Alert.alert(
+        "هدف غير صالح",
+        "يجب اختيار لاعب حي."
+      );
+      return;
+    }
+
+    if (
+      selectedTarget ===
+      gameState?.my_player_id
+    ) {
+      Alert.alert(
+        "هدف غير صالح",
+        "لا يمكنك اختيار نفسك."
+      );
+      return;
+    }
+
+    try {
+      setBusy(true);
+
+      const result =
+        await submitNightAction(
+          roomId,
+          action,
+          selectedTarget
+        );
+
+      if (
+        action ===
+        "investigate"
+      ) {
+        let resultText =
+          "تم التحقيق في اللاعب.";
+
+        if (
+          result &&
+          typeof result ===
+            "object"
+        ) {
+          const value =
+            result as any;
+
+          const role =
+            value.role ||
+            value.target_role ||
+            value.result;
+
+          if (role) {
+            resultText =
+              role === "MAFIA"
+                ? "نتيجة التحقيق: هذا اللاعب من المافيا."
+                : "نتيجة التحقيق: هذا اللاعب ليس من المافيا.";
+          }
+        }
+
+        setInvestigationResult(
+          resultText
+        );
+      } else {
+        Alert.alert(
+          "تم",
+          action ===
+            "kill"
+            ? "تم تسجيل هدف المافيا."
+            : "تم تسجيل حماية الطبيب."
+        );
+      }
+
+      setSelectedTarget(null);
+
+      await loadGame(false);
+    } catch (error: any) {
+      console.error(
+        "night action:",
+        error
+      );
+
+      Alert.alert(
+        "تعذر تنفيذ العملية",
+        error?.message ||
+          "لا يمكن تنفيذ هذه العملية الآن."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVote() {
+    if (
+      !roomId ||
+      !selectedTarget ||
+      !canVote
+    ) {
+      return;
+    }
+
+    if (
+      !selectedPlayer ||
+      !selectedPlayer.alive
+    ) {
+      Alert.alert(
+        "تصويت غير صالح",
+        "يمكن التصويت على لاعب حي فقط."
+      );
+      return;
+    }
+
+    try {
+      setBusy(true);
+
+      await submitDayVote(
+        roomId,
+        selectedTarget
+      );
+
+      Alert.alert(
+        "تم التصويت",
+        `تم تسجيل تصويتك ضد ${
+          profiles[
+            selectedTarget
+          ]?.username ||
+          selectedPlayer.name
+        }.`
+      );
+
+      setSelectedTarget(
+        null
+      );
+
+      await loadGame(false);
+    } catch (error: any) {
+      console.error(
+        "vote:",
+        error
+      );
+
+      Alert.alert(
+        "تعذر التصويت",
+        error?.message ||
+          "لا يمكن التصويت الآن."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendMessage() {
+    const text =
+      messageText.trim();
+
+    if (
+      !roomId ||
+      !canChat ||
+      !text
+    ) {
+      return;
+    }
+
+    try {
+      setSendingMessage(true);
+
+      const {
+        error,
+      } = await supabase.rpc(
+        "send_room_message",
+        {
+          p_room_id: roomId,
+          p_message: text,
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      setMessageText("");
+
+      await loadMessages();
+    } catch (error: any) {
+      console.error(
+        "send message:",
+        error
+      );
+
+      Alert.alert(
+        "تعذر إرسال الرسالة",
+        error?.message ||
+          "لا يمكن إرسال الرسالة الآن."
+      );
+    } finally {
+      setSendingMessage(
+        false
+      );
+    }
+  }
+
+  async function handleMicrophone() {
+    if (
+      !isDay ||
+      !myAlive ||
+      gameFinished
+    ) {
+      Alert.alert(
+        "الميكروفون غير متاح",
+        "الميكروفون متاح فقط أثناء النهار للاعبين الأحياء."
+      );
+      return;
+    }
+
+    try {
+      const granted =
+        await checkMicrophonePermission();
+
+      if (!granted) {
+        await prepareMicrophone();
+      }
+
+      setMicEnabled(
+        (value) => !value
+      );
+
+      Alert.alert(
+        "الميكروفون",
+        "تم السماح بالميكروفون. النقل الصوتي المباشر بين اللاعبين يحتاج نظام Voice/WebRTC مستقل."
+      );
+    } catch (error: any) {
+      Alert.alert(
+        "الميكروفون",
+        error?.message ||
+          "تعذر تشغيل الميكروفون."
+      );
+    }
+  }
+
+  function selectPlayer(
     playerId: string
-  ) => {
-    if (busy || !myAlive) return;
+  ) {
+    if (busy) {
+      return;
+    }
+
+    const player =
+      players.find(
+        (item) =>
+          item.id ===
+          playerId
+      );
+
+    if (
+      !player ||
+      !player.alive
+    ) {
+      return;
+    }
+
+    if (
+      player.id ===
+      gameState?.my_player_id
+    ) {
+      return;
+    }
 
     setSelectedTarget(
       (current) =>
@@ -609,285 +1075,163 @@ export default function MafiaGameScreen() {
           ? null
           : playerId
     );
-  };
 
-  const performNightAction =
-    async (
-      action:
-        | 'kill'
-        | 'protect'
-        | 'investigate'
-    ) => {
-      if (
-        !roomCode ||
-        !selectedTarget
-      ) {
-        Alert.alert(
-          'اختر لاعبًا',
-          'يجب اختيار لاعب واحد أولًا.'
-        );
-        return;
-      }
-
-      if (!myAlive || !myRole) {
-        return;
-      }
-
-      if (!canNightAction) {
-        return;
-      }
-
-      if (
-        action === 'kill' &&
-        myRole !== 'MAFIA'
-      ) {
-        return;
-      }
-
-      if (
-        action === 'protect' &&
-        myRole !== 'DOCTOR'
-      ) {
-        return;
-      }
-
-      if (
-        action === 'investigate' &&
-        myRole !== 'DETECTIVE'
-      ) {
-        return;
-      }
-
-      setBusy(true);
-
-      try {
-        const result =
-          await submitNightAction(
-            roomCode,
-            action,
-            selectedTarget
-          );
-
-        setSelectedTarget(null);
-
-        if (
-          action === 'investigate'
-        ) {
-          const target =
-            players.find(
-              (player) =>
-                player.id ===
-                selectedTarget
-            );
-
-          const resultText =
-            typeof result === 'string'
-              ? result
-              : result?.role
-              ? result.role === 'MAFIA'
-                ? 'هذا اللاعب من المافيا.'
-                : 'هذا اللاعب ليس من المافيا.'
-              : 'تم تنفيذ التحقيق.';
-
-          Alert.alert(
-            'نتيجة التحقيق',
-            target
-              ? `${target.name}\n\n${resultText}`
-              : resultText
-          );
-        } else {
-          Alert.alert(
-            'تم',
-            action === 'kill'
-              ? 'تم اختيار هدف المافيا.'
-              : 'تم اختيار اللاعب للحماية.'
-          );
-        }
-
-        await loadGame(false);
-      } catch (error: any) {
-        console.error(
-          'performNightAction error:',
-          error
-        );
-
-        Alert.alert(
-          'تعذر تنفيذ العملية',
-          error?.message ||
-            'لا يمكن تنفيذ هذه العملية الآن.'
-        );
-      } finally {
-        setBusy(false);
-      }
-    };
-
-  const performVote =
-    async () => {
-      if (
-        !roomCode ||
-        !selectedTarget ||
-        !isDay ||
-        !myAlive
-      ) {
-        Alert.alert(
-          'اختر لاعبًا',
-          'اختر لاعبًا واحدًا للتصويت عليه.'
-        );
-        return;
-      }
-
-      setBusy(true);
-
-      try {
-        await submitDayVote(
-          roomCode,
-          selectedTarget
-        );
-
-        const target =
-          players.find(
-            (player) =>
-              player.id ===
-              selectedTarget
-          );
-
-        setSelectedTarget(null);
-
-        Alert.alert(
-          'تم التصويت',
-          target
-            ? `صوتك ذهب ضد ${target.name}.`
-            : 'تم تسجيل صوتك.'
-        );
-
-        await loadGame(false);
-      } catch (error: any) {
-        console.error(
-          'performVote error:',
-          error
-        );
-
-        Alert.alert(
-          'تعذر تسجيل التصويت',
-          error?.message ||
-            'حدث خطأ أثناء تسجيل صوتك.'
-        );
-      } finally {
-        setBusy(false);
-      }
-    };
-
-  const sendMessage =
-    async () => {
-      const text =
-        messageText.trim();
-
-      if (!text) return;
-
-      if (!room?.id) return;
-
-      if (!isDay) {
-        Alert.alert(
-          'الدردشة مغلقة',
-          'الدردشة متاحة خلال النهار فقط.'
-        );
-        return;
-      }
-
-      if (!myAlive) {
-        Alert.alert(
-          'أنت ميت',
-          'اللاعب الميت لا يستطيع إرسال رسائل.'
-        );
-        return;
-      }
-
-      if (busy) return;
-
-      setBusy(true);
-
-      try {
-        const { error } =
-          await supabase.rpc(
-            'send_room_message',
-            {
-              p_room_id: room.id,
-              p_message: text,
-            }
-          );
-
-        if (error) {
-          throw error;
-        }
-
-        setMessageText('');
-      } catch (error: any) {
-        console.error(
-          'sendMessage error:',
-          error
-        );
-
-        Alert.alert(
-          'تعذر إرسال الرسالة',
-          error?.message ||
-            'حدث خطأ أثناء إرسال الرسالة.'
-        );
-      } finally {
-        setBusy(false);
-      }
-    };
-
-  const leaveGame =
-    () => {
-      Alert.alert(
-        'الخروج من اللعبة',
-        'هل تريد العودة إلى قائمة الغرف؟',
-        [
-          {
-            text: 'إلغاء',
-            style: 'cancel',
-          },
-          {
-            text: 'خروج',
-            style: 'destructive',
-            onPress: () => {
-              router.replace('/rooms');
-            },
-          },
-        ]
+    if (
+      isNight &&
+      myRole !==
+        "DETECTIVE"
+    ) {
+      setInvestigationResult(
+        null
       );
-    };
+    }
+  }
 
-  if (!roomCode) {
+  function renderPlayer(
+    player: GamePlayer
+  ) {
+    const profile =
+      profiles[
+        player.user_id
+      ];
+
+    const displayName =
+      profile?.username ||
+      player.name ||
+      "Player";
+
+    const isMe =
+      player.id ===
+      gameState?.my_player_id;
+
+    const isSelected =
+      selectedTarget ===
+      player.id;
+
+    const selectable =
+      player.alive &&
+      !isMe &&
+      !gameFinished;
+
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>
-          رمز الغرفة غير موجود.
-        </Text>
+      <Pressable
+        key={player.id}
+        onPress={() =>
+          selectable &&
+          selectPlayer(
+            player.id
+          )
+        }
+        disabled={
+          !selectable ||
+          busy
+        }
+        style={[
+          styles.playerCard,
+          !player.alive &&
+            styles.deadPlayerCard,
+          isSelected &&
+            styles.selectedPlayerCard,
+          !selectable &&
+            !player.alive &&
+            styles.notSelectable,
+        ]}
+      >
+        <PlayerAvatar
+          player={player}
+          profile={profile}
+          size={50}
+        />
 
-        <Pressable
-          style={styles.primaryButton}
-          onPress={() =>
-            router.replace('/rooms')
+        <View
+          style={
+            styles.playerInfo
           }
         >
-          <Text style={styles.buttonText}>
-            العودة إلى الغرف
-          </Text>
-        </Pressable>
-      </View>
+          <View
+            style={
+              styles.playerNameRow
+            }
+          >
+            <Text
+              style={[
+                styles.playerName,
+                !player.alive &&
+                  styles.deadText,
+              ]}
+            >
+              {displayName}
+            </Text>
+
+            {isMe && (
+              <Text
+                style={
+                  styles.youBadge
+                }
+              >
+                YOU
+              </Text>
+            )}
+          </View>
+
+          {player.alive ? (
+            <Text
+              style={
+                styles.aliveText
+              }
+            >
+              على قيد الحياة
+            </Text>
+          ) : (
+            <Text
+              style={
+                styles.deadText
+              }
+            >
+              ☠ ميت
+            </Text>
+          )}
+        </View>
+
+        {isSelected &&
+          player.alive &&
+          !isMe && (
+            <Ionicons
+              name="checkmark-circle"
+              size={27}
+              color="#D7A94B"
+            />
+          )}
+
+        {!player.alive && (
+          <Ionicons
+            name="skull-outline"
+            size={24}
+            color="#686A70"
+          />
+        )}
+      </Pressable>
     );
   }
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View
+        style={
+          styles.loadingScreen
+        }
+      >
         <ActivityIndicator
           size="large"
+          color="#D7A94B"
         />
 
-        <Text style={styles.loadingText}>
-          جارٍ تحميل اللعبة...
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          جاري دخول اللعبة...
         </Text>
       </View>
     );
@@ -895,18 +1239,38 @@ export default function MafiaGameScreen() {
 
   if (!gameState || !room) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>
-          تعذر العثور على حالة اللعبة.
+      <View
+        style={
+          styles.loadingScreen
+        }
+      >
+        <Ionicons
+          name="alert-circle-outline"
+          size={55}
+          color="#B5222E"
+        />
+
+        <Text
+          style={
+            styles.errorTitle
+          }
+        >
+          تعذر تحميل اللعبة
         </Text>
 
         <Pressable
-          style={styles.primaryButton}
           onPress={() =>
             loadGame(true)
           }
+          style={
+            styles.retryButton
+          }
         >
-          <Text style={styles.buttonText}>
+          <Text
+            style={
+              styles.retryText
+            }
+          >
             إعادة المحاولة
           </Text>
         </Pressable>
@@ -915,1407 +1279,1655 @@ export default function MafiaGameScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={
+        styles.screen
+      }
+      behavior={
+        Platform.OS ===
+        "ios"
+          ? "padding"
+          : undefined
+      }
+    >
       <ScrollView
+        style={
+          styles.scroll
+        }
         contentContainerStyle={
-          styles.content
+          styles.container
+        }
+        showsVerticalScrollIndicator={
+          false
         }
         keyboardShouldPersistTaps="handled"
       >
-        {/* HEADER */}
-        <View style={styles.header}>
+        <View
+          style={
+            styles.header
+          }
+        >
           <View>
-            <Text style={styles.logo}>
+            <Text
+              style={
+                styles.eyebrow
+              }
+            >
               MAFIA NIGHT
             </Text>
 
-            <Text style={styles.roomCode}>
-              الغرفة: {room.code || roomCode}
+            <Text
+              style={
+                styles.roomTitle
+              }
+            >
+              الجولة {room.game_round}
             </Text>
           </View>
 
-          <Pressable
-            style={styles.exitButton}
-            onPress={leaveGame}
+          <View
+            style={[
+              styles.phaseBadge,
+              isNight
+                ? styles.nightBadge
+                : styles.dayBadge,
+            ]}
           >
-            <Text style={styles.exitText}>
-              خروج
+            <Ionicons
+              name={
+                isNight
+                  ? "moon"
+                  : "sunny"
+              }
+              size={17}
+              color="#F4F1EF"
+            />
+
+            <Text
+              style={
+                styles.phaseText
+              }
+            >
+              {isNight
+                ? "ليل"
+                : "نهار"}
             </Text>
-          </Pressable>
+          </View>
         </View>
 
-        {/* PHASE */}
         <View
           style={[
-            styles.phaseCard,
-            isNight
-              ? styles.nightCard
-              : styles.dayCard,
+            styles.timerCard,
+            secondsLeft <= 10 &&
+              styles.timerDanger,
           ]}
         >
-          <Text style={styles.phaseTitle}>
-            {gameFinished
-              ? 'انتهت اللعبة'
-              : isNight
-              ? '🌙 الليل'
-              : '☀️ النهار'}
+          <Text
+            style={
+              styles.timerLabel
+            }
+          >
+            الوقت المتبقي
           </Text>
 
-          {!gameFinished && (
-            <>
-              <Text style={styles.timer}>
-                {formatTime(secondsLeft)}
-              </Text>
+          <Text
+            style={
+              styles.timer
+            }
+          >
+            {formatTime(
+              secondsLeft
+            )}
+          </Text>
 
-              <Text style={styles.timerCaption}>
-                الوقت المتبقي
-              </Text>
-            </>
-          )}
-
-          <Text style={styles.roundText}>
-            الجولة {room.game_round || 1}
+          <Text
+            style={
+              styles.timerHint
+            }
+          >
+            {isNight
+              ? "تنتهي المرحلة الليلية تلقائيًا"
+              : "ينتهي النهار تلقائيًا"}
           </Text>
         </View>
 
-        {/* WINNER */}
+        {myRole && (
+          <View
+            style={
+              styles.roleCard
+            }
+          >
+            <View
+              style={
+                styles.roleIcon
+              }
+            >
+              <Ionicons
+                name={
+                  myRole ===
+                  "MAFIA"
+                    ? "skull"
+                    : myRole ===
+                      "DOCTOR"
+                    ? "medkit"
+                    : myRole ===
+                      "DETECTIVE"
+                    ? "search"
+                    : "person"
+                }
+                size={27}
+                color="#D7A94B"
+              />
+            </View>
+
+            <View
+              style={
+                styles.roleContent
+              }
+            >
+              <Text
+                style={
+                  styles.roleSmall
+                }
+              >
+                دورك
+              </Text>
+
+              <Text
+                style={
+                  styles.roleName
+                }
+              >
+                {ROLE_LABELS[
+                  myRole
+                ]}
+              </Text>
+
+              <Text
+                style={
+                  styles.roleDescription
+                }
+              >
+                {
+                  ROLE_DESCRIPTIONS[
+                    myRole
+                  ]
+                }
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {!myAlive && (
+          <View
+            style={
+              styles.deadBanner
+            }
+          >
+            <Ionicons
+              name="skull-outline"
+              size={25}
+              color="#B5222E"
+            />
+
+            <View
+              style={
+                styles.deadBannerContent
+              }
+            >
+              <Text
+                style={
+                  styles.deadBannerTitle
+                }
+              >
+                لقد مت
+              </Text>
+
+              <Text
+                style={
+                  styles.deadBannerText
+                }
+              >
+                لم يعد بإمكانك تنفيذ الأدوار أو التصويت أو إرسال الرسائل.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {gameFinished && (
-          <View style={styles.winnerCard}>
-            <Text style={styles.winnerTitle}>
-              🏆 انتهت اللعبة
+          <View
+            style={
+              styles.winnerCard
+            }
+          >
+            <Ionicons
+              name="trophy"
+              size={35}
+              color="#D7A94B"
+            />
+
+            <Text
+              style={
+                styles.winnerTitle
+              }
+            >
+              انتهت اللعبة
             </Text>
 
-            <Text style={styles.winnerText}>
-              الفائز:
-              {' '}
-              {room.winner || 'غير محدد'}
+            <Text
+              style={
+                styles.winnerText
+              }
+            >
+              {room.winner
+                ? `الفائز: ${room.winner}`
+                : "تم تحديد الفائز."}
             </Text>
           </View>
         )}
 
-        {/* ROLE */}
-        <View style={styles.roleCard}>
-          <View style={styles.roleHeader}>
-            <Text style={styles.roleTitle}>
-              دورك
-            </Text>
-
-            {myPlayer && (
-              <PlayerAvatar
-                player={myPlayer}
-                profile={
-                  profiles[
-                    myPlayer.user_id
-                  ]
-                }
-                size={54}
-              />
-            )}
-          </View>
-
-          <Text style={styles.roleName}>
-            {roleLabel}
-          </Text>
-
-          <Text style={styles.roleDescription}>
-            {roleDescription}
-          </Text>
-
-          {!myAlive && (
-            <View
-              style={styles.deadBanner}
-            >
-              <Text style={styles.deadBannerText}>
-                💀 لقد مت — يمكنك متابعة اللعبة
-                لكن لا يمكنك التصويت أو التحدث.
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* EVENT */}
         {eventText && (
-          <View style={styles.eventCard}>
-            <Text style={styles.eventTitle}>
-              آخر حدث
-            </Text>
+          <View
+            style={
+              styles.eventCard
+            }
+          >
+            <Ionicons
+              name="information-circle-outline"
+              size={21}
+              color="#D7A94B"
+            />
 
-            <Text style={styles.eventText}>
+            <Text
+              style={
+                styles.eventText
+              }
+            >
               {eventText}
             </Text>
           </View>
         )}
 
-        {/* PLAYERS */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              اللاعبون
-            </Text>
-
-            <Text style={styles.playerCount}>
-              {alivePlayers.length}/
-              {players.length} أحياء
-            </Text>
-          </View>
-
-          {players.map((player) => {
-            const profile =
-              profiles[
-                player.user_id
-              ];
-
-            const selected =
-              selectedTarget ===
-              player.id;
-
-            const isMe =
-              player.id ===
-              gameState.my_player_id;
-
-            const selectable =
-              player.alive &&
-              !isMe &&
-              myAlive &&
-              !gameFinished &&
-              (
-                isNight
-                  ? canNightAction
-                  : isDay
-              );
-
-            return (
-              <Pressable
-                key={player.id}
-                onPress={() => {
-                  if (selectable) {
-                    selectTarget(
-                      player.id
-                    );
-                  }
-                }}
-                disabled={!selectable}
-                style={[
-                  styles.playerCard,
-                  !player.alive &&
-                    styles.deadPlayerCard,
-                  selected &&
-                    styles.selectedPlayerCard,
-                ]}
+        {isNight &&
+          canNightAction && (
+            <View
+              style={
+                styles.actionSection
+              }
+            >
+              <Text
+                style={
+                  styles.sectionTitle
+                }
               >
-                <PlayerAvatar
-                  player={player}
-                  profile={profile}
-                  size={48}
-                />
+                اختر لاعبًا
+              </Text>
+
+              <Text
+                style={
+                  styles.sectionHint
+                }
+              >
+                اضغط على لاعب حي لتحديده.
+              </Text>
+
+              <View
+                style={
+                  styles.playersGrid
+                }
+              >
+                {selectablePlayers.map(
+                  renderPlayer
+                )}
+              </View>
+
+              {selectedPlayer && (
+                <View
+                  style={
+                    styles.selectedBox
+                  }
+                >
+                  <Text
+                    style={
+                      styles.selectedText
+                    }
+                  >
+                    المحدد:{" "}
+                    {profiles[
+                      selectedPlayer
+                        .user_id
+                    ]?.username ||
+                      selectedPlayer.name}
+                  </Text>
+                </View>
+              )}
+
+              {myRole ===
+                "MAFIA" && (
+                <Pressable
+                  onPress={() =>
+                    performNightAction(
+                      "kill"
+                    )
+                  }
+                  disabled={
+                    !selectedTarget ||
+                    busy
+                  }
+                  style={[
+                    styles.actionButton,
+                    styles.killButton,
+                    (!selectedTarget ||
+                      busy) &&
+                      styles.disabledButton,
+                  ]}
+                >
+                  {busy ? (
+                    <ActivityIndicator
+                      color="#FFF"
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="skull"
+                        size={21}
+                        color="#FFF"
+                      />
+
+                      <Text
+                        style={
+                          styles.actionButtonText
+                        }
+                      >
+                        قتل اللاعب
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
+
+              {myRole ===
+                "DOCTOR" && (
+                <Pressable
+                  onPress={() =>
+                    performNightAction(
+                      "protect"
+                    )
+                  }
+                  disabled={
+                    !selectedTarget ||
+                    busy
+                  }
+                  style={[
+                    styles.actionButton,
+                    styles.protectButton,
+                    (!selectedTarget ||
+                      busy) &&
+                      styles.disabledButton,
+                  ]}
+                >
+                  {busy ? (
+                    <ActivityIndicator
+                      color="#090A0D"
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={21}
+                        color="#090A0D"
+                      />
+
+                      <Text
+                        style={
+                          styles.darkActionText
+                        }
+                      >
+                        حماية اللاعب
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              )}
+
+              {myRole ===
+                "DETECTIVE" && (
+                <>
+                  <Pressable
+                    onPress={() =>
+                      performNightAction(
+                        "investigate"
+                      )
+                    }
+                    disabled={
+                      !selectedTarget ||
+                      busy
+                    }
+                    style={[
+                      styles.actionButton,
+                      styles.investigateButton,
+                      (!selectedTarget ||
+                        busy) &&
+                        styles.disabledButton,
+                    ]}
+                  >
+                    {busy ? (
+                      <ActivityIndicator
+                        color="#090A0D"
+                      />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="search"
+                          size={21}
+                          color="#090A0D"
+                        />
+
+                        <Text
+                          style={
+                            styles.darkActionText
+                          }
+                        >
+                          التحقيق
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+
+                  <Text
+                    style={
+                      styles.oneInvestigation
+                    }
+                  >
+                    يمكنك التحقيق في لاعب واحد فقط كل ليلة.
+                  </Text>
+                </>
+              )}
+
+              {investigationResult &&
+                myRole ===
+                  "DETECTIVE" && (
+                  <View
+                    style={
+                      styles.investigationCard
+                    }
+                  >
+                    <Ionicons
+                      name="eye"
+                      size={22}
+                      color="#D7A94B"
+                    />
+
+                    <Text
+                      style={
+                        styles.investigationText
+                      }
+                    >
+                      {investigationResult}
+                    </Text>
+                  </View>
+                )}
+            </View>
+          )}
+
+        {isNight &&
+          myAlive &&
+          myRole ===
+            "CITIZEN" && (
+            <View
+              style={
+                styles.waitingCard
+              }
+            >
+              <Ionicons
+                name="moon-outline"
+                size={28}
+                color="#D7A94B"
+              />
+
+              <Text
+                style={
+                  styles.waitingTitle
+                }
+              >
+                انتظر حتى ينتهي الليل
+              </Text>
+
+              <Text
+                style={
+                  styles.waitingText
+                }
+              >
+                دورك يبدأ في النهار.
+              </Text>
+            </View>
+          )}
+
+        {isDay && (
+          <>
+            <View
+              style={
+                styles.dayHeader
+              }
+            >
+              <View>
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
+                  وقت النهار
+                </Text>
+
+                <Text
+                  style={
+                    styles.sectionHint
+                  }
+                >
+                  تحدثوا ثم اختاروا اللاعب الذي تريدون التصويت ضده.
+                </Text>
+              </View>
+            </View>
+
+            {canVote && (
+              <View
+                style={
+                  styles.actionSection
+                }
+              >
+                <Text
+                  style={
+                    styles.sectionTitle
+                  }
+                >
+                  التصويت
+                </Text>
 
                 <View
                   style={
-                    styles.playerInfo
+                    styles.playersGrid
+                  }
+                >
+                  {selectablePlayers.map(
+                    renderPlayer
+                  )}
+                </View>
+
+                {selectedPlayer && (
+                  <View
+                    style={
+                      styles.selectedBox
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.selectedText
+                      }
+                    >
+                      التصويت ضد:{" "}
+                      {profiles[
+                        selectedPlayer
+                          .user_id
+                      ]?.username ||
+                        selectedPlayer.name}
+                    </Text>
+                  </View>
+                )}
+
+                <Pressable
+                  onPress={
+                    handleVote
+                  }
+                  disabled={
+                    !selectedTarget ||
+                    busy
+                  }
+                  style={[
+                    styles.voteButton,
+                    (!selectedTarget ||
+                      busy) &&
+                      styles.disabledButton,
+                  ]}
+                >
+                  {busy ? (
+                    <ActivityIndicator
+                      color="#090A0D"
+                    />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={21}
+                        color="#090A0D"
+                      />
+
+                      <Text
+                        style={
+                          styles.voteText
+                        }
+                      >
+                        تأكيد التصويت
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
+            )}
+
+            {myAlive &&
+              !gameFinished && (
+                <View
+                  style={
+                    styles.voiceCard
                   }
                 >
                   <View
                     style={
-                      styles.playerNameRow
+                      styles.voiceIcon
+                    }
+                  >
+                    <Ionicons
+                      name={
+                        micEnabled
+                          ? "mic"
+                          : "mic-outline"
+                      }
+                      size={23}
+                      color="#D7A94B"
+                    />
+                  </View>
+
+                  <View
+                    style={
+                      styles.voiceContent
                     }
                   >
                     <Text
-                      style={[
-                        styles.playerName,
-                        !player.alive &&
-                          styles.deadName,
-                      ]}
+                      style={
+                        styles.voiceTitle
+                      }
                     >
-                      {profile?.username ||
-                        player.name ||
-                        'Player'}
+                      الميكروفون
                     </Text>
 
-                    {isMe && (
-                      <Text
-                        style={
-                          styles.youBadge
-                        }
-                      >
-                        أنت
-                      </Text>
-                    )}
+                    <Text
+                      style={
+                        styles.voiceText
+                      }
+                    >
+                      متاح أثناء النهار فقط.
+                    </Text>
                   </View>
 
+                  <Pressable
+                    onPress={
+                      handleMicrophone
+                    }
+                    style={[
+                      styles.micButton,
+                      micEnabled &&
+                        styles.micButtonActive,
+                    ]}
+                  >
+                    <Text
+                      style={
+                        styles.micButtonText
+                      }
+                    >
+                      {micEnabled
+                        ? "ON"
+                        : "MIC"}
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+
+            <View
+              style={
+                styles.chatSection
+              }
+            >
+              <View
+                style={
+                  styles.chatHeader
+                }
+              >
+                <View>
                   <Text
                     style={
-                      styles.playerStatus
+                      styles.sectionTitle
                     }
                   >
-                    {player.alive
-                      ? '🟢 حي'
-                      : '💀 مات'}
+                    الدردشة
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.sectionHint
+                    }
+                  >
+                    الدردشة متاحة للأحياء أثناء النهار.
                   </Text>
                 </View>
 
-                {selected && (
-                  <Text
-                    style={
-                      styles.selectedMark
-                    }
-                  >
-                    ✓
-                  </Text>
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
-
-        {/* NIGHT ACTIONS */}
-        {isNight &&
-          myAlive &&
-          !gameFinished &&
-          myRole === 'MAFIA' && (
-            <View style={styles.actionCard}>
-              <Text
-                style={styles.actionTitle}
-              >
-                🔪 مهمة المافيا
-              </Text>
-
-              <Text
-                style={styles.actionDescription}
-              >
-                اختر لاعبًا واحدًا للقضاء عليه.
-              </Text>
-
-              <Pressable
-                style={[
-                  styles.dangerButton,
-                  !selectedTarget &&
-                    styles.disabledButton,
-                ]}
-                disabled={
-                  !selectedTarget ||
-                  busy
-                }
-                onPress={() =>
-                  performNightAction(
-                    'kill'
-                  )
-                }
-              >
-                {busy ? (
-                  <ActivityIndicator
-                    color="#fff"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.buttonText
-                    }
-                  >
-                    تنفيذ القتل
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-        {isNight &&
-          myAlive &&
-          !gameFinished &&
-          myRole === 'DOCTOR' && (
-            <View style={styles.actionCard}>
-              <Text
-                style={styles.actionTitle}
-              >
-                🩺 مهمة الطبيب
-              </Text>
-
-              <Text
-                style={styles.actionDescription}
-              >
-                اختر لاعبًا واحدًا لحمايته هذه
-                الليلة.
-              </Text>
-
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  !selectedTarget &&
-                    styles.disabledButton,
-                ]}
-                disabled={
-                  !selectedTarget ||
-                  busy
-                }
-                onPress={() =>
-                  performNightAction(
-                    'protect'
-                  )
-                }
-              >
-                {busy ? (
-                  <ActivityIndicator
-                    color="#fff"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.buttonText
-                    }
-                  >
-                    حماية اللاعب
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-        {isNight &&
-          myAlive &&
-          !gameFinished &&
-          myRole === 'DETECTIVE' && (
-            <View style={styles.actionCard}>
-              <Text
-                style={styles.actionTitle}
-              >
-                🔎 مهمة المحقق
-              </Text>
-
-              <Text
-                style={styles.actionDescription}
-              >
-                يمكنك التحقيق مع شخص واحد فقط كل
-                ليلة.
-              </Text>
-
-              <Pressable
-                style={[
-                  styles.primaryButton,
-                  !selectedTarget &&
-                    styles.disabledButton,
-                ]}
-                disabled={
-                  !selectedTarget ||
-                  busy
-                }
-                onPress={() =>
-                  performNightAction(
-                    'investigate'
-                  )
-                }
-              >
-                {busy ? (
-                  <ActivityIndicator
-                    color="#fff"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.buttonText
-                    }
-                  >
-                    التحقيق
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-        {isNight &&
-          myAlive &&
-          !gameFinished &&
-          myRole === 'CITIZEN' && (
-            <View style={styles.infoCard}>
-              <Text style={styles.infoTitle}>
-                🌙 أنت مواطن
-              </Text>
-
-              <Text
-                style={styles.infoText}
-              >
-                لا توجد لديك مهمة ليلية. راقب ما
-                يحدث واستعد للنقاش في النهار.
-              </Text>
-            </View>
-          )}
-
-        {/* DAY VOTE */}
-        {isDay &&
-          myAlive &&
-          !gameFinished && (
-            <View style={styles.actionCard}>
-              <Text
-                style={styles.actionTitle}
-              >
-                🗳️ التصويت
-              </Text>
-
-              <Text
-                style={styles.actionDescription}
-              >
-                اختر لاعبًا واحدًا للتصويت عليه.
-                يتم احتساب الأصوات عند انتهاء وقت
-                النهار.
-              </Text>
-
-              <Pressable
-                style={[
-                  styles.voteButton,
-                  !selectedTarget &&
-                    styles.disabledButton,
-                ]}
-                disabled={
-                  !selectedTarget ||
-                  busy
-                }
-                onPress={performVote}
-              >
-                {busy ? (
-                  <ActivityIndicator
-                    color="#fff"
-                  />
-                ) : (
-                  <Text
-                    style={
-                      styles.buttonText
-                    }
-                  >
-                    تأكيد التصويت
-                  </Text>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-        {/* DAY CHAT */}
-        {isDay && (
-          <View style={styles.chatCard}>
-            <View
-              style={styles.chatHeader}
-            >
-              <View>
-                <Text
-                  style={styles.chatTitle}
-                >
-                  💬 دردشة النهار
-                </Text>
-
-                <Text
-                  style={styles.chatSubtitle}
-                >
-                  التواصل متاح أثناء النهار فقط
-                </Text>
+                <Ionicons
+                  name="chatbubbles-outline"
+                  size={25}
+                  color="#D7A94B"
+                />
               </View>
 
               <View
-                style={styles.onlineDot}
-              />
-            </View>
+                style={
+                  styles.messagesBox
+                }
+              >
+                {messagesLoading &&
+                  messages.length ===
+                    0 && (
+                    <ActivityIndicator
+                      color="#D7A94B"
+                    />
+                  )}
 
-            <View style={styles.messagesBox}>
-              {messagesLoading &&
-              messages.length === 0 ? (
+                {!messagesLoading &&
+                  messages.length ===
+                    0 && (
+                    <Text
+                      style={
+                        styles.emptyMessages
+                      }
+                    >
+                      لا توجد رسائل بعد.
+                    </Text>
+                  )}
+
+                {messages.map(
+                  (message) => {
+                    const profile =
+                      profiles[
+                        message.user_id
+                      ];
+
+                    const name =
+                      profile?.username ||
+                      "Player";
+
+                    return (
+                      <View
+                        key={
+                          message.id
+                        }
+                        style={
+                          styles.messageRow
+                        }
+                      >
+                        {profile?.avatar_url ? (
+                          <Image
+                            source={{
+                              uri: profile.avatar_url,
+                            }}
+                            style={
+                              styles.messageAvatar
+                            }
+                          />
+                        ) : (
+                          <View
+                            style={
+                              styles.messageAvatarFallback
+                            }
+                          >
+                            <Ionicons
+                              name="person"
+                              size={15}
+                              color="#D7A94B"
+                            />
+                          </View>
+                        )}
+
+                        <View
+                          style={
+                            styles.messageBubble
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.messageName
+                            }
+                          >
+                            {name}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.messageText
+                            }
+                          >
+                            {
+                              message.message
+                            }
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                )}
+              </View>
+
+              {canChat ? (
                 <View
                   style={
-                    styles.messagesLoading
+                    styles.inputRow
                   }
                 >
-                  <ActivityIndicator />
+                  <TextInput
+                    value={
+                      messageText
+                    }
+                    onChangeText={
+                      setMessageText
+                    }
+                    placeholder="اكتب رسالتك..."
+                    placeholderTextColor="#666870"
+                    style={
+                      styles.messageInput
+                    }
+                    multiline
+                    maxLength={300}
+                    editable={
+                      !sendingMessage
+                    }
+                  />
+
+                  <Pressable
+                    onPress={
+                      handleSendMessage
+                    }
+                    disabled={
+                      !messageText.trim() ||
+                      sendingMessage
+                    }
+                    style={[
+                      styles.sendButton,
+                      (!messageText.trim() ||
+                        sendingMessage) &&
+                        styles.disabledSend,
+                    ]}
+                  >
+                    {sendingMessage ? (
+                      <ActivityIndicator
+                        color="#090A0D"
+                      />
+                    ) : (
+                      <Ionicons
+                        name="send"
+                        size={20}
+                        color="#090A0D"
+                      />
+                    )}
+                  </Pressable>
+                </View>
+              ) : (
+                <View
+                  style={
+                    styles.chatClosed
+                  }
+                >
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={19}
+                    color="#666870"
+                  />
 
                   <Text
                     style={
-                      styles.loadingSmall
+                      styles.chatClosedText
                     }
                   >
-                    جارٍ تحميل الرسائل...
+                    الدردشة مغلقة حاليًا.
                   </Text>
                 </View>
-              ) : messages.length === 0 ? (
-                <Text
-                  style={
-                    styles.emptyMessages
-                  }
-                >
-                  لا توجد رسائل بعد. ابدأ النقاش!
-                </Text>
-              ) : (
-                messages.map((message) => {
-                  const profile =
-                    profiles[
-                      message.user_id
-                    ];
-
-                  const sender =
-                    players.find(
-                      (player) =>
-                        player.user_id ===
-                        message.user_id
-                    );
-
-                  const isOwn =
-                    message.user_id ===
-                    myPlayer?.user_id;
-
-                  return (
-                    <View
-                      key={message.id}
-                      style={[
-                        styles.messageRow,
-                        isOwn &&
-                          styles.myMessageRow,
-                      ]}
-                    >
-                      <PlayerAvatar
-                        player={
-                          sender || {
-                            id:
-                              message.user_id,
-                            user_id:
-                              message.user_id,
-                            name:
-                              profile?.username ||
-                              'Player',
-                            avatar_url:
-                              profile?.avatar_url ||
-                              null,
-                            alive: true,
-                          }
-                        }
-                        profile={profile}
-                        size={34}
-                      />
-
-                      <View
-                        style={[
-                          styles.messageBubble,
-                          isOwn &&
-                            styles.myMessageBubble,
-                        ]}
-                      >
-                        <Text
-                          style={
-                            styles.messageSender
-                          }
-                        >
-                          {profile?.username ||
-                            sender?.name ||
-                            'Player'}
-                        </Text>
-
-                        <Text
-                          style={
-                            styles.messageText
-                          }
-                        >
-                          {message.message}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })
               )}
             </View>
-
-            {myAlive ? (
-              <View
-                style={styles.messageComposer}
-              >
-                <TextInput
-                  value={messageText}
-                  onChangeText={
-                    setMessageText
-                  }
-                  placeholder="اكتب رسالتك..."
-                  placeholderTextColor="#777"
-                  style={
-                    styles.messageInput
-                  }
-                  multiline
-                  maxLength={500}
-                  editable={!busy}
-                />
-
-                <Pressable
-                  style={[
-                    styles.sendButton,
-                    (!messageText.trim() ||
-                      busy) &&
-                      styles.disabledButton,
-                  ]}
-                  disabled={
-                    !messageText.trim() ||
-                    busy
-                  }
-                  onPress={
-                    sendMessage
-                  }
-                >
-                  <Text
-                    style={
-                      styles.sendButtonText
-                    }
-                  >
-                    إرسال
-                  </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View
-                style={styles.chatClosed}
-              >
-                <Text
-                  style={
-                    styles.chatClosedText
-                  }
-                >
-                  💀 لا يمكنك إرسال الرسائل لأنك
-                  ميت.
-                </Text>
-              </View>
-            )}
-          </View>
+          </>
         )}
 
-        {/* NIGHT CHAT CLOSED */}
-        {isNight && !gameFinished && (
+        <View
+          style={
+            styles.playersSection
+          }
+        >
           <View
-            style={styles.closedChatCard}
-          >
-            <Text
-              style={
-                styles.closedChatTitle
-              }
-            >
-              🔒 الدردشة مغلقة
-            </Text>
-
-            <Text
-              style={
-                styles.closedChatText
-              }
-            >
-              انتظر حتى يبدأ النهار للتحدث مع
-              اللاعبين.
-            </Text>
-          </View>
-        )}
-
-        {/* DEAD PLAYER INFO */}
-        {!myAlive && !gameFinished && (
-          <View
-            style={styles.spectatorCard}
-          >
-            <Text
-              style={
-                styles.spectatorTitle
-              }
-            >
-              👻 أنت الآن متفرج
-            </Text>
-
-            <Text
-              style={
-                styles.spectatorText
-              }
-            >
-              يمكنك متابعة الأحداث ومعرفة من بقي
-              حيًا، لكن لا يمكنك تنفيذ المهام أو
-              التصويت أو إرسال رسائل.
-            </Text>
-          </View>
-        )}
-
-        {/* REFRESH */}
-        {!gameFinished && (
-          <Pressable
-            style={styles.refreshButton}
-            onPress={() =>
-              loadGame(true)
+            style={
+              styles.playersSectionHeader
             }
-            disabled={refreshing}
           >
-            {refreshing ? (
-              <ActivityIndicator />
-            ) : (
-              <Text
-                style={
-                  styles.refreshText
-                }
-              >
-                ↻ تحديث حالة اللعبة
-              </Text>
-            )}
-          </Pressable>
-        )}
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              اللاعبون
+            </Text>
 
-        {/* FINISHED */}
-        {gameFinished && (
+            <Text
+              style={
+                styles.playerCount
+              }
+            >
+              {alivePlayers.length}
+              {" / "}
+              {players.length} أحياء
+            </Text>
+          </View>
+
+          {players.map(
+            renderPlayer
+          )}
+        </View>
+
+        {deadPlayers.length >
+          0 && (
           <View
-            style={styles.finishedCard}
+            style={
+              styles.deadInfo
+            }
           >
-            <Text
-              style={
-                styles.finishedTitle
-              }
-            >
-              🎉 انتهت الجولة
-            </Text>
+            <Ionicons
+              name="skull-outline"
+              size={19}
+              color="#B5222E"
+            />
 
             <Text
               style={
-                styles.finishedText
+                styles.deadInfoText
               }
             >
-              {room.winner
-                ? `الفائز: ${room.winner}`
-                : 'تم إنهاء اللعبة.'}
+              اللاعبون الذين يظهرون بعلامة ☠ ميتون ولا يمكنهم المشاركة.
             </Text>
-
-            <Pressable
-              style={styles.primaryButton}
-              onPress={() =>
-                router.replace('/rooms')
-              }
-            >
-              <Text
-                style={
-                  styles.buttonText
-                }
-              >
-                العودة إلى الغرف
-              </Text>
-            </Pressable>
           </View>
         )}
 
-        <View style={styles.bottomSpace} />
+        <View
+          style={
+            styles.bottomSpace
+          }
+        />
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#08090d',
-  },
-
-  content: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-
-  center: {
-    flex: 1,
-    backgroundColor: '#08090d',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-
-  loadingText: {
-    color: '#ddd',
-    marginTop: 14,
-    fontSize: 16,
-  },
-
-  loadingSmall: {
-    color: '#aaa',
-    marginTop: 8,
-  },
-
-  errorText: {
-    color: '#ff6b6b',
-    fontSize: 17,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-  },
-
-  logo: {
-    color: '#fff',
-    fontSize: 25,
-    fontWeight: '900',
-    letterSpacing: 2,
-  },
-
-  roomCode: {
-    color: '#888',
-    marginTop: 4,
-    fontSize: 13,
-  },
-
-  exitButton: {
-    borderWidth: 1,
-    borderColor: '#393b45',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 10,
-  },
-
-  exitText: {
-    color: '#ddd',
-    fontWeight: '700',
-  },
-
-  phaseCard: {
-    borderRadius: 20,
-    padding: 22,
-    alignItems: 'center',
-    marginBottom: 14,
-    borderWidth: 1,
-  },
-
-  nightCard: {
-    backgroundColor: '#111425',
-    borderColor: '#2a3157',
-  },
-
-  dayCard: {
-    backgroundColor: '#19150d',
-    borderColor: '#574522',
-  },
-
-  phaseTitle: {
-    color: '#fff',
-    fontSize: 25,
-    fontWeight: '900',
-  },
-
-  timer: {
-    color: '#fff',
-    fontSize: 44,
-    fontWeight: '900',
-    marginTop: 8,
-    letterSpacing: 2,
-  },
-
-  timerCaption: {
-    color: '#aaa',
-    fontSize: 12,
-  },
-
-  roundText: {
-    color: '#aaa',
-    marginTop: 10,
-    fontSize: 13,
-  },
-
-  winnerCard: {
-    backgroundColor: '#16130a',
-    borderWidth: 1,
-    borderColor: '#6b5420',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 14,
-    alignItems: 'center',
-  },
-
-  winnerTitle: {
-    color: '#f0c75e',
-    fontSize: 21,
-    fontWeight: '900',
-  },
-
-  winnerText: {
-    color: '#fff',
-    fontSize: 17,
-    marginTop: 8,
-    fontWeight: '700',
-  },
-
-  roleCard: {
-    backgroundColor: '#111216',
-    borderColor: '#282a31',
-    borderWidth: 1,
-    borderRadius: 18,
-    padding: 18,
-    marginBottom: 14,
-  },
-
-  roleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  roleTitle: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  roleName: {
-    color: '#fff',
-    fontSize: 27,
-    fontWeight: '900',
-    marginTop: 10,
-  },
-
-  roleDescription: {
-    color: '#aaa',
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 5,
-  },
-
-  deadBanner: {
-    backgroundColor: '#211216',
-    borderWidth: 1,
-    borderColor: '#54212b',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 14,
-  },
-
-  deadBannerText: {
-    color: '#ff9b9b',
-    fontSize: 13,
-    lineHeight: 19,
-  },
-
-  eventCard: {
-    backgroundColor: '#101114',
-    borderRadius: 14,
-    padding: 15,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#25272e',
-  },
-
-  eventTitle: {
-    color: '#aaa',
-    fontSize: 12,
-    fontWeight: '800',
-    marginBottom: 5,
-  },
-
-  eventText: {
-    color: '#eee',
-    fontSize: 14,
-    lineHeight: 20,
-  },
-
-  section: {
-    marginBottom: 14,
-  },
-
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-
-  sectionTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-
-  playerCount: {
-    color: '#888',
-    fontSize: 13,
-  },
-
-  playerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#111216',
-    borderWidth: 1,
-    borderColor: '#24262c',
-    borderRadius: 15,
-    padding: 11,
-    marginBottom: 8,
-  },
-
-  deadPlayerCard: {
-    opacity: 0.5,
-  },
-
-  selectedPlayerCard: {
-    borderColor: '#d4a72c',
-    backgroundColor: '#19160d',
-  },
-
-  avatar: {
-    backgroundColor: '#252831',
-  },
-
-  deadAvatar: {
-    opacity: 0.55,
-  },
-
-  avatarPlaceholder: {
-    backgroundColor: '#292c36',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  avatarText: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-
-  playerInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  playerNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-
-  playerName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-
-  deadName: {
-    color: '#aaa',
-    textDecorationLine: 'line-through',
-  },
-
-  youBadge: {
-    color: '#d9b85c',
-    backgroundColor: '#2b2513',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginLeft: 8,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-
-  playerStatus: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  selectedMark: {
-    color: '#d9b85c',
-    fontSize: 24,
-    fontWeight: '900',
-    marginLeft: 8,
-  },
-
-  actionCard: {
-    backgroundColor: '#121318',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#2b2d35',
-    padding: 18,
-    marginBottom: 14,
-  },
-
-  actionTitle: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-
-  actionDescription: {
-    color: '#999',
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 7,
-    marginBottom: 14,
-  },
-
-  primaryButton: {
-    minHeight: 50,
-    backgroundColor: '#3f3a8f',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-
-  dangerButton: {
-    minHeight: 50,
-    backgroundColor: '#8f2633',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-
-  voteButton: {
-    minHeight: 50,
-    backgroundColor: '#735a1b',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-
-  disabledButton: {
-    opacity: 0.35,
-  },
-
-  buttonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  infoCard: {
-    backgroundColor: '#10151b',
-    borderWidth: 1,
-    borderColor: '#263340',
-    borderRadius: 16,
-    padding: 17,
-    marginBottom: 14,
-  },
-
-  infoTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-
-  infoText: {
-    color: '#999',
-    marginTop: 7,
-    lineHeight: 20,
-    fontSize: 13,
-  },
-
-  chatCard: {
-    backgroundColor: '#101114',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#292b31',
-    padding: 15,
-    marginBottom: 14,
-  },
-
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-
-  chatTitle: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-
-  chatSubtitle: {
-    color: '#777',
-    fontSize: 11,
-    marginTop: 4,
-  },
-
-  onlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#54c77b',
-  },
-
-  messagesBox: {
-    maxHeight: 360,
-    minHeight: 90,
-    marginBottom: 10,
-  },
-
-  messagesLoading: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 25,
-  },
-
-  emptyMessages: {
-    color: '#777',
-    textAlign: 'center',
-    paddingVertical: 28,
-    fontSize: 13,
-  },
-
-  messageRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-
-  myMessageRow: {
-    flexDirection: 'row-reverse',
-  },
-
-  messageBubble: {
-    flex: 1,
-    backgroundColor: '#1b1d23',
-    borderRadius: 12,
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    marginLeft: 8,
-  },
-
-  myMessageBubble: {
-    marginLeft: 0,
-    marginRight: 8,
-    backgroundColor: '#24213a',
-  },
-
-  messageSender: {
-    color: '#c7a84e',
-    fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 3,
-  },
-
-  messageText: {
-    color: '#eee',
-    fontSize: 14,
-    lineHeight: 19,
-  },
-
-  messageComposer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: '#25272d',
-    paddingTop: 10,
-  },
-
-  messageInput: {
-    flex: 1,
-    minHeight: 46,
-    maxHeight: 100,
-    backgroundColor: '#191b20',
-    borderWidth: 1,
-    borderColor: '#30323a',
-    borderRadius: 12,
-    color: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    textAlignVertical: 'top',
-  },
-
-  sendButton: {
-    height: 46,
-    minWidth: 64,
-    marginLeft: 8,
-    borderRadius: 12,
-    backgroundColor: '#3f3a8f',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-
-  sendButtonText: {
-    color: '#fff',
-    fontWeight: '900',
-  },
-
-  chatClosed: {
-    borderTopWidth: 1,
-    borderTopColor: '#282a30',
-    paddingTop: 12,
-  },
-
-  chatClosedText: {
-    color: '#777',
-    textAlign: 'center',
-    fontSize: 12,
-  },
-
-  closedChatCard: {
-    backgroundColor: '#111216',
-    borderWidth: 1,
-    borderColor: '#282a31',
-    borderRadius: 16,
-    padding: 17,
-    marginBottom: 14,
-    alignItems: 'center',
-  },
-
-  closedChatTitle: {
-    color: '#aaa',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-
-  closedChatText: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-
-  spectatorCard: {
-    backgroundColor: '#151116',
-    borderWidth: 1,
-    borderColor: '#38252f',
-    borderRadius: 16,
-    padding: 17,
-    marginBottom: 14,
-  },
-
-  spectatorTitle: {
-    color: '#d99ba8',
-    fontSize: 17,
-    fontWeight: '900',
-  },
-
-  spectatorText: {
-    color: '#999',
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 7,
-  },
-
-  refreshButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#30323a',
-    marginTop: 4,
-  },
-
-  refreshText: {
-    color: '#aaa',
-    fontWeight: '800',
-  },
-
-  finishedCard: {
-    backgroundColor: '#15130c',
-    borderWidth: 1,
-    borderColor: '#5b4820',
-    borderRadius: 18,
-    padding: 20,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-
-  finishedTitle: {
-    color: '#e4c45d',
-    fontSize: 23,
-    fontWeight: '900',
-  },
-
-  finishedText: {
-    color: '#ddd',
-    fontSize: 16,
-    marginTop: 8,
-    marginBottom: 16,
-  },
-
-  bottomSpace: {
-    height: 30,
-  },
-});
+const styles =
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: "#090A0D",
+    },
+
+    scroll: {
+      flex: 1,
+    },
+
+    container: {
+      padding: 18,
+      paddingBottom: 45,
+    },
+
+    loadingScreen: {
+      flex: 1,
+      backgroundColor: "#090A0D",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 25,
+    },
+
+    loadingText: {
+      color: "#A5A6AC",
+      marginTop: 15,
+      fontSize: 14,
+    },
+
+    errorTitle: {
+      color: "#F4F1EF",
+      fontSize: 19,
+      fontWeight: "900",
+      marginTop: 15,
+      marginBottom: 20,
+    },
+
+    retryButton: {
+      backgroundColor: "#D7A94B",
+      paddingHorizontal: 25,
+      paddingVertical: 13,
+      borderRadius: 13,
+    },
+
+    retryText: {
+      color: "#090A0D",
+      fontWeight: "900",
+    },
+
+    header: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 18,
+    },
+
+    eyebrow: {
+      color: "#B5222E",
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 3,
+    },
+
+    roomTitle: {
+      color: "#F4F1EF",
+      fontSize: 26,
+      fontWeight: "900",
+      marginTop: 4,
+    },
+
+    phaseBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 13,
+      paddingVertical: 10,
+      borderRadius: 14,
+    },
+
+    nightBadge: {
+      backgroundColor: "#202038",
+    },
+
+    dayBadge: {
+      backgroundColor: "#4A3C20",
+    },
+
+    phaseText: {
+      color: "#F4F1EF",
+      fontSize: 12,
+      fontWeight: "900",
+      marginLeft: 6,
+    },
+
+    timerCard: {
+      backgroundColor: "#15171B",
+      borderWidth: 1,
+      borderColor: "#292B30",
+      borderRadius: 20,
+      alignItems: "center",
+      paddingVertical: 18,
+      marginBottom: 15,
+    },
+
+    timerDanger: {
+      borderColor: "#B5222E",
+    },
+
+    timerLabel: {
+      color: "#777983",
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 2,
+    },
+
+    timer: {
+      color: "#F4F1EF",
+      fontSize: 43,
+      fontWeight: "900",
+      letterSpacing: 2,
+      marginTop: 4,
+    },
+
+    timerHint: {
+      color: "#666870",
+      fontSize: 10,
+      marginTop: 3,
+    },
+
+    roleCard: {
+      backgroundColor: "#15171B",
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: "#2A2C31",
+      padding: 16,
+      flexDirection: "row",
+      marginBottom: 15,
+    },
+
+    roleIcon: {
+      width: 53,
+      height: 53,
+      borderRadius: 16,
+      backgroundColor: "#24262B",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    roleContent: {
+      flex: 1,
+      marginLeft: 13,
+    },
+
+    roleSmall: {
+      color: "#777983",
+      fontSize: 9,
+      fontWeight: "900",
+      letterSpacing: 2,
+    },
+
+    roleName: {
+      color: "#D7A94B",
+      fontSize: 20,
+      fontWeight: "900",
+      marginTop: 2,
+    },
+
+    roleDescription: {
+      color: "#9799A1",
+      fontSize: 12,
+      lineHeight: 18,
+      marginTop: 4,
+    },
+
+    deadBanner: {
+      backgroundColor: "#211317",
+      borderWidth: 1,
+      borderColor: "#57212A",
+      borderRadius: 17,
+      padding: 15,
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 15,
+    },
+
+    deadBannerContent: {
+      flex: 1,
+      marginLeft: 12,
+    },
+
+    deadBannerTitle: {
+      color: "#B5222E",
+      fontSize: 17,
+      fontWeight: "900",
+    },
+
+    deadBannerText: {
+      color: "#9B7C81",
+      fontSize: 11,
+      lineHeight: 17,
+      marginTop: 3,
+    },
+
+    winnerCard: {
+      backgroundColor: "#2A2415",
+      borderWidth: 1,
+      borderColor: "#8A6A26",
+      borderRadius: 18,
+      padding: 20,
+      alignItems: "center",
+      marginBottom: 15,
+    },
+
+    winnerTitle: {
+      color: "#D7A94B",
+      fontSize: 22,
+      fontWeight: "900",
+      marginTop: 7,
+    },
+
+    winnerText: {
+      color: "#F4F1EF",
+      fontSize: 14,
+      fontWeight: "800",
+      marginTop: 5,
+    },
+
+    eventCard: {
+      backgroundColor: "#121419",
+      borderRadius: 15,
+      padding: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 15,
+    },
+
+    eventText: {
+      flex: 1,
+      color: "#A7A8AF",
+      fontSize: 12,
+      lineHeight: 18,
+      marginLeft: 10,
+    },
+
+    actionSection: {
+      marginBottom: 20,
+    },
+
+    sectionTitle: {
+      color: "#777983",
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 2,
+    },
+
+    sectionHint: {
+      color: "#777983",
+      fontSize: 11,
+      lineHeight: 17,
+      marginTop: 5,
+    },
+
+    playersGrid: {
+      marginTop: 11,
+    },
+
+    playerCard: {
+      backgroundColor: "#15171B",
+      borderWidth: 1,
+      borderColor: "#282A2F",
+      borderRadius: 16,
+      minHeight: 70,
+      padding: 9,
+      marginBottom: 8,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    selectedPlayerCard: {
+      borderColor: "#D7A94B",
+      backgroundColor: "#211D13",
+    },
+
+    deadPlayerCard: {
+      opacity: 0.58,
+      backgroundColor: "#121317",
+      borderColor: "#24252A",
+    },
+
+    notSelectable: {
+      opacity: 0.58,
+    },
+
+    avatar: {
+      backgroundColor: "#24262B",
+    },
+
+    deadAvatar: {
+      opacity: 0.5,
+    },
+
+    avatarFallback: {
+      backgroundColor: "#24262B",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    playerInfo: {
+      flex: 1,
+      marginLeft: 11,
+    },
+
+    playerNameRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+
+    playerName: {
+      color: "#F4F1EF",
+      fontSize: 14,
+      fontWeight: "800",
+    },
+
+    deadText: {
+      color: "#777983",
+    },
+
+    youBadge: {
+      color: "#D7A94B",
+      fontSize: 8,
+      fontWeight: "900",
+      marginLeft: 7,
+    },
+
+    aliveText: {
+      color: "#59C878",
+      fontSize: 9,
+      marginTop: 3,
+    },
+
+    selectedBox: {
+      backgroundColor: "#2A2415",
+      borderRadius: 13,
+      padding: 12,
+      marginTop: 8,
+      marginBottom: 10,
+    },
+
+    selectedText: {
+      color: "#D7A94B",
+      textAlign: "center",
+      fontSize: 12,
+      fontWeight: "900",
+    },
+
+    actionButton: {
+      minHeight: 54,
+      borderRadius: 15,
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      marginTop: 10,
+    },
+
+    killButton: {
+      backgroundColor: "#B5222E",
+    },
+
+    protectButton: {
+      backgroundColor: "#59C878",
+    },
+
+    investigateButton: {
+      backgroundColor: "#D7A94B",
+    },
+
+    actionButtonText: {
+      color: "#FFF",
+      fontSize: 14,
+      fontWeight: "900",
+      marginLeft: 8,
+    },
+
+    darkActionText: {
+      color: "#090A0D",
+      fontSize: 14,
+      fontWeight: "900",
+      marginLeft: 8,
+    },
+
+    disabledButton: {
+      opacity: 0.35,
+    },
+
+    oneInvestigation: {
+      color: "#777983",
+      textAlign: "center",
+      fontSize: 10,
+      marginTop: 9,
+    },
+
+    investigationCard: {
+      backgroundColor: "#171A20",
+      borderWidth: 1,
+      borderColor: "#D7A94B",
+      borderRadius: 15,
+      padding: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 11,
+    },
+
+    investigationText: {
+      flex: 1,
+      color: "#D7A94B",
+      fontSize: 13,
+      fontWeight: "800",
+      marginLeft: 10,
+      lineHeight: 19,
+    },
+
+    waitingCard: {
+      backgroundColor: "#15171B",
+      borderRadius: 18,
+      padding: 20,
+      alignItems: "center",
+      marginBottom: 18,
+    },
+
+    waitingTitle: {
+      color: "#F4F1EF",
+      fontSize: 16,
+      fontWeight: "900",
+      marginTop: 9,
+    },
+
+    waitingText: {
+      color: "#777983",
+      fontSize: 11,
+      marginTop: 4,
+    },
+
+    dayHeader: {
+      marginBottom: 7,
+    },
+
+    voteButton: {
+      height: 55,
+      borderRadius: 15,
+      backgroundColor: "#D7A94B",
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      marginTop: 11,
+    },
+
+    voteText: {
+      color: "#090A0D",
+      fontSize: 14,
+      fontWeight: "900",
+      marginLeft: 8,
+    },
+
+    voiceCard: {
+      backgroundColor: "#15171B",
+      borderRadius: 17,
+      padding: 13,
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: 18,
+      borderWidth: 1,
+      borderColor: "#282A2F",
+    },
+
+    voiceIcon: {
+      width: 45,
+      height: 45,
+      borderRadius: 14,
+      backgroundColor: "#24262B",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    voiceContent: {
+      flex: 1,
+      marginLeft: 10,
+    },
+
+    voiceTitle: {
+      color: "#F4F1EF",
+      fontSize: 14,
+      fontWeight: "900",
+    },
+
+    voiceText: {
+      color: "#777983",
+      fontSize: 10,
+      marginTop: 3,
+    },
+
+    micButton: {
+      backgroundColor: "#24262B",
+      borderRadius: 11,
+      paddingHorizontal: 15,
+      paddingVertical: 10,
+    },
+
+    micButtonActive: {
+      backgroundColor: "#31563A",
+    },
+
+    micButtonText: {
+      color: "#D7A94B",
+      fontSize: 10,
+      fontWeight: "900",
+    },
+
+    chatSection: {
+      marginBottom: 20,
+    },
+
+    chatHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+
+    messagesBox: {
+      backgroundColor: "#111318",
+      borderRadius: 16,
+      padding: 12,
+      minHeight: 90,
+      maxHeight: 360,
+    },
+
+    emptyMessages: {
+      color: "#666870",
+      textAlign: "center",
+      paddingVertical: 24,
+      fontSize: 11,
+    },
+
+    messageRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      marginBottom: 9,
+    },
+
+    messageAvatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+    },
+
+    messageAvatarFallback: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: "#24262B",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    messageBubble: {
+      flex: 1,
+      backgroundColor: "#1A1C21",
+      borderRadius: 13,
+      padding: 9,
+      marginLeft: 8,
+    },
+
+    messageName: {
+      color: "#D7A94B",
+      fontSize: 10,
+      fontWeight: "900",
+      marginBottom: 2,
+    },
+
+    messageText: {
+      color: "#E2E0DD",
+      fontSize: 12,
+      lineHeight: 17,
+    },
+
+    inputRow: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      marginTop: 9,
+    },
+
+    messageInput: {
+      flex: 1,
+      minHeight: 48,
+      maxHeight: 100,
+      backgroundColor: "#15171B",
+      borderWidth: 1,
+      borderColor: "#282A2F",
+      borderRadius: 14,
+      color: "#F4F1EF",
+      paddingHorizontal: 13,
+      paddingVertical: 11,
+      fontSize: 12,
+    },
+
+    sendButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 14,
+      backgroundColor: "#D7A94B",
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: 7,
+    },
+
+    disabledSend: {
+      opacity: 0.35,
+    },
+
+    chatClosed: {
+      backgroundColor: "#121419",
+      borderRadius: 13,
+      padding: 13,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+
+    chatClosedText: {
+      color: "#666870",
+      fontSize: 11,
+      marginLeft: 7,
+    },
+
+    playersSection: {
+      marginTop: 3,
+    },
+
+    playersSectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 10,
+    },
+
+    playerCount: {
+      color: "#777983",
+      fontSize: 10,
+      fontWeight: "800",
+    },
+
+    deadInfo: {
+      backgroundColor: "#151317",
+      borderRadius: 13,
+      padding: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      marginTop: 7,
+    },
+
+    deadInfoText: {
+      flex: 1,
+      color: "#777983",
+      fontSize: 10,
+      lineHeight: 16,
+      marginLeft: 8,
+    },
+
+    bottomSpace: {
+      height: 20,
+    },
+  });
