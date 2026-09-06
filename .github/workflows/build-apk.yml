@@ -18,11 +18,12 @@ jobs:
         uses: actions/checkout@v4
 
 
-      # 2. Node.js 24
+      # 2. Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
+          cache: npm
 
 
       # 3. Java 17
@@ -33,16 +34,52 @@ jobs:
           java-version: 17
 
 
-      # 4. Install dependencies
+      # 4. Verify Supabase environment
+      - name: Verify Supabase environment
+        shell: bash
+        run: |
+          set -e
+
+          if [ ! -f .env ]; then
+            echo "ERROR: .env file is missing."
+            exit 1
+          fi
+
+          set -a
+          source .env
+          set +a
+
+          if [ -z "${EXPO_PUBLIC_SUPABASE_URL:-}" ]; then
+            echo "ERROR: EXPO_PUBLIC_SUPABASE_URL is missing."
+            exit 1
+          fi
+
+          if [ -z "${EXPO_PUBLIC_SUPABASE_ANON_KEY:-}" ]; then
+            echo "ERROR: EXPO_PUBLIC_SUPABASE_ANON_KEY is missing."
+            exit 1
+          fi
+
+          EXPECTED_URL="https://bxaajugwvfgbyltutwlt.supabase.co"
+
+          if [ "$EXPO_PUBLIC_SUPABASE_URL" != "$EXPECTED_URL" ]; then
+            echo "ERROR: Supabase URL does not match Mafia Night."
+            echo "Expected: $EXPECTED_URL"
+            echo "Found:    $EXPO_PUBLIC_SUPABASE_URL"
+            exit 1
+          fi
+
+          echo "Supabase URL verified."
+          echo "Supabase anon key is present."
+
+
+      # 5. Install dependencies
       - name: Install dependencies
         run: npm install
 
 
-      # 5. Verify required Supabase packages
+      # 6. Verify Supabase packages
       - name: Verify Supabase dependencies
         run: |
-          echo "Checking required packages..."
-
           node -e "require.resolve('react-native-url-polyfill/auto')"
           node -e "require.resolve('@supabase/supabase-js')"
           node -e "require.resolve('@react-native-async-storage/async-storage')"
@@ -50,33 +87,39 @@ jobs:
           echo "All Supabase dependencies are installed."
 
 
-      # 6. Verify Expo
+      # 7. Verify Expo
       - name: Verify Expo configuration
         run: |
           npx expo --version
           npx expo config --type public
 
 
-      # 7. Verify Expo Router
+      # 8. Verify Expo Router
       - name: Verify Expo Router
         run: |
           node -e "const p=require('./package.json'); if(p.main!=='expo-router/entry'){throw new Error('package.json main must be expo-router/entry')}"
-
           node -e "require.resolve('expo-router/entry')"
 
           echo "Expo Router configuration is correct."
 
 
-      # 8. Generate Android project
+      # 9. Generate Android project
       - name: Generate Android project
+        shell: bash
         run: |
+          set -e
+
+          set -a
+          source .env
+          set +a
+
           npx expo prebuild \
             --platform android \
             --non-interactive \
             --clean
 
 
-      # 9. Verify Android project
+      # 10. Verify Android project
       - name: Verify Android project
         run: |
           test -f android/gradlew
@@ -85,12 +128,12 @@ jobs:
           echo "Android project verified."
 
 
-      # 10. Prepare Gradle
+      # 11. Prepare Gradle
       - name: Prepare Gradle
         run: chmod +x android/gradlew
 
 
-      # 11. Build standalone Release APK
+      # 12. Build Release APK
       - name: Build Release APK
         working-directory: android
         run: |
@@ -99,9 +142,12 @@ jobs:
             --stacktrace
 
 
-      # 12. Verify APK
+      # 13. Verify APK
       - name: Verify APK
+        shell: bash
         run: |
+          set -e
+
           APK=$(find android/app/build/outputs/apk/release \
             -type f \
             -name "*.apk" \
@@ -116,9 +162,12 @@ jobs:
           ls -lh "$APK"
 
 
-      # 13. Prepare APK
+      # 14. Prepare APK
       - name: Prepare APK
+        shell: bash
         run: |
+          set -e
+
           mkdir -p release
 
           APK=$(find android/app/build/outputs/apk/release \
@@ -132,7 +181,7 @@ jobs:
           ls -lh release/Mafia-Night-v1.0.apk
 
 
-      # 14. Upload APK
+      # 15. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
