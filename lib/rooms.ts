@@ -15,6 +15,7 @@ export type Room = {
 
 export type PublicRoom = {
   id: string;
+  code: string;
   name: string;
   max_players: number;
   host_id: string;
@@ -66,8 +67,9 @@ function formatError(
 }
 
 async function ensureUser() {
-  const { data } =
-    await supabase.auth.getUser();
+  const {
+    data,
+  } = await supabase.auth.getUser();
 
   if (data.user) {
     return data.user;
@@ -90,10 +92,6 @@ async function ensureUser() {
   return authData.user;
 }
 
-/**
- * يتأكد من وجود حساب اللاعب ويعيد
- * بيانات الملف الشخصي كاملة.
- */
 async function ensureProfile(
   username?: string
 ): Promise<{
@@ -144,15 +142,12 @@ export async function signInAnonymously() {
 
 /**
  * إنشاء غرفة عامة.
- *
- * اسم اللاعب الموجود في الحساب الشخصي
- * هو الاسم المستخدم داخل الغرفة.
  */
 export async function createRoom(
   roomName: string,
   playerName: string,
   maxPlayers = 8
-) {
+): Promise<Room> {
   const {
     user,
     profile,
@@ -174,17 +169,19 @@ export async function createRoom(
     )
   );
 
-  const { data, error } =
-    await supabase
-      .from('rooms')
-      .insert({
-        name,
-        max_players: max,
-        status: 'waiting',
-        host_id: user.id,
-      })
-      .select('*')
-      .single();
+  const {
+    data,
+    error,
+  } = await supabase
+    .from('rooms')
+    .insert({
+      name,
+      max_players: max,
+      status: 'waiting',
+      host_id: user.id,
+    })
+    .select('*')
+    .single();
 
   if (error || !data) {
     throw new Error(
@@ -195,10 +192,6 @@ export async function createRoom(
     );
   }
 
-  /*
-   * نستخدم بيانات الحساب الشخصي
-   * وليس اسمًا منفصلًا للغرفة.
-   */
   const playerNameToUse =
     profile.username?.trim() ||
     playerName.trim() ||
@@ -213,6 +206,7 @@ export async function createRoom(
       user_id: user.id,
       name: playerNameToUse,
       ready: false,
+      alive: true,
       avatar_url:
         profile.avatar_url || null,
       last_seen_at:
@@ -265,8 +259,6 @@ export async function getPublicRooms(): Promise<
 
 /**
  * الانضمام إلى غرفة عامة.
- *
- * الاسم والصورة يؤخذان من الملف الشخصي.
  */
 export async function joinPublicRoom(
   roomId: string,
@@ -295,11 +287,6 @@ export async function joinPublicRoom(
     );
   }
 
-  /*
-   * بعد نجاح RPC، نتأكد أن بيانات
-   * الاسم والصورة في room_players
-   * متزامنة مع الحساب الشخصي.
-   */
   const user = await ensureUser();
 
   const {
@@ -337,7 +324,7 @@ export async function joinPublicRoom(
 export async function joinRoom(
   code: string,
   playerName: string
-) {
+): Promise<Room> {
   await ensureProfile(playerName);
 
   const normalized =
@@ -375,7 +362,7 @@ export async function joinRoom(
  */
 export async function getRoom(
   roomId: string
-) {
+): Promise<Room> {
   const {
     data,
     error,
@@ -432,7 +419,7 @@ export async function getRoomPlayers(
 export async function setReady(
   roomId: string,
   ready: boolean
-) {
+): Promise<RoomPlayer> {
   const user = await ensureUser();
 
   const {
@@ -470,7 +457,9 @@ export async function heartbeatRoom(
 ) {
   const user = await ensureUser();
 
-  await supabase
+  const {
+    error,
+  } = await supabase
     .from('room_players')
     .update({
       last_seen_at:
@@ -478,6 +467,13 @@ export async function heartbeatRoom(
     })
     .eq('room_id', roomId)
     .eq('user_id', user.id);
+
+  if (error) {
+    console.error(
+      'heartbeatRoom:',
+      error
+    );
+  }
 }
 
 /**
