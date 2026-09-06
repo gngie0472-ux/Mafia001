@@ -40,6 +40,7 @@ import {
 import {
   heartbeatRoom,
   kickRoomPlayer,
+  leaveRoom,
 } from '../../lib/rooms';
 
 type Message = {
@@ -243,7 +244,10 @@ function formatTime(seconds: number): string {
   return `${String(minutes).padStart(
     2,
     '0'
-  )}:${String(remaining).padStart(2, '0')}`;
+  )}:${String(remaining).padStart(
+    2,
+    '0'
+  )}`;
 }
 
 function getEventText(
@@ -317,7 +321,8 @@ function PlayerAvatar({
             height: size,
             borderRadius: size / 2,
           },
-          !player.alive && styles.deadAvatar,
+          !player.alive &&
+            styles.deadAvatar,
         ]}
       />
     );
@@ -332,7 +337,8 @@ function PlayerAvatar({
           height: size,
           borderRadius: size / 2,
         },
-        !player.alive && styles.deadAvatar,
+        !player.alive &&
+          styles.deadAvatar,
       ]}
     >
       <Text style={styles.avatarText}>
@@ -356,9 +362,26 @@ export default function MafiaGameScreen() {
       code?: string | string[];
     }>();
 
-  const roomId = Array.isArray(params.code)
+  /*
+   * يمكن أن يصل المسار إلى هنا بإحدى الصيغتين:
+   *
+   * /room/UUID
+   * /room/T2GZ6M
+   *
+   * لذلك لا نستخدم قيمة المسار مباشرة
+   * في RPC التي تتطلب UUID.
+   */
+  const routeValue = Array.isArray(
+    params.code
+  )
     ? params.code[0]
     : params.code;
+
+  const [roomId, setRoomId] =
+    useState<string | null>(null);
+
+  const [resolvingRoom, setResolvingRoom] =
+    useState(true);
 
   const [loading, setLoading] =
     useState(true);
@@ -408,6 +431,113 @@ export default function MafiaGameScreen() {
   const isMountedRef =
     useRef(true);
 
+  /*
+   * --------------------------------------------------
+   * RESOLVE ROOM ID
+   * --------------------------------------------------
+   *
+   * إذا كان المسار UUID نستخدمه مباشرة.
+   *
+   * وإذا كان المسار كودًا مثل T2GZ6M،
+   * نبحث عن UUID الحقيقي للغرفة.
+   */
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveRoomId = async () => {
+      if (!routeValue) {
+        if (!cancelled) {
+          setRoomId(null);
+          setResolvingRoom(false);
+          setLoading(false);
+        }
+
+        return;
+      }
+
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      if (uuidRegex.test(routeValue)) {
+        if (!cancelled) {
+          setRoomId(routeValue);
+          setResolvingRoom(false);
+        }
+
+        return;
+      }
+
+      try {
+        const normalizedCode =
+          routeValue
+            .trim()
+            .toUpperCase();
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('rooms')
+          .select('id')
+          .eq(
+            'code',
+            normalizedCode
+          )
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data?.id) {
+          throw new Error(
+            'الغرفة غير موجودة أو لم تعد متاحة.'
+          );
+        }
+
+        if (!cancelled) {
+          setRoomId(data.id);
+          setResolvingRoom(false);
+        }
+      } catch (error: any) {
+        console.error(
+          'resolveRoomId error:',
+          error
+        );
+
+        if (!cancelled) {
+          setRoomId(null);
+          setResolvingRoom(false);
+          setLoading(false);
+
+          Alert.alert(
+            'تعذر العثور على الغرفة',
+            error?.message ||
+              'كود الغرفة غير صحيح.',
+            [
+              {
+                text: 'العودة',
+                onPress: () =>
+                  router.replace(
+                    '/rooms'
+                  ),
+              },
+            ],
+            {
+              cancelable: false,
+            }
+          );
+        }
+      }
+    };
+
+    resolveRoomId();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeValue, router]);
+
   const loadProfiles = useCallback(
     async (players: GamePlayer[]) => {
       if (!players.length) {
@@ -417,7 +547,8 @@ export default function MafiaGameScreen() {
 
       const userIds = players
         .map(
-          (player) => player.user_id
+          (player) =>
+            player.user_id
         )
         .filter(Boolean);
 
@@ -431,7 +562,10 @@ export default function MafiaGameScreen() {
         .select(
           'user_id, username, avatar_url'
         )
-        .in('user_id', userIds);
+        .in(
+          'user_id',
+          userIds
+        );
 
       if (error) {
         console.error(
@@ -475,7 +609,10 @@ export default function MafiaGameScreen() {
         .select(
           'id, room_id, user_id, message, created_at'
         )
-        .eq('room_id', roomId)
+        .eq(
+          'room_id',
+          roomId
+        )
         .order('created_at', {
           ascending: true,
         })
@@ -504,10 +641,6 @@ export default function MafiaGameScreen() {
   const loadGame = useCallback(
     async (showLoader = false) => {
       if (!roomId) {
-        Alert.alert(
-          'خطأ',
-          'معرف الغرفة غير موجود.'
-        );
         return;
       }
 
@@ -536,7 +669,10 @@ export default function MafiaGameScreen() {
         } = await supabase
           .from('room_players')
           .select('id')
-          .eq('room_id', roomId)
+          .eq(
+            'room_id',
+            roomId
+          )
           .eq(
             'user_id',
             currentUserId
@@ -576,7 +712,9 @@ export default function MafiaGameScreen() {
         }
 
         const state =
-          await getGameState(roomId);
+          await getGameState(
+            roomId
+          );
 
         if (!isMountedRef.current) {
           return;
@@ -592,7 +730,9 @@ export default function MafiaGameScreen() {
           setMyAlive(true);
         } else {
           const role =
-            await getMyRole(roomId);
+            await getMyRole(
+              roomId
+            );
 
           if (
             !isMountedRef.current
@@ -688,11 +828,10 @@ export default function MafiaGameScreen() {
    * HEARTBEAT
    * --------------------------------------------------
    *
-   * يتم تحديث last_seen_at فور دخول اللاعب
-   * إلى الغرفة ثم كل 20 ثانية.
+   * SQL يستخدم آخر 30 ثانية لتحديد اللاعبين
+   * النشطين في الغرف العامة.
    *
-   * get_public_rooms يستخدم هذه القيمة لمعرفة
-   * اللاعبين الموجودين فعليًا.
+   * لذلك نرسل heartbeat كل 10 ثوانٍ.
    */
   useEffect(() => {
     if (!roomId) return;
@@ -702,19 +841,24 @@ export default function MafiaGameScreen() {
     const sendHeartbeat = async () => {
       if (cancelled) return;
 
-      await heartbeatRoom(roomId);
+      await heartbeatRoom(
+        roomId
+      );
     };
 
     sendHeartbeat();
 
-    const interval = setInterval(
-      sendHeartbeat,
-      20_000
-    );
+    const interval =
+      setInterval(
+        sendHeartbeat,
+        10_000
+      );
 
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearInterval(
+        interval
+      );
     };
   }, [roomId]);
 
@@ -722,7 +866,10 @@ export default function MafiaGameScreen() {
     if (!roomId) return;
 
     loadGame(true);
-  }, [roomId, loadGame]);
+  }, [
+    roomId,
+    loadGame,
+  ]);
 
   useEffect(() => {
     if (
@@ -815,13 +962,16 @@ export default function MafiaGameScreen() {
 
     updateTimer();
 
-    const interval = setInterval(
-      updateTimer,
-      500
-    );
+    const interval =
+      setInterval(
+        updateTimer,
+        500
+      );
 
     return () => {
-      clearInterval(interval);
+      clearInterval(
+        interval
+      );
     };
   }, [
     gameState?.room
@@ -844,19 +994,23 @@ export default function MafiaGameScreen() {
   useEffect(() => {
     if (!roomId) return;
 
-    const interval = setInterval(
-      () => {
-        loadGame(false);
-      },
-      2500
-    );
+    const interval =
+      setInterval(
+        () => {
+          loadGame(false);
+        },
+        2500
+      );
 
     return () => {
       clearInterval(
         interval
       );
     };
-  }, [roomId, loadGame]);
+  }, [
+    roomId,
+    loadGame,
+  ]);
 
   useEffect(() => {
     if (!gameState?.room?.id)
@@ -993,7 +1147,8 @@ export default function MafiaGameScreen() {
   );
 
   const isWaiting =
-    room?.status === 'waiting';
+    room?.status ===
+    'waiting';
 
   const isNight =
     room?.game_phase ===
@@ -1476,20 +1631,57 @@ export default function MafiaGameScreen() {
         {
           text: 'خروج',
           style: 'destructive',
-          onPress: () => {
-            router.replace(
-              '/rooms'
-            );
-          },
+          onPress:
+            async () => {
+              try {
+                if (roomId) {
+                  await leaveRoom(
+                    roomId
+                  );
+                }
+              } catch (
+                error
+              ) {
+                console.error(
+                  'leaveGame error:',
+                  error
+                );
+              } finally {
+                router.replace(
+                  '/rooms'
+                );
+              }
+            },
         },
       ]
     );
   };
 
+  if (resolvingRoom) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator
+          size="large"
+          color="#D7A94B"
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          جارٍ العثور على الغرفة...
+        </Text>
+      </View>
+    );
+  }
+
   if (!roomId) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>
+        <Text
+          style={styles.errorText}
+        >
           معرف الغرفة غير موجود.
         </Text>
 
@@ -1522,7 +1714,9 @@ export default function MafiaGameScreen() {
         />
 
         <Text
-          style={styles.loadingText}
+          style={
+            styles.loadingText
+          }
         >
           جارٍ تحميل اللعبة...
         </Text>
@@ -1536,7 +1730,9 @@ export default function MafiaGameScreen() {
   ) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>
+        <Text
+          style={styles.errorText}
+        >
           تعذر العثور على حالة اللعبة.
         </Text>
 
@@ -3201,9 +3397,3 @@ const styles = StyleSheet.create({
     height: 30,
   },
 });
-
-بعد استبداله لا نبني APK بعد.
-
-الخطوة التالية المهمة هي إصلاح "app/game/[code].tsx" لأن هذا هو المكان الذي يدخل فيه "T2GZ6M" إلى "getGameState()" باعتباره UUID.
-
-أرسل لي فقط "app/game/[code].tsx" الحالي كاملًا إذا كنت قد عدّلته منذ آخر نسخة، وسأعطيك النسخة النهائية التي تقبل كود الغرفة وUUID بأمان دون ظهور خطأ "invalid input syntax for type uuid".
