@@ -1,297 +1,304 @@
-import React, { useEffect, useState } from "react";
-
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
   ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import {
-  useLocalSearchParams,
-  router,
-} from "expo-router";
-
-import { supabase } from "../../lib/supabase";
-
+import { supabase } from "@/lib/supabase";
 import {
   getRoomPlayers,
   setReady,
   startGame,
   leaveRoom,
-  subscribeToRoomPlayers,
-  subscribeToRoom,
   RoomPlayer,
   Room,
-} from "../../lib/rooms";
+} from "@/lib/rooms";
+import { getMyProfile } from "@/lib/profile";
+
+type Profile = {
+  user_id: string;
+  username: string;
+  avatar_url: string | null;
+};
 
 export default function RoomScreen() {
-  const { code } =
-    useLocalSearchParams<{ code: string }>();
+  const params = useLocalSearchParams<{ code?: string | string[] }>();
 
-  const [room, setRoom] =
-    useState<Room | null>(null);
+  const roomParam = Array.isArray(params.code)
+    ? params.code[0]
+    : params.code;
 
-  const [players, setPlayers] =
-    useState<RoomPlayer[]>([]);
+  const [room, setRoom] = useState<Room | null>(null);
+  const [players, setPlayers] = useState<RoomPlayer[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [ready, setReadyState] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
 
-  const [ready, setReadyState] =
-    useState(false);
-
-  const [currentUserId, setCurrentUserId] =
-    useState<string | null>(null);
-
-  const [starting, setStarting] =
-    useState(false);
-
-  useEffect(() => {
-    if (!code) {
+  const load = useCallback(async () => {
+    if (!roomParam) {
       return;
     }
-
-    let playerChannel: any = null;
-    let roomChannel: any = null;
-    let mounted = true;
-
-    async function loadRoom() {
-      try {
-        const normalizedCode =
-          code.trim().toUpperCase();
-
-        const {
-          data: userData,
-        } = await supabase.auth.getUser();
-
-        const user = userData.user;
-
-        if (!user) {
-          throw new Error(
-            "المستخدم غير مسجل"
-          );
-        }
-
-        if (!mounted) return;
-
-        setCurrentUserId(user.id);
-
-        const {
-          data: roomData,
-          error: roomError,
-        } = await supabase
-          .from("rooms")
-          .select("*")
-          .eq("code", normalizedCode)
-          .single();
-
-        if (roomError) {
-          throw roomError;
-        }
-
-        if (!roomData) {
-          throw new Error(
-            "الغرفة غير موجودة"
-          );
-        }
-
-        const room = roomData as Room;
-
-        if (!mounted) return;
-
-        setRoom(room);
-
-        /**
-         * إذا كانت اللعبة بدأت بالفعل،
-         * نذهب مباشرة إلى شاشة اللعبة.
-         */
-        if (room.status === "playing") {
-          router.replace(
-            `/game/${room.code}`
-          );
-          return;
-        }
-
-        const roomPlayers =
-          await getRoomPlayers(room.id);
-
-        if (!mounted) return;
-
-        setPlayers(roomPlayers);
-
-        const currentPlayer =
-          roomPlayers.find(
-            (player) =>
-              player.user_id === user.id
-          );
-
-        setReadyState(
-          currentPlayer?.ready ?? false
-        );
-
-        /**
-         * Realtime: players
-         */
-        playerChannel =
-          subscribeToRoomPlayers(
-            room.id,
-            (updatedPlayers) => {
-              if (!mounted) return;
-
-              setPlayers(updatedPlayers);
-
-              const current =
-                updatedPlayers.find(
-                  (player) =>
-                    player.user_id === user.id
-                );
-
-              setReadyState(
-                current?.ready ?? false
-              );
-            }
-          );
-
-        /**
-         * Realtime: room
-         */
-        roomChannel = subscribeToRoom(
-          room.id,
-          (updatedRoom) => {
-            if (!mounted) return;
-
-            setRoom(updatedRoom);
-
-            /**
-             * عندما يبدأ المضيف اللعبة،
-             * جميع الأجهزة تنتقل تلقائيًا.
-             */
-            if (
-              updatedRoom.status ===
-              "playing"
-            ) {
-              router.replace(
-                `/game/${updatedRoom.code}`
-              );
-            }
-          }
-        );
-      } catch (error: any) {
-        if (!mounted) return;
-
-        Alert.alert(
-          "خطأ",
-          error?.message ||
-            "تعذر تحميل الغرفة"
-        );
-
-        router.back();
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadRoom();
-
-    return () => {
-      mounted = false;
-
-      if (playerChannel) {
-        supabase.removeChannel(
-          playerChannel
-        );
-      }
-
-      if (roomChannel) {
-        supabase.removeChannel(
-          roomChannel
-        );
-      }
-    };
-  }, [code]);
-
-  /**
-   * READY
-   */
-  async function handleReady() {
-    if (!room || !currentUserId) {
-      return;
-    }
-
-    const newReady = !ready;
 
     try {
-      setReadyState(newReady);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      await setReady(
-        room.id,
-        newReady
+      if (!user) {
+        throw new Error("لم يتم تسجيل الدخول.");
+      }
+
+      setCurrentUserId(user.id);
+
+      let roomData: Room | null = null;
+
+      /*
+       * الرابط الجديد يرسل room.id.
+       * نحتفظ أيضًا بدعم code حتى لا تتعطل
+       * الروابط القديمة.
+       */
+      const byId = await supabase
+        .from("rooms")
+        .select("*")
+        .eq("id", roomParam)
+        .maybeSingle();
+
+      if (byId.data) {
+        roomData = byId.data as Room;
+      } else {
+        const byCode = await supabase
+          .from("rooms")
+          .select("*")
+          .eq("code", roomParam.toUpperCase())
+          .maybeSingle();
+
+        if (byCode.error) {
+          throw byCode.error;
+        }
+
+        roomData = (byCode.data as Room | null) ?? null;
+      }
+
+      if (!roomData) {
+        throw new Error("الغرفة غير موجودة.");
+      }
+
+      setRoom(roomData);
+
+      if (roomData.status === "playing") {
+        router.replace(`/game/${roomData.id}`);
+        return;
+      }
+
+      const roomPlayers = await getRoomPlayers(roomData.id);
+
+      setPlayers(roomPlayers);
+
+      const me = roomPlayers.find(
+        (p) => p.user_id === user.id
       );
+
+      setReadyState(Boolean(me?.ready));
+
+      /*
+       * تحميل الملفات الشخصية.
+       */
+      const ids = roomPlayers
+        .map((p) => p.user_id)
+        .filter(Boolean);
+
+      if (ids.length > 0) {
+        const { data: profileRows, error: profileError } =
+          await supabase
+            .from("profiles")
+            .select("user_id, username, avatar_url")
+            .in("user_id", ids);
+
+        if (!profileError && profileRows) {
+          const map: Record<string, Profile> = {};
+
+          for (const profile of profileRows) {
+            map[profile.user_id] = profile as Profile;
+          }
+
+          setProfiles(map);
+        }
+      }
     } catch (error: any) {
-      setReadyState(ready);
+      console.error("room load:", error);
 
       Alert.alert(
         "خطأ",
-        error?.message ||
-          "تعذر تغيير الحالة"
+        error?.message || "تعذر تحميل الغرفة."
+      );
+
+      router.replace("/rooms");
+    } finally {
+      setLoading(false);
+    }
+  }, [roomParam]);
+
+  useEffect(() => {
+    load();
+
+    if (!roomParam) {
+      return;
+    }
+
+    let roomId = roomParam;
+
+    let cancelled = false;
+
+    async function setupRealtime() {
+      try {
+        const { data } = await supabase
+          .from("rooms")
+          .select("id")
+          .eq("id", roomParam)
+          .maybeSingle();
+
+        if (data?.id) {
+          roomId = data.id;
+        } else {
+          const { data: oldRoom } = await supabase
+            .from("rooms")
+            .select("id")
+            .eq("code", roomParam.toUpperCase())
+            .maybeSingle();
+
+          if (oldRoom?.id) {
+            roomId = oldRoom.id;
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const channel = supabase
+          .channel(`lobby-${roomId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "rooms",
+              filter: `id=eq.${roomId}`,
+            },
+            () => {
+              load();
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "room_players",
+              filter: `room_id=eq.${roomId}`,
+            },
+            () => {
+              load();
+            }
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      } catch {
+        // polling through load() remains as fallback
+      }
+    }
+
+    const cleanupPromise = setupRealtime();
+
+    const poll = setInterval(load, 2500);
+
+    return () => {
+      cancelled = true;
+      clearInterval(poll);
+
+      cleanupPromise.then((cleanup) => {
+        if (cleanup) {
+          cleanup();
+        }
+      });
+    };
+  }, [roomParam, load]);
+
+  async function handleReady() {
+    if (!room || !currentUserId || starting) {
+      return;
+    }
+
+    const next = !ready;
+
+    setReadyState(next);
+
+    try {
+      await setReady(room.id, next);
+      await load();
+    } catch (error: any) {
+      setReadyState(!next);
+
+      Alert.alert(
+        "خطأ",
+        error?.message || "تعذر تغيير حالة الجاهزية."
       );
     }
   }
 
-  /**
-   * START GAME
-   */
-  async function handleStartGame() {
-    if (!room) {
+  async function handleStart() {
+    if (!room || starting) {
       return;
     }
 
-    if (starting) {
-      return;
-    }
-
-    /**
-     * تأكيد أن المستخدم هو المضيف
-     */
-    if (
-      !currentUserId ||
-      room.host_id !== currentUserId
-    ) {
+    if (currentUserId !== room.host_id) {
       Alert.alert(
         "غير مسموح",
-        "فقط صاحب الغرفة يستطيع بدء اللعبة."
+        "فقط المضيف يستطيع بدء اللعبة."
       );
-
       return;
     }
 
-    /**
-     * تحقق إضافي من اللاعبين
-     */
-    if (players.length < 2) {
+    if (players.length < 4) {
       Alert.alert(
-        "لا يمكن بدء اللعبة",
-        "يجب أن يكون هناك لاعبان على الأقل."
+        "عدد اللاعبين غير كافٍ",
+        "تحتاج اللعبة إلى 4 لاعبين على الأقل."
       );
-
       return;
     }
 
-    const allReady = players.every(
+    if (players.length > room.max_players) {
+      Alert.alert(
+        "الغرفة ممتلئة",
+        "لا يمكن بدء اللعبة بعد تجاوز العدد المسموح."
+      );
+      return;
+    }
+
+    const everyoneReady = players.every(
       (player) => player.ready
     );
 
-    if (!allReady) {
+    if (!everyoneReady) {
       Alert.alert(
         "اللاعبون غير جاهزين",
-        "يجب أن يكون جميع اللاعبين في حالة READY."
+        "يجب أن يصبح جميع اللاعبين READY قبل بدء اللعبة."
       );
-
       return;
     }
 
@@ -300,366 +307,537 @@ export default function RoomScreen() {
 
       await startGame(room.id);
 
-      /**
-       * الانتقال مباشرة للمضيف.
-       * اللاعب الثاني سينتقل عبر Realtime.
-       */
-      router.replace(
-        `/game/${room.code}`
-      );
+      router.replace(`/game/${room.id}`);
     } catch (error: any) {
+      console.error("start game:", error);
+
       Alert.alert(
-        "لا يمكن بدء اللعبة",
-        error?.message ||
-          "حدث خطأ أثناء بدء اللعبة"
+        "تعذر بدء اللعبة",
+        error?.message || "حدث خطأ أثناء بدء اللعبة."
       );
     } finally {
       setStarting(false);
     }
   }
 
-  /**
-   * LEAVE ROOM
-   */
-  async function handleLeaveRoom() {
+  async function handleLeave() {
     if (!room) {
       return;
     }
 
     try {
       await leaveRoom(room.id);
-
-      router.replace("/");
+      router.replace("/rooms");
     } catch (error: any) {
       Alert.alert(
         "خطأ",
-        error?.message ||
-          "تعذر مغادرة الغرفة"
+        error?.message || "تعذر مغادرة الغرفة."
       );
     }
   }
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator
-          size="large"
-          color="#8f0018"
-        />
-
-        <Text style={styles.loadingText}>
-          جاري تحميل الغرفة...
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#D7A94B" />
+          <Text style={styles.loading}>
+            جاري تحميل الغرفة...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   if (!room) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>
-          الغرفة غير موجودة
-        </Text>
-      </View>
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.center}>
+          <Text style={styles.error}>
+            الغرفة غير موجودة
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  /**
-   * إصلاح مهم:
-   * المضيف الحقيقي فقط يرى زر START GAME.
-   */
-  const isHost =
-    currentUserId === room.host_id;
+  const isHost = currentUserId === room.host_id;
+  const allReady =
+    players.length > 0 &&
+    players.every((player) => player.ready);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>
-        MAFIA NIGHT
-      </Text>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+      >
+        <Pressable
+          onPress={handleLeave}
+          style={styles.back}
+        >
+          <Ionicons
+            name="arrow-back"
+            size={25}
+            color="#F4F1EF"
+          />
+        </Pressable>
 
-      <View style={styles.roomBox}>
-        <Text style={styles.roomName}>
-          {room.name}
+        <Text style={styles.eyebrow}>
+          MAFIA NIGHT
         </Text>
 
-        <Text style={styles.codeLabel}>
-          ROOM CODE
+        <Text style={styles.title}>
+          {room.name || "غرفة المافيا"}
         </Text>
 
-        <Text style={styles.code}>
-          {room.code}
+        <View style={styles.statusCard}>
+          <View>
+            <Text style={styles.smallLabel}>
+              PUBLIC ROOM
+            </Text>
+            <Text style={styles.roomStatus}>
+              في انتظار اللاعبين
+            </Text>
+          </View>
+
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>
+              {players.length}/{room.max_players}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.sectionTitle}>
+          PLAYERS
         </Text>
-      </View>
 
-      <Text style={styles.playersTitle}>
-        PLAYERS {players.length}/
-        {room.max_players}
-      </Text>
+        <View style={styles.playersCard}>
+          {players.map((player, index) => {
+            const profile = profiles[player.user_id];
 
-      <View style={styles.playersBox}>
-        {players.map((player, index) => {
-          const isPlayerHost =
-            player.user_id ===
-            room.host_id;
+            const displayName =
+              profile?.username ||
+              player.name ||
+              `Player ${index + 1}`;
 
-          return (
-            <View
-              style={styles.playerRow}
-              key={player.id}
-            >
-              <Text
-                style={styles.playerNumber}
-              >
-                {index + 1}
-              </Text>
+            const isMe =
+              player.user_id === currentUserId;
 
+            const isPlayerHost =
+              player.user_id === room.host_id;
+
+            return (
               <View
-                style={styles.playerInfo}
-              >
-                <Text
-                  style={styles.playerName}
-                >
-                  {player.name}
-                  {player.user_id ===
-                    currentUserId
-                    ? "  (YOU)"
-                    : ""}
-                </Text>
-
-                {isPlayerHost && (
-                  <Text
-                    style={styles.hostLabel}
-                  >
-                    HOST
-                  </Text>
-                )}
-              </View>
-
-              <Text
+                key={player.id}
                 style={[
-                  styles.status,
-                  player.ready
-                    ? styles.ready
-                    : styles.notReady,
+                  styles.playerRow,
+                  index === players.length - 1 &&
+                    styles.lastRow,
                 ]}
               >
-                {player.ready
-                  ? "READY"
-                  : "NOT READY"}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
+                {profile?.avatar_url ? (
+                  <Image
+                    source={{
+                      uri: profile.avatar_url,
+                    }}
+                    style={styles.avatar}
+                  />
+                ) : (
+                  <View style={styles.avatarFallback}>
+                    <Ionicons
+                      name="person"
+                      size={20}
+                      color="#D7A94B"
+                    />
+                  </View>
+                )}
 
-      <TouchableOpacity
-        style={[
-          styles.button,
-          ready
-            ? styles.readyButton
-            : null,
-        ]}
-        onPress={handleReady}
-        disabled={starting}
-      >
-        <Text style={styles.buttonText}>
-          {ready
-            ? "NOT READY"
-            : "READY"}
-        </Text>
-      </TouchableOpacity>
+                <View style={styles.playerMiddle}>
+                  <View style={styles.nameLine}>
+                    <Text style={styles.playerName}>
+                      {displayName}
+                    </Text>
 
-      {isHost && (
-        <TouchableOpacity
-          style={[
-            styles.startButton,
-            starting
-              ? styles.disabledButton
-              : null,
-          ]}
-          onPress={handleStartGame}
-          disabled={starting}
-        >
-          {starting ? (
-            <ActivityIndicator
-              color="#fff"
-            />
-          ) : (
-            <Text style={styles.buttonText}>
-              START GAME
+                    {isMe && (
+                      <Text style={styles.you}>
+                        YOU
+                      </Text>
+                    )}
+                  </View>
+
+                  {isPlayerHost && (
+                    <Text style={styles.host}>
+                      HOST
+                    </Text>
+                  )}
+                </View>
+
+                <View
+                  style={[
+                    styles.readyDot,
+                    player.ready
+                      ? styles.readyDotOn
+                      : styles.readyDotOff,
+                  ]}
+                />
+
+                <Text
+                  style={[
+                    styles.readyText,
+                    player.ready
+                      ? styles.readyOn
+                      : styles.readyOff,
+                  ]}
+                >
+                  {player.ready ? "READY" : "WAIT"}
+                </Text>
+              </View>
+            );
+          })}
+
+          {players.length === 0 && (
+            <Text style={styles.noPlayers}>
+              لا يوجد لاعبون بعد.
             </Text>
           )}
-        </TouchableOpacity>
-      )}
+        </View>
 
-      <TouchableOpacity
-        style={styles.leaveButton}
-        onPress={handleLeaveRoom}
-        disabled={starting}
-      >
-        <Text style={styles.leaveText}>
-          LEAVE ROOM
-        </Text>
-      </TouchableOpacity>
-    </View>
+        <View style={styles.infoCard}>
+          <Ionicons
+            name="information-circle-outline"
+            size={22}
+            color="#D7A94B"
+          />
+
+          <Text style={styles.infoText}>
+            يجب أن يكون هناك 4 لاعبين على الأقل، وجميع
+            اللاعبين يجب أن يكونوا جاهزين قبل بدء المباراة.
+          </Text>
+        </View>
+
+        <Pressable
+          onPress={handleReady}
+          disabled={starting}
+          style={[
+            styles.readyButton,
+            ready && styles.readyButtonActive,
+          ]}
+        >
+          <Text style={styles.readyButtonText}>
+            {ready ? "I'M READY ✓" : "READY"}
+          </Text>
+        </Pressable>
+
+        {isHost && (
+          <Pressable
+            onPress={handleStart}
+            disabled={starting}
+            style={[
+              styles.startButton,
+              (!allReady || players.length < 4) &&
+                styles.startDisabled,
+            ]}
+          >
+            {starting ? (
+              <ActivityIndicator color="#090A0D" />
+            ) : (
+              <>
+                <Ionicons
+                  name="play"
+                  size={20}
+                  color="#090A0D"
+                />
+                <Text style={styles.startText}>
+                  START GAME
+                </Text>
+              </>
+            )}
+          </Pressable>
+        )}
+
+        <Pressable
+          onPress={handleLeave}
+          disabled={starting}
+          style={styles.leaveButton}
+        >
+          <Text style={styles.leaveText}>
+            LEAVE ROOM
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
+    backgroundColor: "#090A0D",
+  },
+
+  container: {
     padding: 20,
-    paddingTop: 60,
-    backgroundColor: "#101010",
+    paddingBottom: 45,
   },
 
   center: {
     flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#101010",
+    justifyContent: "center",
+    backgroundColor: "#090A0D",
   },
 
-  loadingText: {
-    color: "#fff",
-    marginTop: 15,
+  loading: {
+    marginTop: 14,
+    color: "#AAA",
   },
 
-  errorText: {
-    color: "#fff",
+  error: {
+    color: "#FFF",
     fontSize: 18,
+    fontWeight: "800",
+  },
+
+  back: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#15171B",
+    marginBottom: 28,
+  },
+
+  eyebrow: {
+    color: "#B5222E",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 3,
   },
 
   title: {
-    color: "#fff",
-    fontSize: 30,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 25,
-  },
-
-  roomBox: {
-    backgroundColor: "#1d1d1d",
-    padding: 20,
-    borderRadius: 15,
-    alignItems: "center",
-    marginBottom: 25,
-  },
-
-  roomName: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 15,
-  },
-
-  codeLabel: {
-    color: "#999",
-    fontSize: 12,
-  },
-
-  code: {
-    color: "#fff",
-    fontSize: 32,
-    fontWeight: "bold",
-    letterSpacing: 5,
+    color: "#F4F1EF",
+    fontSize: 31,
+    fontWeight: "900",
     marginTop: 5,
+    marginBottom: 22,
   },
 
-  playersTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
-
-  playersBox: {
-    backgroundColor: "#1d1d1d",
-    borderRadius: 15,
-    padding: 10,
-    marginBottom: 20,
-  },
-
-  playerRow: {
+  statusCard: {
+    backgroundColor: "#15171B",
+    borderRadius: 18,
+    padding: 18,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#24262B",
   },
 
-  playerNumber: {
-    color: "#888",
-    width: 30,
-  },
-
-  playerInfo: {
-    flex: 1,
-  },
-
-  playerName: {
-    color: "#fff",
-    fontSize: 16,
-  },
-
-  hostLabel: {
-    color: "#8f0018",
+  smallLabel: {
+    color: "#777983",
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 2,
+  },
+
+  roomStatus: {
+    color: "#E8E5E1",
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 5,
+  },
+
+  countBadge: {
+    backgroundColor: "#24262B",
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    borderRadius: 12,
+  },
+
+  countText: {
+    color: "#D7A94B",
+    fontWeight: "900",
+  },
+
+  sectionTitle: {
+    color: "#777983",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+    marginTop: 28,
+    marginBottom: 10,
+  },
+
+  playersCard: {
+    backgroundColor: "#15171B",
+    borderRadius: 18,
+    paddingHorizontal: 15,
+  },
+
+  playerRow: {
+    minHeight: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#24262B",
+  },
+
+  lastRow: {
+    borderBottomWidth: 0,
+  },
+
+  avatar: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+  },
+
+  avatarFallback: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
+    backgroundColor: "#24262B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  playerMiddle: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  nameLine: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  playerName: {
+    color: "#F4F1EF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  you: {
+    color: "#D7A94B",
+    fontSize: 8,
+    fontWeight: "900",
+    marginLeft: 7,
+  },
+
+  host: {
+    color: "#B5222E",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 1.5,
     marginTop: 3,
   },
 
-  status: {
-    fontSize: 12,
-    fontWeight: "bold",
+  readyDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
 
-  ready: {
-    color: "#4ade80",
+  readyDotOn: {
+    backgroundColor: "#59C878",
   },
 
-  notReady: {
-    color: "#aaa",
+  readyDotOff: {
+    backgroundColor: "#555860",
   },
 
-  button: {
-    backgroundColor: "#333",
-    padding: 16,
-    borderRadius: 12,
+  readyText: {
+    width: 42,
+    fontSize: 8,
+    fontWeight: "900",
+    textAlign: "right",
+  },
+
+  readyOn: {
+    color: "#59C878",
+  },
+
+  readyOff: {
+    color: "#666870",
+  },
+
+  noPlayers: {
+    color: "#777983",
+    textAlign: "center",
+    padding: 25,
+  },
+
+  infoCard: {
+    marginTop: 15,
+    padding: 15,
+    borderRadius: 15,
+    backgroundColor: "#121419",
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+  },
+
+  infoText: {
+    flex: 1,
+    color: "#858791",
+    fontSize: 12,
+    lineHeight: 18,
+    marginLeft: 10,
   },
 
   readyButton: {
-    backgroundColor: "#555",
+    height: 55,
+    marginTop: 20,
+    borderRadius: 15,
+    backgroundColor: "#24262B",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  readyButtonActive: {
+    backgroundColor: "#31563A",
+  },
+
+  readyButtonText: {
+    color: "#F4F1EF",
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
 
   startButton: {
-    backgroundColor: "#8b0000",
-    padding: 16,
-    borderRadius: 12,
+    height: 55,
+    marginTop: 12,
+    borderRadius: 15,
+    backgroundColor: "#D7A94B",
     alignItems: "center",
-    marginBottom: 12,
+    justifyContent: "center",
+    flexDirection: "row",
   },
 
-  disabledButton: {
-    opacity: 0.6,
+  startDisabled: {
+    opacity: 0.4,
   },
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+  startText: {
+    color: "#090A0D",
+    fontSize: 14,
+    fontWeight: "900",
+    marginLeft: 8,
+    letterSpacing: 1,
   },
 
   leaveButton: {
-    padding: 15,
     alignItems: "center",
+    paddingVertical: 18,
   },
 
   leaveText: {
-    color: "#ff5555",
-    fontWeight: "bold",
+    color: "#B5222E",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.5,
   },
 });
