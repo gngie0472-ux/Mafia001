@@ -884,6 +884,140 @@ export default function MafiaGameScreen() {
   }, []);
 
   /*
+   * --------------------------------------------------
+   * DERIVED STATE
+   *
+   * مهم جدًا:
+   * تم نقل تعريف canUseVoice إلى ما بعد هذه القيم.
+   * هذا يمنع ReferenceError الذي كان قد يؤدي إلى خروج
+   * شاشة اللعبة.
+   * --------------------------------------------------
+   */
+
+  const room =
+    (gameState?.room as ExtendedGameRoom) ||
+    null;
+
+  const players =
+    gameState?.players || [];
+
+  const alivePlayers =
+    useMemo(
+      () =>
+        players.filter(
+          (player) =>
+            player.alive
+        ),
+      [players]
+    );
+
+  const myPlayer =
+    useMemo(
+      () =>
+        players.find(
+          (player) =>
+            player.id ===
+            gameState?.my_player_id
+        ) || null,
+      [
+        players,
+        gameState?.my_player_id,
+      ]
+    );
+
+  const isHost = Boolean(
+    room &&
+      myPlayer &&
+      room.host_id &&
+      room.host_id ===
+        myPlayer.user_id
+  );
+
+  const canKick = Boolean(
+    isHost &&
+      room?.status ===
+        'waiting'
+  );
+
+  const isWaiting =
+    room?.status ===
+    'waiting';
+
+  const isNight =
+    room?.game_phase ===
+    'night';
+
+  const isDay =
+    room?.game_phase ===
+    'day';
+
+  const gameFinished =
+    room?.status ===
+      'finished' ||
+    Boolean(room?.winner);
+
+  /*
+   * ==================================================
+   * FIX:
+   * canUseVoice أصبح بعد تعريف room/isWaiting/isDay/
+   * gameFinished.
+   * ==================================================
+   */
+  const canUseVoice = Boolean(
+    room &&
+      !gameFinished &&
+      (
+        isWaiting ||
+        (
+          room.status ===
+            'playing' &&
+          isDay &&
+          myAlive
+        )
+      )
+  );
+
+  const canChat = Boolean(
+    room &&
+      !gameFinished &&
+      (isWaiting ||
+        (isDay && myAlive))
+  );
+
+  const nightActions =
+    myRole
+      ? ROLE_ACTIONS[
+          myRole
+        ] || []
+      : [];
+
+  const canNightAction =
+    Boolean(
+      isNight &&
+        myAlive &&
+        !gameFinished &&
+        nightActions.length >
+          0
+    );
+
+  const roleLabel = myRole
+    ? ROLE_LABELS[myRole]
+    : 'لم يتم توزيع الدور بعد';
+
+  const roleDescription =
+    myRole
+      ? ROLE_DESCRIPTIONS[
+          myRole
+        ]
+      : 'سيتم توزيع دورك تلقائيًا عند بدء اللعبة.';
+
+  const eventText =
+    getEventText(
+      room?.last_event ||
+        null
+    );
+
+  /*
    * ==================================================
    * LIVEKIT FUNCTIONS
    * ==================================================
@@ -901,9 +1035,11 @@ export default function MafiaGameScreen() {
         voiceShouldBeConnectedRef.current =
           false;
 
-        setVoiceConnected(false);
-        setMicEnabled(false);
-        setVoiceError(null);
+        if (isMountedRef.current) {
+          setVoiceConnected(false);
+          setMicEnabled(false);
+          setVoiceError(null);
+        }
 
         if (currentRoom) {
           try {
@@ -925,9 +1061,11 @@ export default function MafiaGameScreen() {
           );
         }
 
-        setVoiceParticipantsVersion(
-          (value) => value + 1
-        );
+        if (isMountedRef.current) {
+          setVoiceParticipantsVersion(
+            (value) => value + 1
+          );
+        }
       },
       []
     );
@@ -943,6 +1081,10 @@ export default function MafiaGameScreen() {
           return;
         }
 
+        /*
+         * إذا كان هناك اتصال قائم بالفعل فلا ننشئ
+         * Room جديدًا.
+         */
         if (
           voiceRoomRef.current &&
           voiceConnected
@@ -956,12 +1098,20 @@ export default function MafiaGameScreen() {
         voiceShouldBeConnectedRef.current =
           true;
 
-        setVoiceConnecting(true);
-        setVoiceError(null);
+        if (isMountedRef.current) {
+          setVoiceConnecting(true);
+          setVoiceError(null);
+        }
 
         try {
+          /*
+           * تشغيل AudioSession قبل الاتصال.
+           */
           await AudioSession.startAudioSession();
 
+          /*
+           * الحصول على Token.
+           */
           const {
             token,
             server_url,
@@ -970,19 +1120,35 @@ export default function MafiaGameScreen() {
               roomId
             );
 
+          /*
+           * ربما تغيّرت الصفحة أو المرحلة أثناء
+           * انتظار Token.
+           */
           if (
             !voiceShouldBeConnectedRef.current
           ) {
+            try {
+              await AudioSession.stopAudioSession();
+            } catch {}
+
             return;
           }
 
-          const room =
+          /*
+           * لا ننشئ Room ثانيًا إذا تم إنشاء واحد
+           * أثناء العملية.
+           */
+          if (voiceRoomRef.current) {
+            return;
+          }
+
+          const liveKitRoom =
             new Room();
 
           voiceRoomRef.current =
-            room;
+            liveKitRoom;
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.Connected,
             () => {
               if (
@@ -994,6 +1160,7 @@ export default function MafiaGameScreen() {
               setVoiceConnected(true);
               setVoiceConnecting(false);
               setVoiceError(null);
+
               setVoiceParticipantsVersion(
                 (value) => value + 1
               );
@@ -1001,7 +1168,7 @@ export default function MafiaGameScreen() {
               /*
                * الميكروفون مغلق افتراضيًا.
                */
-              room.localParticipant
+              liveKitRoom.localParticipant
                 .setMicrophoneEnabled(
                   false
                 )
@@ -1018,7 +1185,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.Disconnected,
             () => {
               if (
@@ -1026,6 +1193,7 @@ export default function MafiaGameScreen() {
               ) {
                 setVoiceConnected(false);
                 setMicEnabled(false);
+
                 setVoiceParticipantsVersion(
                   (value) =>
                     value + 1
@@ -1034,7 +1202,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.Reconnecting,
             () => {
               if (
@@ -1045,7 +1213,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.Reconnected,
             () => {
               if (
@@ -1053,6 +1221,7 @@ export default function MafiaGameScreen() {
               ) {
                 setVoiceConnecting(false);
                 setVoiceConnected(true);
+
                 setVoiceParticipantsVersion(
                   (value) =>
                     value + 1
@@ -1061,7 +1230,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.ParticipantConnected,
             () => {
               if (
@@ -1075,7 +1244,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.ParticipantDisconnected,
             () => {
               if (
@@ -1089,7 +1258,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.TrackMuted,
             () => {
               if (
@@ -1103,7 +1272,7 @@ export default function MafiaGameScreen() {
             }
           );
 
-          room.on(
+          liveKitRoom.on(
             RoomEvent.TrackUnmuted,
             () => {
               if (
@@ -1117,17 +1286,29 @@ export default function MafiaGameScreen() {
             }
           );
 
-          await room.connect(
+          await liveKitRoom.connect(
             server_url,
             token
           );
 
+          /*
+           * إذا أصبحت الصفحة لا تحتاج للصوت
+           * أثناء الاتصال، نفصل مباشرة.
+           */
           if (
             !voiceShouldBeConnectedRef.current
           ) {
             try {
-              await room.disconnect();
+              await liveKitRoom.disconnect();
             } catch {}
+
+            if (
+              voiceRoomRef.current ===
+              liveKitRoom
+            ) {
+              voiceRoomRef.current =
+                null;
+            }
 
             return;
           }
@@ -1136,7 +1317,7 @@ export default function MafiaGameScreen() {
            * تأكيد إغلاق الميكروفون بعد الاتصال.
            */
           try {
-            await room.localParticipant
+            await liveKitRoom.localParticipant
               .setMicrophoneEnabled(
                 false
               );
@@ -1159,8 +1340,17 @@ export default function MafiaGameScreen() {
             error
           );
 
+          const currentRoom =
+            voiceRoomRef.current;
+
           voiceRoomRef.current =
             null;
+
+          if (currentRoom) {
+            try {
+              await currentRoom.disconnect();
+            } catch {}
+          }
 
           if (
             isMountedRef.current
@@ -1196,10 +1386,10 @@ export default function MafiaGameScreen() {
   const toggleMicrophone =
     useCallback(
       async () => {
-        const room =
+        const currentRoom =
           voiceRoomRef.current;
 
-        if (!room) {
+        if (!currentRoom) {
           Alert.alert(
             'الصوت غير متصل',
             'انتظر حتى يتم الاتصال بقناة الصوت.'
@@ -1219,7 +1409,7 @@ export default function MafiaGameScreen() {
           !micEnabled;
 
         try {
-          await room.localParticipant
+          await currentRoom.localParticipant
             .setMicrophoneEnabled(
               nextState
             );
@@ -1232,10 +1422,14 @@ export default function MafiaGameScreen() {
             );
           }
 
-          setVoiceParticipantsVersion(
-            (value) =>
-              value + 1
-          );
+          if (
+            isMountedRef.current
+          ) {
+            setVoiceParticipantsVersion(
+              (value) =>
+                value + 1
+            );
+          }
         } catch (error: any) {
           console.error(
             'toggleMicrophone error:',
@@ -1256,26 +1450,11 @@ export default function MafiaGameScreen() {
     );
 
   /*
-   * حالة الصوت المسموح بها حاليًا.
+   * --------------------------------------------------
+   * توصيل / فصل LiveKit
+   * --------------------------------------------------
    */
-  const canUseVoice =
-    Boolean(
-      room &&
-        !gameFinished &&
-        (
-          isWaiting ||
-          (
-            room.status ===
-              'playing' &&
-            isDay &&
-            myAlive
-          )
-        )
-    );
 
-  /*
-   * توصيل/فصل LiveKit حسب مرحلة اللعبة.
-   */
   useEffect(() => {
     if (
       !roomId ||
@@ -1295,6 +1474,13 @@ export default function MafiaGameScreen() {
 
       disconnectVoice();
     }
+
+    return () => {
+      /*
+       * لا نفصل هنا عند كل إعادة render عادية.
+       * الفصل يتم بواسطة حالة canUseVoice نفسها.
+       */
+    };
   }, [
     roomId,
     gameState?.room?.status,
@@ -1307,8 +1493,11 @@ export default function MafiaGameScreen() {
   ]);
 
   /*
-   * تنظيف LiveKit عند مغادرة الصفحة.
+   * --------------------------------------------------
+   * تنظيف LiveKit عند مغادرة الصفحة
+   * --------------------------------------------------
    */
+
   useEffect(() => {
     return () => {
       voiceShouldBeConnectedRef.current =
@@ -1333,35 +1522,34 @@ export default function MafiaGameScreen() {
   }, []);
 
   /*
-   * معرفة هل لاعب معين لديه الميكروفون مفتوح.
+   * --------------------------------------------------
+   * MICROPHONE STATUS
+   * --------------------------------------------------
    */
+
   const isPlayerMicEnabled =
     useCallback(
       (
         userId: string
       ): boolean => {
-        /*
-         * استخدام version حتى يعاد حساب الحالة
-         * عند تغير المشاركين أو Track.
-         */
         void voiceParticipantsVersion;
 
-        const room =
+        const currentRoom =
           voiceRoomRef.current;
 
-        if (!room) {
+        if (!currentRoom) {
           return false;
         }
 
         if (
-          room.localParticipant
+          currentRoom.localParticipant
             .identity === userId
         ) {
           return micEnabled;
         }
 
         const remoteParticipants =
-          room.remoteParticipants;
+          currentRoom.remoteParticipants;
 
         let participant:
           | any
@@ -1443,9 +1631,16 @@ export default function MafiaGameScreen() {
     const sendHeartbeat = async () => {
       if (cancelled) return;
 
-      await heartbeatRoom(
-        roomId
-      );
+      try {
+        await heartbeatRoom(
+          roomId
+        );
+      } catch (error) {
+        console.error(
+          'heartbeat error:',
+          error
+        );
+      }
     };
 
     sendHeartbeat();
@@ -1463,6 +1658,12 @@ export default function MafiaGameScreen() {
       );
     };
   }, [roomId]);
+
+  /*
+   * --------------------------------------------------
+   * INITIAL GAME LOAD
+   * --------------------------------------------------
+   */
 
   useEffect(() => {
     if (!roomId) return;
@@ -1589,6 +1790,12 @@ export default function MafiaGameScreen() {
     loadGame,
   ]);
 
+  /*
+   * --------------------------------------------------
+   * LOAD MESSAGES
+   * --------------------------------------------------
+   */
+
   useEffect(() => {
     if (!gameState?.room?.id)
       return;
@@ -1598,6 +1805,12 @@ export default function MafiaGameScreen() {
     gameState?.room?.id,
     loadMessages,
   ]);
+
+  /*
+   * --------------------------------------------------
+   * PERIODIC GAME REFRESH
+   * --------------------------------------------------
+   */
 
   useEffect(() => {
     if (!roomId) return;
@@ -1714,114 +1927,6 @@ export default function MafiaGameScreen() {
     gameState?.room?.id,
     loadGame,
   ]);
-
-  /*
-   * --------------------------------------------------
-   * DERIVED STATE
-   * --------------------------------------------------
-   */
-
-  const room =
-    (gameState?.room as ExtendedGameRoom) ||
-    null;
-
-  const players =
-    gameState?.players || [];
-
-  const alivePlayers =
-    useMemo(
-      () =>
-        players.filter(
-          (player) =>
-            player.alive
-        ),
-      [players]
-    );
-
-  const myPlayer =
-    useMemo(
-      () =>
-        players.find(
-          (player) =>
-            player.id ===
-            gameState?.my_player_id
-        ) || null,
-      [
-        players,
-        gameState?.my_player_id,
-      ]
-    );
-
-  const isHost = Boolean(
-    room &&
-      myPlayer &&
-      room.host_id &&
-      room.host_id ===
-        myPlayer.user_id
-  );
-
-  const canKick = Boolean(
-    isHost &&
-      room?.status ===
-        'waiting'
-  );
-
-  const isWaiting =
-    room?.status ===
-    'waiting';
-
-  const isNight =
-    room?.game_phase ===
-    'night';
-
-  const isDay =
-    room?.game_phase ===
-    'day';
-
-  const gameFinished =
-    room?.status ===
-      'finished' ||
-    Boolean(room?.winner);
-
-  const canChat = Boolean(
-    room &&
-      !gameFinished &&
-      (isWaiting ||
-        (isDay && myAlive))
-  );
-
-  const nightActions =
-    myRole
-      ? ROLE_ACTIONS[
-          myRole
-        ] || []
-      : [];
-
-  const canNightAction =
-    Boolean(
-      isNight &&
-        myAlive &&
-        !gameFinished &&
-        nightActions.length >
-          0
-    );
-
-  const roleLabel = myRole
-    ? ROLE_LABELS[myRole]
-    : 'لم يتم توزيع الدور بعد';
-
-  const roleDescription =
-    myRole
-      ? ROLE_DESCRIPTIONS[
-          myRole
-        ]
-      : 'سيتم توزيع دورك تلقائيًا عند بدء اللعبة.';
-
-  const eventText =
-    getEventText(
-      room?.last_event ||
-        null
-    );
 
   /*
    * --------------------------------------------------
@@ -2473,12 +2578,6 @@ export default function MafiaGameScreen() {
           </Pressable>
         </View>
 
-        {/*
-         * ==================================================
-         * WAITING / GAME PHASE
-         * ==================================================
-         */}
-
         {isWaiting ? (
           <View
             style={[
@@ -2559,12 +2658,6 @@ export default function MafiaGameScreen() {
             </Text>
           </View>
         )}
-
-        {/*
-         * ==================================================
-         * VOICE CARD
-         * ==================================================
-         */}
 
         {canUseVoice && (
           <View
@@ -2856,12 +2949,6 @@ export default function MafiaGameScreen() {
           </View>
         )}
 
-        {/*
-         * ==================================================
-         * PLAYERS
-         * ==================================================
-         */}
-
         <View
           style={styles.section}
         >
@@ -3128,12 +3215,6 @@ export default function MafiaGameScreen() {
           )}
         </View>
 
-        {/*
-         * ==================================================
-         * NIGHT ACTIONS
-         * ==================================================
-         */}
-
         {isNight &&
           myAlive &&
           !gameFinished &&
@@ -3237,12 +3318,6 @@ export default function MafiaGameScreen() {
             </View>
           )}
 
-        {/*
-         * ==================================================
-         * DAY VOTE
-         * ==================================================
-         */}
-
         {isDay &&
           myAlive &&
           !gameFinished && (
@@ -3297,12 +3372,6 @@ export default function MafiaGameScreen() {
               </Pressable>
             </View>
           )}
-
-        {/*
-         * ==================================================
-         * CHAT
-         * ==================================================
-         */}
 
         {canChat && (
           <View
@@ -3781,12 +3850,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 13,
   },
-
-  /*
-   * ==================================================
-   * VOICE STYLES
-   * ==================================================
-   */
 
   voiceCard: {
     backgroundColor: '#111216',
