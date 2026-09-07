@@ -10,107 +10,92 @@ export type Profile = {
 };
 
 /**
- * التأكد من وجود جلسة تسجيل دخول صالحة.
+ * التأكد من وجود جلسة Supabase صالحة.
  *
- * في React Native نعتمد أولًا على getSession()
- * لأن الجلسة محفوظة في AsyncStorage بواسطة supabase.ts.
- *
- * ثم نستخدم getUser() للتأكد من هوية المستخدم
- * عندما تكون الجلسة موجودة.
+ * Anonymous users لديهم Session عادية في Supabase،
+ * لذلك auth.uid() سيعمل معهم مثل المستخدمين المسجلين.
  */
 async function ensureAuth() {
-  try {
-    const {
-      data: sessionData,
-      error: sessionError,
-    } = await supabase.auth.getSession();
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
 
-    if (sessionError) {
-      console.error(
-        'getSession error:',
-        sessionError
-      );
-
-      throw new Error(
-        'تعذر التحقق من جلسة تسجيل الدخول.'
-      );
-    }
-
-    const session =
-      sessionData?.session;
-
-    if (!session?.access_token) {
-      throw new Error(
-        'يجب تسجيل الدخول أولاً.'
-      );
-    }
-
-    /*
-     * بعد التأكد من وجود session،
-     * نحصل على المستخدم الحالي.
-     */
-    const {
-      data: userData,
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      console.error(
-        'getUser error:',
-        userError
-      );
-
-      throw new Error(
-        'جلسة تسجيل الدخول غير صالحة. يرجى تسجيل الدخول مرة أخرى.'
-      );
-    }
-
-    const user =
-      userData?.user;
-
-    if (!user) {
-      throw new Error(
-        'يجب تسجيل الدخول أولاً.'
-      );
-    }
-
-    return user;
-  } catch (error: any) {
+  if (sessionError) {
     console.error(
-      'ensureAuth error:',
-      error
+      'getSession error:',
+      sessionError
+    );
+
+    throw sessionError;
+  }
+
+  if (!session?.access_token) {
+    throw new Error(
+      'انتهت جلسة تسجيل الدخول. يرجى إعادة فتح التطبيق.'
+    );
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError) {
+    console.error(
+      'getUser error:',
+      userError
     );
 
     /*
-     * نحول أخطاء Supabase مثل:
+     * معالجة الخطأ الشائع:
      * Auth session missing!
-     * إلى رسالة مفهومة للمستخدم.
      */
     if (
-      error?.message ===
-        'Auth session missing!' ||
-      error?.name ===
+      userError.message?.includes(
+        'Auth session missing'
+      ) ||
+      userError.name ===
         'AuthSessionMissingError'
     ) {
       throw new Error(
-        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
+        'انتهت جلسة تسجيل الدخول. يرجى إعادة فتح التطبيق.'
       );
     }
 
-    throw error;
+    throw userError;
   }
+
+  if (!user) {
+    throw new Error(
+      'لم يتم العثور على مستخدم مسجل.'
+    );
+  }
+
+  return user;
 }
 
+/**
+ * الحصول على ID المستخدم الحالي.
+ */
 export async function getCurrentUserId(): Promise<string> {
-  const user =
-    await ensureAuth();
+  const user = await ensureAuth();
 
   return user.id;
 }
 
+/**
+ * الحصول على الملف الشخصي الحالي.
+ *
+ * إذا كان المستخدم جديدًا ولا يوجد له Profile،
+ * يتم إنشاؤه تلقائيًا باسم Player.
+ */
 export async function getMyProfile(): Promise<Profile> {
   await ensureAuth();
 
+  /*
+   * نحاول أولاً الحصول على الملف الموجود.
+   */
   const {
     data,
     error,
@@ -127,23 +112,54 @@ export async function getMyProfile(): Promise<Profile> {
     throw error;
   }
 
-  if (!data) {
+  /*
+   * إذا كان الملف موجودًا نعيده مباشرة.
+   */
+  if (data) {
+    return data as Profile;
+  }
+
+  /*
+   * المستخدم جديد ولا يوجد له Profile.
+   *
+   * ensure_my_profile تقوم بإنشائه باستخدام auth.uid().
+   */
+  const {
+    data: createdProfile,
+    error: createError,
+  } = await supabase.rpc(
+    'ensure_my_profile',
+    {
+      p_username: 'Player',
+      p_avatar_url: null,
+    }
+  );
+
+  if (createError) {
+    console.error(
+      'create profile error:',
+      createError
+    );
+
+    throw createError;
+  }
+
+  if (!createdProfile) {
     throw new Error(
-      'لم يتم العثور على الملف الشخصي.'
+      'تعذر إنشاء الملف الشخصي.'
     );
   }
 
-  return data as Profile;
+  return createdProfile as Profile;
 }
 
+/**
+ * حفظ اسم المستخدم والصورة.
+ */
 export async function saveMyProfile(
   username: string,
   avatarUrl?: string | null
 ): Promise<Profile> {
-  /*
-   * مهم:
-   * نتحقق من الجلسة قبل استدعاء RPC.
-   */
   await ensureAuth();
 
   const cleanName =
@@ -155,15 +171,25 @@ export async function saveMyProfile(
     );
   }
 
+  if (cleanName.length < 2) {
+    throw new Error(
+      'اسم اللاعب يجب أن يكون حرفين على الأقل.'
+    );
+  }
+
+  if (cleanName.length > 24) {
+    throw new Error(
+      'اسم اللاعب يجب ألا يتجاوز 24 حرفًا.'
+    );
+  }
+
   const {
     data,
     error,
   } = await supabase.rpc(
     'ensure_my_profile',
     {
-      p_username:
-        cleanName,
-
+      p_username: cleanName,
       p_avatar_url:
         avatarUrl ?? null,
     }
@@ -175,16 +201,13 @@ export async function saveMyProfile(
       error
     );
 
-    /*
-     * إذا كان الخطأ بسبب انتهاء الجلسة،
-     * نعرض رسالة عربية واضحة.
-     */
     if (
-      error.message ===
-        'Auth session missing!'
+      error.message?.includes(
+        'Auth session missing'
+      )
     ) {
       throw new Error(
-        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
+        'انتهت جلسة تسجيل الدخول. يرجى إعادة فتح التطبيق.'
       );
     }
 
@@ -200,11 +223,13 @@ export async function saveMyProfile(
   return data as Profile;
 }
 
+/**
+ * رفع صورة الحساب إلى Supabase Storage.
+ */
 export async function uploadAvatar(
   imageUri: string
 ): Promise<string> {
-  const user =
-    await ensureAuth();
+  const user = await ensureAuth();
 
   if (!imageUri) {
     throw new Error(
@@ -212,6 +237,9 @@ export async function uploadAvatar(
     );
   }
 
+  /*
+   * قراءة الصورة من URI الخاص بالجهاز.
+   */
   const response =
     await fetch(imageUri);
 
@@ -224,6 +252,9 @@ export async function uploadAvatar(
   const arrayBuffer =
     await response.arrayBuffer();
 
+  /*
+   * كل مستخدم يحصل على مجلد خاص به.
+   */
   const filePath =
     `${user.id}/avatar-${Date.now()}.jpg`;
 
@@ -238,7 +269,6 @@ export async function uploadAvatar(
         {
           contentType:
             'image/jpeg',
-
           upsert: true,
         }
       );
@@ -249,18 +279,12 @@ export async function uploadAvatar(
       uploadError
     );
 
-    if (
-      uploadError.message ===
-        'Auth session missing!'
-    ) {
-      throw new Error(
-        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
-      );
-    }
-
     throw uploadError;
   }
 
+  /*
+   * الحصول على الرابط العام للصورة.
+   */
   const {
     data: publicData,
   } =
@@ -270,9 +294,7 @@ export async function uploadAvatar(
         filePath
       );
 
-  if (
-    !publicData?.publicUrl
-  ) {
+  if (!publicData?.publicUrl) {
     throw new Error(
       'تعذر الحصول على رابط الصورة.'
     );
@@ -281,26 +303,39 @@ export async function uploadAvatar(
   return publicData.publicUrl;
 }
 
+/**
+ * حفظ الملف الشخصي مع الصورة الجديدة.
+ *
+ * إذا لم توجد صورة جديدة، يتم الاحتفاظ
+ * بالصورة الحالية.
+ */
 export async function saveMyProfileWithAvatar(
   username: string,
   imageUri?: string | null
 ): Promise<Profile> {
+  /*
+   * التأكد من وجود Session قبل تنفيذ أي عملية.
+   */
+  await ensureAuth();
+
   let avatarUrl:
     | string
     | null = null;
 
   /*
-   * نتأكد من تسجيل الدخول قبل بدء عملية الحفظ
-   * سواء كانت هناك صورة أم لا.
+   * إذا اختار المستخدم صورة جديدة،
+   * نرفعها أولاً.
    */
-  await ensureAuth();
-
   if (imageUri) {
     avatarUrl =
       await uploadAvatar(
         imageUri
       );
   } else {
+    /*
+     * لا توجد صورة جديدة.
+     * نحتفظ بالصورة الحالية.
+     */
     try {
       const current =
         await getMyProfile();
@@ -308,11 +343,19 @@ export async function saveMyProfileWithAvatar(
       avatarUrl =
         current.avatar_url ||
         null;
-    } catch {
+    } catch (error) {
+      console.error(
+        'get current profile error:',
+        error
+      );
+
       avatarUrl = null;
     }
   }
 
+  /*
+   * حفظ الاسم والرابط.
+   */
   return saveMyProfile(
     username,
     avatarUrl
