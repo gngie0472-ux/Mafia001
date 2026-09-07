@@ -502,9 +502,6 @@ export default function MafiaGameScreen() {
   /*
    * ----------------------------------------------------
    * Messages
-   *
-   * الرسائل يتم تحميلها دائمًا.
-   * لا ترتبط بمرحلة اللعبة.
    * ----------------------------------------------------
    */
 
@@ -588,11 +585,6 @@ export default function MafiaGameScreen() {
 
         setGameState(state);
 
-        /*
-         * getMyRole قد يفشل أثناء waiting
-         * وهذا طبيعي.
-         */
-
         try {
           const role =
             await getMyRole(
@@ -646,9 +638,6 @@ export default function MafiaGameScreen() {
           state.players
         );
 
-        /*
-         * تحميل الرسائل دائمًا مع حالة اللعبة.
-         */
         await loadMessages();
 
         if (
@@ -946,8 +935,8 @@ export default function MafiaGameScreen() {
    * ----------------------------------------------------
    * LiveKit voice
    *
-   * الاتصال الصوتي يتم حتى أثناء انتظار اللعبة.
-   * المايك نفسه يبقى مغلقًا افتراضيًا.
+   * الاتصال الصوتي يتم حتى أثناء الانتظار.
+   * المايك يبقى مغلقًا افتراضيًا.
    * ----------------------------------------------------
    */
 
@@ -1019,6 +1008,8 @@ export default function MafiaGameScreen() {
               setMicEnabled(
                 false
               );
+
+              setSpeakingUsers({});
             }
           }
         );
@@ -1036,8 +1027,8 @@ export default function MafiaGameScreen() {
         }
 
         /*
-         * المايك مغلق افتراضيًا.
-         * اللاعب يضغط الزر لتشغيله.
+         * مهم:
+         * لا يتم تشغيل المايك تلقائيًا.
          */
         await room.localParticipant.setMicrophoneEnabled(
           false
@@ -1046,6 +1037,7 @@ export default function MafiaGameScreen() {
         if (
           mountedRef.current
         ) {
+          setMicEnabled(false);
           setVoiceConnected(
             true
           );
@@ -1062,6 +1054,8 @@ export default function MafiaGameScreen() {
           setVoiceConnected(
             false
           );
+
+          setMicEnabled(false);
         }
       }
     }
@@ -1081,6 +1075,10 @@ export default function MafiaGameScreen() {
         room.disconnect();
       }
 
+      setVoiceConnected(false);
+      setMicEnabled(false);
+      setSpeakingUsers({});
+
       AudioSession.stopAudioSession().catch(
         () => {}
       );
@@ -1094,17 +1092,20 @@ export default function MafiaGameScreen() {
    * ----------------------------------------------------
    * التحكم التلقائي في المايك
    *
-   * المايك مسموح:
+   * waiting:
+   * متاح ولكن مغلق افتراضيًا.
    *
-   * waiting
-   * أو
-   * playing + day + alive
+   * day + alive:
+   * متاح ولكن مغلق حتى يضغط اللاعب.
    *
-   * ويغلق تلقائيًا:
+   * night:
+   * مغلق.
    *
-   * night
-   * dead
-   * finished
+   * dead:
+   * مغلق.
+   *
+   * finished:
+   * مغلق.
    * ----------------------------------------------------
    */
 
@@ -1179,41 +1180,42 @@ export default function MafiaGameScreen() {
       const currentPhase =
         gameState.room.game_phase;
 
-      /*
-       * أثناء الانتظار:
-       * المايك مسموح.
-       */
-
       const waitingAllowed =
         status === "waiting";
-
-      /*
-       * أثناء النهار:
-       * المايك مسموح فقط للحي.
-       */
 
       const dayAllowed =
         status === "playing" &&
         currentPhase === "day" &&
         myAlive;
 
-      /*
-       * الليل أو الميت أو انتهاء اللعبة:
-       * ممنوع.
-       */
-
       if (
         !waitingAllowed &&
         !dayAllowed
       ) {
-        Alert.alert(
-          "الميكروفون مغلق",
+        let message =
+          "الميكروفون مغلق حاليًا.";
+
+        if (
+          status === "finished"
+        ) {
+          message =
+            "انتهت اللعبة. الميكروفون مغلق.";
+        } else if (
+          !myAlive
+        ) {
+          message =
+            "لا يمكنك استخدام الميكروفون بعد موتك.";
+        } else if (
           status === "playing" &&
           currentPhase === "night"
-            ? "الميكروفون مغلق أثناء الليل."
-            : !myAlive
-            ? "لا يمكنك استخدام الميكروفون بعد موتك."
-            : "الميكروفون مغلق حاليًا."
+        ) {
+          message =
+            "الميكروفون مغلق أثناء الليل.";
+        }
+
+        Alert.alert(
+          "الميكروفون مغلق",
+          message
         );
 
         return;
@@ -1487,11 +1489,6 @@ export default function MafiaGameScreen() {
       const currentPhase =
         gameState.room.game_phase;
 
-      /*
-       * الليل:
-       * الدردشة مغلقة.
-       */
-
       if (
         currentStatus ===
           "playing" &&
@@ -1506,11 +1503,6 @@ export default function MafiaGameScreen() {
         return;
       }
 
-      /*
-       * اللاعب الميت:
-       * لا يستطيع الكتابة.
-       */
-
       if (
         currentStatus ===
           "playing" &&
@@ -1523,11 +1515,6 @@ export default function MafiaGameScreen() {
 
         return;
       }
-
-      /*
-       * انتهت اللعبة:
-       * قراءة فقط.
-       */
 
       if (
         currentStatus ===
@@ -1616,13 +1603,7 @@ export default function MafiaGameScreen() {
     );
 
   /*
-   * الدردشة:
-   *
-   * waiting -> مفتوحة
-   * day + alive -> مفتوحة
-   * night -> مغلقة
-   * dead -> مغلقة
-   * finished -> مغلقة
+   * الدردشة
    */
 
   const canChat =
@@ -1637,13 +1618,7 @@ export default function MafiaGameScreen() {
     );
 
   /*
-   * المايك:
-   *
-   * waiting -> متاح
-   * day + alive -> متاح
-   * night -> مغلق
-   * dead -> مغلق
-   * finished -> مغلق
+   * المايك
    */
 
   const canVoice =
@@ -1689,20 +1664,22 @@ export default function MafiaGameScreen() {
       : "☀️ النهار";
 
   /*
-   * رسالة حالة المايك.
+   * حالة المايك.
+   *
+   * ترتيب الحالات مهم:
+   * finished -> dead -> night -> connection
    */
 
   const voiceClosedReason =
     !gameState
       ? "الصوت غير متاح حاليًا."
-      : isWaiting
-      ? "يمكنك استخدام المايك للتحدث مع اللاعبين قبل بدء اللعبة."
       : isFinished
-      ? "انتهت اللعبة. المايك مغلق."
-      : phase === "night"
+      ? "انتهت اللعبة. المايكروفون مغلق."
+      : !myAlive && !isWaiting
+      ? "أنت ميت. لا يمكنك استخدام المايكروفون."
+      : isPlaying &&
+        phase === "night"
       ? "الميكروفون مغلق أثناء الليل."
-      : !myAlive
-      ? "أنت ميت. لا يمكنك استخدام المايك."
       : !voiceConnected
       ? "جاري الاتصال بخدمة الصوت..."
       : "";
@@ -2338,76 +2315,107 @@ export default function MafiaGameScreen() {
 
         {/* =================================================
             VOICE
-            يظهر أثناء الانتظار والنهار
+            يظهر الآن في جميع الحالات.
+            المايك نفسه لا يعمل إلا في waiting أو day + alive.
             ================================================= */}
 
-        {(isWaiting ||
-          (
-            isPlaying &&
-            phase === "day"
-          )) && (
+        <View
+          style={
+            styles.section
+          }
+        >
           <View
             style={
-              styles.section
+              styles.voiceHeader
             }
           >
             <View
               style={
-                styles.voiceHeader
+                styles.voiceHeaderTextContainer
               }
             >
-              <View>
-                <Text
-                  style={
-                    styles.sectionTitle
-                  }
-                >
-                  🎙️ الصوت المباشر
-                </Text>
-
-                <Text
-                  style={
-                    styles.voiceHint
-                  }
-                >
-                  {isWaiting
-                    ? voiceConnected
-                      ? "متصل بالصوت - يمكنك التحدث مع اللاعبين"
-                      : "جاري الاتصال بالصوت..."
-                    : voiceConnected
-                    ? "متصل بالصوت"
-                    : "جاري الاتصال..."}
-                </Text>
-              </View>
-
-              <Pressable
-                style={[
-                  styles.micButton,
-                  !canVoice &&
-                    styles.disabledButton,
-                  micEnabled &&
-                    styles.micActive,
-                ]}
-                disabled={
-                  !canVoice
-                }
-                onPress={
-                  toggleMicrophone
+              <Text
+                style={
+                  styles.sectionTitle
                 }
               >
-                <Ionicons
-                  name={
-                    micEnabled
-                      ? "mic"
-                      : "mic-off"
-                  }
-                  size={25}
-                  color="#fff"
-                />
-              </Pressable>
+                🎙️ الصوت المباشر
+              </Text>
+
+              <Text
+                style={[
+                  styles.voiceHint,
+                  !canVoice &&
+                    styles.voiceHintDisabled,
+                ]}
+              >
+                {isFinished
+                  ? "انتهت اللعبة"
+                  : !myAlive &&
+                    !isWaiting
+                  ? "الميكروفون مغلق - أنت ميت"
+                  : isPlaying &&
+                    phase === "night"
+                  ? "الميكروفون مغلق أثناء الليل"
+                  : isWaiting
+                  ? voiceConnected
+                    ? "متصل بالصوت - يمكنك التحدث مع اللاعبين"
+                    : "جاري الاتصال بالصوت..."
+                  : voiceConnected
+                  ? "متصل بالصوت - اضغط على الميكروفون للتحدث"
+                  : "جاري الاتصال بالصوت..."}
+              </Text>
             </View>
 
-            {!canVoice && (
+            <Pressable
+              style={[
+                styles.micButton,
+                !canVoice &&
+                  styles.disabledMicButton,
+                micEnabled &&
+                  styles.micActive,
+              ]}
+              disabled={
+                !canVoice
+              }
+              onPress={
+                toggleMicrophone
+              }
+            >
+              <Ionicons
+                name={
+                  micEnabled
+                    ? "mic"
+                    : "mic-off"
+                }
+                size={25}
+                color="#fff"
+              />
+            </Pressable>
+          </View>
+
+          {!canVoice && (
+            <View
+              style={
+                styles.voiceClosedBox
+              }
+            >
+              <Ionicons
+                name={
+                  isFinished
+                    ? "trophy-outline"
+                    : !myAlive &&
+                      !isWaiting
+                    ? "skull-outline"
+                    : isPlaying &&
+                      phase === "night"
+                    ? "moon-outline"
+                    : "mic-off-outline"
+                }
+                size={18}
+                color="#777"
+              />
+
               <Text
                 style={
                   styles.voiceDisabled
@@ -2415,67 +2423,67 @@ export default function MafiaGameScreen() {
               >
                 {voiceClosedReason}
               </Text>
+            </View>
+          )}
+
+          {canVoice &&
+            !micEnabled && (
+              <Text
+                style={
+                  styles.voiceDisabled
+                }
+              >
+                اضغط على 🎙️ لتشغيل الميكروفون. المايك مغلق افتراضيًا.
+              </Text>
             )}
 
-            {canVoice &&
-              !micEnabled && (
-                <Text
-                  style={
-                    styles.voiceDisabled
-                  }
-                >
-                  اضغط على 🎙️ لتشغيل الميكروفون.
-                </Text>
-              )}
+          {micEnabled && (
+            <View
+              style={
+                styles.micOnInfo
+              }
+            >
+              <Ionicons
+                name="mic"
+                size={18}
+                color="#5EEAD4"
+              />
 
-            {micEnabled && (
+              <Text
+                style={
+                  styles.micOnText
+                }
+              >
+                الميكروفون يعمل الآن
+              </Text>
+            </View>
+          )}
+
+          {voiceConnected &&
+            Object.keys(
+              speakingUsers
+            ).length > 0 && (
               <View
                 style={
-                  styles.micOnInfo
+                  styles.speakingBox
                 }
               >
                 <Ionicons
-                  name="mic"
+                  name="volume-high"
                   size={18}
                   color="#5EEAD4"
                 />
 
                 <Text
                   style={
-                    styles.micOnText
+                    styles.speakingText
                   }
                 >
-                  الميكروفون يعمل الآن
+                  هناك لاعب يتحدث الآن
                 </Text>
               </View>
             )}
-
-            {voiceConnected &&
-              Object.keys(
-                speakingUsers
-              ).length > 0 && (
-                <View
-                  style={
-                    styles.speakingBox
-                  }
-                >
-                  <Ionicons
-                    name="volume-high"
-                    size={18}
-                    color="#5EEAD4"
-                  />
-
-                  <Text
-                    style={
-                      styles.speakingText
-                    }
-                  >
-                    هناك لاعب يتحدث الآن
-                  </Text>
-                </View>
-              )}
-          </View>
-        )}
+        </View>
 
         {/* =================================================
             CHAT
@@ -3485,6 +3493,10 @@ const styles =
       lineHeight: 21,
     },
 
+    /*
+     * VOICE
+     */
+
     voiceHeader: {
       flexDirection:
         "row",
@@ -3501,11 +3513,20 @@ const styles =
         "#272A34",
     },
 
+    voiceHeaderTextContainer: {
+      flex: 1,
+      marginRight: 12,
+    },
+
     voiceHint: {
       color: "#5EEAD4",
       fontSize: 12,
       textAlign: "right",
       marginTop: 3,
+    },
+
+    voiceHintDisabled: {
+      color: "#777",
     },
 
     micButton: {
@@ -3520,9 +3541,33 @@ const styles =
         "center",
     },
 
+    disabledMicButton: {
+      backgroundColor:
+        "#24262D",
+      opacity: 0.65,
+    },
+
     micActive: {
       backgroundColor:
         "#168C68",
+      opacity: 1,
+    },
+
+    voiceClosedBox: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      backgroundColor:
+        "#12141A",
+      borderWidth: 1,
+      borderColor:
+        "#252832",
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      marginTop: 8,
+      gap: 7,
     },
 
     voiceDisabled: {
@@ -3531,6 +3576,7 @@ const styles =
       textAlign: "right",
       marginTop: 8,
       lineHeight: 18,
+      flex: 1,
     },
 
     micOnInfo: {
