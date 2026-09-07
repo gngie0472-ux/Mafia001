@@ -262,17 +262,6 @@ export default function MafiaGameScreen() {
       code?: string | string[];
     }>();
 
-  /*
-   * قد يكون الرابط:
-   *
-   * /game/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-   *
-   * أو:
-   *
-   * /game/T2GZ6M
-   *
-   * لذلك لا نستعمل قيمة route مباشرة كـ UUID.
-   */
   const routeValue = Array.isArray(
     params.code
   )
@@ -372,9 +361,6 @@ export default function MafiaGameScreen() {
         return;
       }
 
-      /*
-       * إذا كان UUID بالفعل نستعمله مباشرة.
-       */
       if (isUuid(normalized)) {
         if (!cancelled) {
           setRoomId(normalized);
@@ -383,10 +369,6 @@ export default function MafiaGameScreen() {
         return;
       }
 
-      /*
-       * وإلا نفترض أنه كود غرفة مثل T2GZ6M
-       * ونبحث عن UUID الحقيقي.
-       */
       try {
         setResolvingRoom(true);
 
@@ -510,6 +492,9 @@ export default function MafiaGameScreen() {
   /*
    * ----------------------------------------------------
    * Messages
+   *
+   * الرسائل لا ترتبط بمرحلة معينة.
+   * يتم تحميلها دائمًا من room_messages.
    * ----------------------------------------------------
    */
 
@@ -593,45 +578,69 @@ export default function MafiaGameScreen() {
 
         setGameState(state);
 
-        const role =
-          await getMyRole(
-            roomId
-          );
+        /*
+         * getMyRole قد لا يكون مهمًا
+         * أثناء انتظار اللاعبين.
+         *
+         * إذا فشل أثناء waiting لا نوقف
+         * تحميل حالة الغرفة والرسائل.
+         */
+        try {
+          const role =
+            await getMyRole(
+              roomId
+            );
 
-        if (
-          !mountedRef.current
-        ) {
-          return;
+          if (
+            mountedRef.current
+          ) {
+            setMyRole(
+              role?.role || null
+            );
+
+            setMyAlive(
+              role?.alive ?? true
+            );
+
+            const roleCardKey =
+              `${state.room.id}-${state.room.game_round}`;
+
+            if (
+              state.room.status ===
+                "playing" &&
+              role?.role &&
+              roleCardShownForGame !==
+                roleCardKey
+            ) {
+              setRoleCardShownForGame(
+                roleCardKey
+              );
+
+              setShowRoleCard(true);
+            }
+          }
+        } catch (roleError) {
+          /*
+           * أثناء waiting قد لا يكون هناك
+           * دور سري بعد، وهذا طبيعي.
+           */
+          if (
+            state.room.status ===
+            "waiting"
+          ) {
+            setMyRole(null);
+            setMyAlive(true);
+          } else {
+            console.error(
+              "getMyRole:",
+              roleError
+            );
+          }
         }
-
-        setMyRole(
-          role.role
-        );
-
-        setMyAlive(
-          role.alive
-        );
 
         await loadProfiles(
           state.players
         );
-
-        const roleCardKey =
-          `${state.room.id}-${state.room.game_round}`;
-
-        if (
-          state.room.status ===
-            "playing" &&
-          role.role &&
-          roleCardShownForGame !==
-            roleCardKey
-        ) {
-          setRoleCardShownForGame(
-            roleCardKey
-          );
-
-          setShowRoleCard(true);
-        }
 
         if (
           state.room.status ===
@@ -672,8 +681,10 @@ export default function MafiaGameScreen() {
   );
 
   /*
-   * يبدأ تحميل اللعبة فقط بعد الحصول على UUID الحقيقي.
+   * يبدأ تحميل اللعبة والرسائل
+   * بمجرد الحصول على UUID.
    */
+
   useEffect(() => {
     if (
       resolvingRoom ||
@@ -1355,6 +1366,16 @@ export default function MafiaGameScreen() {
    * ----------------------------------------------------
    * Chat
    * ----------------------------------------------------
+   *
+   * القاعدة الجديدة:
+   *
+   * waiting = يسمح بالدردشة
+   * day     = يسمح للدردشة إذا كان اللاعب حيًا
+   * night   = الرسائل تظهر لكن الإرسال مغلق
+   * finished = الرسائل تظهر لكن الإرسال مغلق
+   *
+   * الدردشة نفسها لم تعد مرتبطة بشرط
+   * phase === "day" في الواجهة.
    */
 
   const sendMessage =
@@ -1370,9 +1391,23 @@ export default function MafiaGameScreen() {
         return;
       }
 
+      if (!gameState) {
+        return;
+      }
+
+      const currentStatus =
+        gameState.room.status;
+
+      const currentPhase =
+        gameState.room.game_phase;
+
+      /*
+       * أثناء الليل لا نسمح بالإرسال.
+       */
       if (
-        !gameState ||
-        gameState.room.game_phase !==
+        currentStatus ===
+          "playing" &&
+        currentPhase !==
           "day"
       ) {
         Alert.alert(
@@ -1382,7 +1417,15 @@ export default function MafiaGameScreen() {
         return;
       }
 
-      if (!myAlive) {
+      /*
+       * اللاعب الميت لا يستطيع الكتابة
+       * أثناء اللعبة.
+       */
+      if (
+        currentStatus ===
+          "playing" &&
+        !myAlive
+      ) {
         Alert.alert(
           "أنت ميت",
           "لا يمكنك إرسال رسائل بعد موتك."
@@ -1411,6 +1454,10 @@ export default function MafiaGameScreen() {
 
         setMessageText("");
 
+        /*
+         * نعيد تحميل الرسائل بعد الإرسال
+         * للتأكد من ظهور الرسالة مباشرة.
+         */
         await loadMessages();
       } catch (error: any) {
         console.error(
@@ -1439,12 +1486,19 @@ export default function MafiaGameScreen() {
   const phase =
     gameState?.room.game_phase;
 
+  const roomStatus =
+    gameState?.room.status;
+
+  const isWaiting =
+    roomStatus ===
+    "waiting";
+
   const isPlaying =
-    gameState?.room.status ===
+    roomStatus ===
     "playing";
 
   const isFinished =
-    gameState?.room.status ===
+    roomStatus ===
     "finished";
 
   const eventText =
@@ -1453,10 +1507,26 @@ export default function MafiaGameScreen() {
         null
     );
 
+  /*
+   * الدردشة:
+   *
+   * waiting -> مفتوحة
+   * day + alive -> مفتوحة
+   * night -> مغلقة
+   * dead -> مغلقة
+   * finished -> مغلقة
+   */
+
   const canChat =
-    isPlaying &&
-    phase === "day" &&
-    myAlive;
+    !!gameState &&
+    (
+      isWaiting ||
+      (
+        isPlaying &&
+        phase === "day" &&
+        myAlive
+      )
+    );
 
   const canVoice =
     isPlaying &&
@@ -1477,6 +1547,36 @@ export default function MafiaGameScreen() {
     isPlaying &&
     phase === "day" &&
     myAlive;
+
+  /*
+   * عنوان المرحلة.
+   */
+
+  const phaseTitle =
+    isWaiting
+      ? "⏳ انتظار اللاعبين"
+      : isFinished
+      ? "🏆 انتهت اللعبة"
+      : phase === "night"
+      ? "🌙 الليل"
+      : "☀️ النهار";
+
+  /*
+   * رسالة حالة الدردشة.
+   */
+
+  const chatClosedReason =
+    !gameState
+      ? "الدردشة غير متاحة حاليًا."
+      : isWaiting
+      ? ""
+      : isFinished
+      ? "انتهت اللعبة. يمكنك قراءة الرسائل السابقة."
+      : phase === "night"
+      ? "الدردشة مغلقة أثناء الليل. يمكنك قراءة الرسائل السابقة."
+      : !myAlive
+      ? "أنت ميت. يمكنك قراءة الرسائل السابقة فقط."
+      : "";
 
   /*
    * ----------------------------------------------------
@@ -1716,9 +1816,7 @@ export default function MafiaGameScreen() {
                 styles.phaseTitle
               }
             >
-              {phase === "night"
-                ? "🌙 الليل"
-                : "☀️ النهار"}
+              {phaseTitle}
             </Text>
           </View>
 
@@ -1732,7 +1830,9 @@ export default function MafiaGameScreen() {
                 styles.timerLabel
               }
             >
-              الوقت المتبقي
+              {isWaiting
+                ? "حالة الغرفة"
+                : "الوقت المتبقي"}
             </Text>
 
             <Text
@@ -1740,9 +1840,13 @@ export default function MafiaGameScreen() {
                 styles.timer
               }
             >
-              {formatTime(
-                secondsLeft
-              )}
+              {isWaiting
+                ? "انتظار"
+                : isFinished
+                ? "00:00"
+                : formatTime(
+                    secondsLeft
+                  )}
             </Text>
           </View>
         </View>
@@ -1846,6 +1950,40 @@ export default function MafiaGameScreen() {
                 </Text>
               </View>
             )}
+          </View>
+        )}
+
+        {/* WAITING INFO */}
+
+        {isWaiting && (
+          <View
+            style={
+              styles.section
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              ⏳ انتظار بدء اللعبة
+            </Text>
+
+            <View
+              style={
+                styles.infoCard
+              }
+            >
+              <Text
+                style={
+                  styles.infoText
+                }
+              >
+                انتظر حتى ينضم اللاعبون وتبدأ اللعبة.
+                يمكنك التواصل معهم من خلال الدردشة
+                الموجودة بالأسفل.
+              </Text>
+            </View>
           </View>
         )}
 
@@ -2142,145 +2280,247 @@ export default function MafiaGameScreen() {
                   </View>
                 )}
             </View>
-
-            {/* CHAT */}
-
-            <View
-              style={
-                styles.section
-              }
-            >
-              <Text
-                style={
-                  styles.sectionTitle
-                }
-              >
-                💬 دردشة النهار
-              </Text>
-
-              <View
-                style={
-                  styles.chatBox
-                }
-              >
-                {messagesLoading &&
-                messages.length ===
-                  0 ? (
-                  <ActivityIndicator
-                    color="#D7A94B"
-                  />
-                ) : messages.length ===
-                  0 ? (
-                  <Text
-                    style={
-                      styles.emptyText
-                    }
-                  >
-                    لا توجد رسائل بعد.
-                  </Text>
-                ) : (
-                  messages.map(
-                    (message) => {
-                      const profile =
-                        profiles[
-                          message.user_id
-                        ];
-
-                      return (
-                        <View
-                          key={
-                            message.id
-                          }
-                          style={
-                            styles.messageRow
-                          }
-                        >
-                          <Text
-                            style={
-                              styles.messageName
-                            }
-                          >
-                            {profile?.username ||
-                              "Player"}
-                          </Text>
-
-                          <Text
-                            style={
-                              styles.messageText
-                            }
-                          >
-                            {
-                              message.message
-                            }
-                          </Text>
-                        </View>
-                      );
-                    }
-                  )
-                )}
-              </View>
-
-              {canChat && (
-                <View
-                  style={
-                    styles.chatInputRow
-                  }
-                >
-                  <TextInput
-                    value={
-                      messageText
-                    }
-                    onChangeText={
-                      setMessageText
-                    }
-                    placeholder="اكتب رسالتك..."
-                    placeholderTextColor="#777"
-                    style={
-                      styles.chatInput
-                    }
-                    multiline
-                    maxLength={500}
-                    textAlign="right"
-                  />
-
-                  <Pressable
-                    style={[
-                      styles.sendButton,
-                      (!messageText.trim() ||
-                        sendingMessage) &&
-                        styles.disabledButton,
-                    ]}
-                    disabled={
-                      !messageText.trim() ||
-                      sendingMessage
-                    }
-                    onPress={
-                      sendMessage
-                    }
-                  >
-                    <Ionicons
-                      name="send"
-                      size={21}
-                      color="#fff"
-                    />
-                  </Pressable>
-                </View>
-              )}
-
-              {!canChat && (
-                <Text
-                  style={
-                    styles.voiceDisabled
-                  }
-                >
-                  الدردشة مغلقة حاليًا.
-                </Text>
-              )}
-            </View>
           </>
         )}
 
-        {/* DEAD PLAYERS */}
+        {/* =================================================
+            CHAT
+            ================================================= */}
+
+        <View
+          style={
+            styles.section
+          }
+        >
+          <View
+            style={
+              styles.chatHeader
+            }
+          >
+            <View
+              style={
+                styles.chatStatusBadge
+              }
+            >
+              <View
+                style={[
+                  styles.chatStatusDot,
+                  canChat
+                    ? styles.chatStatusOpen
+                    : styles.chatStatusClosed,
+                ]}
+              />
+
+              <Text
+                style={
+                  styles.chatStatusText
+                }
+              >
+                {canChat
+                  ? "مفتوحة"
+                  : "قراءة فقط"}
+              </Text>
+            </View>
+
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              💬 دردشة الغرفة
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.chatInfo
+            }
+          >
+            <Ionicons
+              name={
+                canChat
+                  ? "chatbubbles"
+                  : "lock-closed"
+              }
+              size={17}
+              color={
+                canChat
+                  ? "#D7A94B"
+                  : "#777"
+              }
+            />
+
+            <Text
+              style={
+                styles.chatInfoText
+              }
+            >
+              {isWaiting
+                ? "يمكن لجميع اللاعبين التواصل هنا قبل بدء اللعبة."
+                : phase === "day" &&
+                  myAlive
+                ? "الدردشة مفتوحة خلال النهار للاعبين الأحياء."
+                : chatClosedReason ||
+                  "يمكنك قراءة الرسائل السابقة."}
+            </Text>
+          </View>
+
+          <View
+            style={
+              styles.chatBox
+            }
+          >
+            {messagesLoading &&
+            messages.length ===
+              0 ? (
+              <ActivityIndicator
+                color="#D7A94B"
+              />
+            ) : messages.length ===
+              0 ? (
+              <Text
+                style={
+                  styles.emptyText
+                }
+              >
+                لا توجد رسائل بعد.
+              </Text>
+            ) : (
+              messages.map(
+                (message) => {
+                  const profile =
+                    profiles[
+                      message.user_id
+                    ];
+
+                  return (
+                    <View
+                      key={
+                        message.id
+                      }
+                      style={
+                        styles.messageRow
+                      }
+                    >
+                      <View
+                        style={
+                          styles.messageTopRow
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.messageTime
+                          }
+                        >
+                          {new Date(
+                            message.created_at
+                          ).toLocaleTimeString(
+                            "ar",
+                            {
+                              hour: "2-digit",
+                              minute:
+                                "2-digit",
+                            }
+                          )}
+                        </Text>
+
+                        <Text
+                          style={
+                            styles.messageName
+                          }
+                        >
+                          {profile?.username ||
+                            "Player"}
+                        </Text>
+                      </View>
+
+                      <Text
+                        style={
+                          styles.messageText
+                        }
+                      >
+                        {
+                          message.message
+                        }
+                      </Text>
+                    </View>
+                  );
+                }
+              )
+            )}
+          </View>
+
+          {canChat && (
+            <View
+              style={
+                styles.chatInputRow
+              }
+            >
+              <TextInput
+                value={
+                  messageText
+                }
+                onChangeText={
+                  setMessageText
+                }
+                placeholder={
+                  isWaiting
+                    ? "تحدث مع اللاعبين..."
+                    : "اكتب رسالتك..."
+                }
+                placeholderTextColor="#777"
+                style={
+                  styles.chatInput
+                }
+                multiline
+                maxLength={500}
+                textAlign="right"
+              />
+
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  (!messageText.trim() ||
+                    sendingMessage) &&
+                    styles.disabledButton,
+                ]}
+                disabled={
+                  !messageText.trim() ||
+                  sendingMessage
+                }
+                onPress={
+                  sendMessage
+                }
+              >
+                {sendingMessage ? (
+                  <ActivityIndicator
+                    size="small"
+                    color="#fff"
+                  />
+                ) : (
+                  <Ionicons
+                    name="send"
+                    size={21}
+                    color="#fff"
+                  />
+                )}
+              </Pressable>
+            </View>
+          )}
+
+          {!canChat && (
+            <Text
+              style={
+                styles.voiceDisabled
+              }
+            >
+              {chatClosedReason ||
+                "الدردشة مغلقة حاليًا."}
+            </Text>
+          )}
+        </View>
+
+        {/* DEAD / ALL PLAYERS */}
 
         <View
           style={
@@ -2855,7 +3095,7 @@ const styles =
 
     timer: {
       color: "#D7A94B",
-      fontSize: 27,
+      fontSize: 23,
       fontWeight: "900",
       marginTop: 2,
     },
@@ -3118,6 +3358,78 @@ const styles =
       textAlign: "right",
     },
 
+    /*
+     * CHAT
+     */
+
+    chatHeader: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+    },
+
+    chatStatusBadge: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      backgroundColor:
+        "#15171E",
+      borderRadius: 10,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      gap: 6,
+    },
+
+    chatStatusDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+
+    chatStatusOpen: {
+      backgroundColor:
+        "#35D07F",
+    },
+
+    chatStatusClosed: {
+      backgroundColor:
+        "#777",
+    },
+
+    chatStatusText: {
+      color: "#AAA",
+      fontSize: 11,
+      fontWeight: "700",
+    },
+
+    chatInfo: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      backgroundColor:
+        "#15130D",
+      borderWidth: 1,
+      borderColor:
+        "#3D321A",
+      borderRadius: 12,
+      padding: 10,
+      marginBottom: 9,
+      gap: 8,
+    },
+
+    chatInfoText: {
+      color: "#B9AE91",
+      flex: 1,
+      textAlign: "right",
+      fontSize: 12,
+      lineHeight: 18,
+    },
+
     chatBox: {
       backgroundColor:
         "#0F1117",
@@ -3138,12 +3450,28 @@ const styles =
       paddingBottom: 8,
     },
 
+    messageTopRow: {
+      flexDirection:
+        "row",
+      alignItems:
+        "center",
+      justifyContent:
+        "space-between",
+      marginBottom: 2,
+    },
+
     messageName: {
       color: "#D7A94B",
       fontSize: 12,
       fontWeight: "800",
       textAlign: "right",
-      marginBottom: 2,
+      flex: 1,
+    },
+
+    messageTime: {
+      color: "#555",
+      fontSize: 10,
+      marginLeft: 8,
     },
 
     messageText: {
