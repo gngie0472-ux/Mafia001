@@ -149,9 +149,7 @@ const ROLE_DESCRIPTIONS: Record<GameRole, string> = {
     'راقب اللاعبين وتحدث وصوّت لاكتشاف المافيا.',
 };
 
-const ROLE_ACTIONS: Partial<
-  Record<GameRole, NightAction[]>
-> = {
+const ROLE_ACTIONS: Partial<Record<GameRole, NightAction[]>> = {
   MAFIA: ['kill'],
   GODFATHER: ['kill'],
   DOCTOR: ['protect'],
@@ -427,6 +425,9 @@ export default function MafiaGameScreen() {
   const voiceShouldBeConnectedRef =
     useRef(false);
 
+  const isUnmountingRef =
+    useRef(false);
+
   const [voiceConnected, setVoiceConnected] =
     useState(false);
 
@@ -439,8 +440,10 @@ export default function MafiaGameScreen() {
   const [voiceError, setVoiceError] =
     useState<string | null>(null);
 
-  const [voiceParticipantsVersion, setVoiceParticipantsVersion] =
-    useState(0);
+  const [
+    voiceParticipantsVersion,
+    setVoiceParticipantsVersion,
+  ] = useState(0);
 
   const lastAdvanceRef =
     useRef<number>(0);
@@ -451,6 +454,9 @@ export default function MafiaGameScreen() {
   const isMountedRef =
     useRef(true);
 
+  /*
+   * تسجيل دعم LiveKit مرة واحدة.
+   */
   useEffect(() => {
     try {
       registerGlobals();
@@ -496,7 +502,9 @@ export default function MafiaGameScreen() {
 
       try {
         const normalizedCode =
-          routeValue.trim().toUpperCase();
+          routeValue
+            .trim()
+            .toUpperCase();
 
         const {
           data,
@@ -572,7 +580,10 @@ export default function MafiaGameScreen() {
       }
 
       const userIds = players
-        .map(player => player.user_id)
+        .map(
+          (player) =>
+            player.user_id
+        )
         .filter(Boolean);
 
       if (!userIds.length) return;
@@ -585,7 +596,10 @@ export default function MafiaGameScreen() {
         .select(
           'user_id, username, avatar_url'
         )
-        .in('user_id', userIds);
+        .in(
+          'user_id',
+          userIds
+        );
 
       if (error) {
         console.error(
@@ -627,33 +641,45 @@ export default function MafiaGameScreen() {
 
       setMessagesLoading(true);
 
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('room_messages')
-        .select(
-          'id, room_id, user_id, message, created_at'
-        )
-        .eq('room_id', roomId)
-        .order('created_at', {
-          ascending: true,
-        })
-        .limit(100);
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('room_messages')
+          .select(
+            'id, room_id, user_id, message, created_at'
+          )
+          .eq(
+            'room_id',
+            roomId
+          )
+          .order('created_at', {
+            ascending: true,
+          })
+          .limit(100);
 
-      if (error) {
+        if (error) {
+          console.error(
+            'loadMessages error:',
+            error
+          );
+        } else if (
+          isMountedRef.current
+        ) {
+          setMessages(
+            (data || []) as Message[]
+          );
+        }
+      } catch (error) {
         console.error(
-          'loadMessages error:',
+          'loadMessages unexpected error:',
           error
         );
-      } else if (isMountedRef.current) {
-        setMessages(
-          (data || []) as Message[]
-        );
-      }
-
-      if (isMountedRef.current) {
-        setMessagesLoading(false);
+      } finally {
+        if (isMountedRef.current) {
+          setMessagesLoading(false);
+        }
       }
     },
     [roomId]
@@ -678,7 +704,8 @@ export default function MafiaGameScreen() {
       try {
         const {
           data: userData,
-        } = await supabase.auth.getUser();
+        } =
+          await supabase.auth.getUser();
 
         const currentUserId =
           userData.user?.id;
@@ -695,8 +722,14 @@ export default function MafiaGameScreen() {
         } = await supabase
           .from('room_players')
           .select('id')
-          .eq('room_id', roomId)
-          .eq('user_id', currentUserId)
+          .eq(
+            'room_id',
+            roomId
+          )
+          .eq(
+            'user_id',
+            currentUserId
+          )
           .maybeSingle();
 
         if (membershipError) {
@@ -756,24 +789,34 @@ export default function MafiaGameScreen() {
           setMyAlive(role.alive);
         }
 
-        await loadProfiles(state.players);
+        await loadProfiles(
+          state.players
+        );
       } catch (error: any) {
         console.error(
           'loadGame error:',
           error
         );
 
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current
+        ) {
           const message =
             error?.message || '';
 
           if (
-            message.includes('not a member') ||
-            message.includes('player not found') ||
-            (
-              message.includes('لاعب') &&
-              message.includes('الغرفة')
-            )
+            message.includes(
+              'not a member'
+            ) ||
+            message.includes(
+              'player not found'
+            ) ||
+            (message.includes(
+              'لاعب'
+            ) &&
+              message.includes(
+                'الغرفة'
+              ))
           ) {
             Alert.alert(
               'تم إخراجك من الغرفة',
@@ -782,7 +825,9 @@ export default function MafiaGameScreen() {
                 {
                   text: 'حسنًا',
                   onPress: () =>
-                    router.replace('/rooms'),
+                    router.replace(
+                      '/rooms'
+                    ),
                 },
               ],
               {
@@ -800,7 +845,9 @@ export default function MafiaGameScreen() {
           );
         }
       } finally {
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current
+        ) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -815,9 +862,11 @@ export default function MafiaGameScreen() {
 
   useEffect(() => {
     isMountedRef.current = true;
+    isUnmountingRef.current = false;
 
     return () => {
       isMountedRef.current = false;
+      isUnmountingRef.current = true;
     };
   }, []);
 
@@ -838,7 +887,8 @@ export default function MafiaGameScreen() {
     useMemo(
       () =>
         players.filter(
-          player => player.alive
+          (player) =>
+            player.alive
         ),
       [players]
     );
@@ -847,7 +897,7 @@ export default function MafiaGameScreen() {
     useMemo(
       () =>
         players.find(
-          player =>
+          (player) =>
             player.id ===
             gameState?.my_player_id
         ) || null,
@@ -859,45 +909,56 @@ export default function MafiaGameScreen() {
 
   const isHost = Boolean(
     room &&
-    myPlayer &&
-    room.host_id &&
-    room.host_id ===
-      myPlayer.user_id
+      myPlayer &&
+      room.host_id &&
+      room.host_id ===
+        myPlayer.user_id
   );
 
   const canKick = Boolean(
     isHost &&
-    room?.status === 'waiting'
+      room?.status ===
+        'waiting'
   );
 
   const isWaiting =
-    room?.status === 'waiting';
+    room?.status ===
+    'waiting';
 
   const isNight =
-    room?.game_phase === 'night';
+    room?.game_phase ===
+    'night';
 
   const isDay =
-    room?.game_phase === 'day';
+    room?.game_phase ===
+    'day';
 
   const gameFinished =
-    room?.status === 'finished' ||
+    room?.status ===
+      'finished' ||
     Boolean(room?.winner);
 
   /*
-   * الصوت متاح بمجرد وجود اللاعب داخل
-   * غرفة نشطة، بغض النظر عن المرحلة.
+   * ==================================================
+   * الصوت أصبح متاحًا بمجرد دخول الغرفة.
+   *
+   * لا نعتمد على المرحلة الليلية/النهارية.
+   * هذا يمنع قطع LiveKit عند انتقال الجولة.
+   * ==================================================
    */
+
   const canUseVoice = Boolean(
-    room && !gameFinished
+    room &&
+      !gameFinished
   );
 
   const canChat = Boolean(
     room &&
-    !gameFinished &&
-    (
-      isWaiting ||
-      (isDay && myAlive)
-    )
+      !gameFinished &&
+      (
+        isWaiting ||
+        (isDay && myAlive)
+      )
   );
 
   const nightActions =
@@ -908,9 +969,10 @@ export default function MafiaGameScreen() {
   const canNightAction =
     Boolean(
       isNight &&
-      myAlive &&
-      !gameFinished &&
-      nightActions.length > 0
+        myAlive &&
+        !gameFinished &&
+        nightActions.length >
+          0
     );
 
   const roleLabel = myRole
@@ -924,12 +986,13 @@ export default function MafiaGameScreen() {
 
   const eventText =
     getEventText(
-      room?.last_event || null
+      room?.last_event ||
+        null
     );
 
   /*
    * ==================================================
-   * LIVEKIT
+   * LIVEKIT FUNCTIONS
    * ==================================================
    */
 
@@ -939,14 +1002,16 @@ export default function MafiaGameScreen() {
         const currentRoom =
           voiceRoomRef.current;
 
-        voiceRoomRef.current = null;
-        voiceShouldBeConnectedRef.current = false;
-        voiceConnectingRef.current = false;
+        voiceRoomRef.current =
+          null;
+
+        voiceShouldBeConnectedRef.current =
+          false;
 
         if (isMountedRef.current) {
           setVoiceConnected(false);
-          setVoiceConnecting(false);
           setMicEnabled(false);
+          setVoiceConnecting(false);
           setVoiceError(null);
         }
 
@@ -972,7 +1037,7 @@ export default function MafiaGameScreen() {
 
         if (isMountedRef.current) {
           setVoiceParticipantsVersion(
-            value => value + 1
+            (value) => value + 1
           );
         }
       },
@@ -985,65 +1050,115 @@ export default function MafiaGameScreen() {
         if (!roomId) return;
 
         /*
-         * منع إنشاء اتصال LiveKit مكرر.
+         * لا نسمح بإنشاء اتصالين في نفس الوقت.
+         */
+        if (
+          voiceConnectingRef.current
+        ) {
+          return;
+        }
+
+        /*
+         * إذا كانت هناك غرفة LiveKit بالفعل،
+         * لا ننشئ Room ثانية.
          */
         if (voiceRoomRef.current) {
           return;
         }
 
-        if (voiceConnectingRef.current) {
+        if (
+          isUnmountingRef.current ||
+          !isMountedRef.current
+        ) {
           return;
         }
 
-        voiceConnectingRef.current = true;
-        voiceShouldBeConnectedRef.current = true;
+        voiceConnectingRef.current =
+          true;
+
+        voiceShouldBeConnectedRef.current =
+          true;
 
         if (isMountedRef.current) {
           setVoiceConnecting(true);
           setVoiceError(null);
         }
 
-        let liveKitRoom: Room | null = null;
+        let liveKitRoom:
+          | Room
+          | null = null;
 
         try {
           /*
-           * تشغيل AudioSession أولًا.
+           * تشغيل AudioSession قبل LiveKit.
+           *
+           * أي خطأ هنا لا يجب أن يغلق التطبيق.
            */
-          await AudioSession.startAudioSession();
+          try {
+            await AudioSession.startAudioSession();
+          } catch (audioError) {
+            console.error(
+              'AudioSession start error:',
+              audioError
+            );
+          }
+
+          if (
+            isUnmountingRef.current ||
+            !voiceShouldBeConnectedRef.current
+          ) {
+            return;
+          }
 
           /*
-           * الحصول على LiveKit token.
+           * الحصول على التوكن.
            */
           const {
             token,
             server_url,
-          } = await getLiveKitToken(roomId);
+          } =
+            await getLiveKitToken(
+              roomId
+            );
 
-          /*
-           * إذا غادر المستخدم أثناء جلب التوكن.
-           */
           if (
+            !token ||
+            !server_url
+          ) {
+            throw new Error(
+              'لم يتم الحصول على بيانات الاتصال الصوتي.'
+            );
+          }
+
+          if (
+            isUnmountingRef.current ||
             !voiceShouldBeConnectedRef.current
           ) {
-            await AudioSession
-              .stopAudioSession()
-              .catch(() => {});
-
             return;
           }
 
-          liveKitRoom = new Room();
+          /*
+           * إنشاء غرفة LiveKit واحدة فقط.
+           */
+          liveKitRoom =
+            new Room();
 
           voiceRoomRef.current =
             liveKitRoom;
 
           /*
-           * الاتصال.
+           * عند الاتصال.
+           *
+           * لا نشغل الميكروفون هنا حتى لا يحدث
+           * استدعاء مزدوج أثناء connect().
            */
           liveKitRoom.on(
             RoomEvent.Connected,
             () => {
-              if (!isMountedRef.current) {
+              if (
+                !isMountedRef.current ||
+                isUnmountingRef.current
+              ) {
                 return;
               }
 
@@ -1052,70 +1167,72 @@ export default function MafiaGameScreen() {
               setVoiceError(null);
 
               setVoiceParticipantsVersion(
-                value => value + 1
+                (value) =>
+                  value + 1
               );
             }
           );
 
-          /*
-           * انقطع الاتصال.
-           */
           liveKitRoom.on(
             RoomEvent.Disconnected,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceConnected(false);
+                setMicEnabled(false);
+                setVoiceConnecting(false);
+
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
               }
-
-              setVoiceConnected(false);
-              setVoiceConnecting(false);
-              setMicEnabled(false);
-
-              setVoiceParticipantsVersion(
-                value => value + 1
-              );
             }
           );
 
-          /*
-           * إعادة الاتصال.
-           */
           liveKitRoom.on(
             RoomEvent.Reconnecting,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceConnecting(true);
               }
-
-              setVoiceConnecting(true);
             }
           );
 
-          /*
-           * بعد إعادة الاتصال، نعيد تشغيل
-           * الميكروفون.
-           */
           liveKitRoom.on(
             RoomEvent.Reconnected,
             async () => {
-              if (!isMountedRef.current) {
+              if (
+                !isMountedRef.current ||
+                isUnmountingRef.current
+              ) {
                 return;
               }
 
               setVoiceConnecting(false);
               setVoiceConnected(true);
 
+              /*
+               * إعادة تشغيل الميكروفون بعد إعادة الاتصال.
+               */
               try {
-                await liveKitRoom
-                  ?.localParticipant
-                  .setMicrophoneEnabled(true);
+                await liveKitRoom?.localParticipant
+                  .setMicrophoneEnabled(
+                    true
+                  );
 
-                if (isMountedRef.current) {
+                if (
+                  isMountedRef.current
+                ) {
                   setMicEnabled(true);
                   setVoiceError(null);
 
                   setVoiceParticipantsVersion(
-                    value => value + 1
+                    (value) =>
+                      value + 1
                   );
                 }
               } catch (error: any) {
@@ -1124,12 +1241,13 @@ export default function MafiaGameScreen() {
                   error
                 );
 
-                if (isMountedRef.current) {
+                if (
+                  isMountedRef.current
+                ) {
                   setMicEnabled(false);
-
                   setVoiceError(
                     error?.message ||
-                      'تعذر تشغيل الميكروفون بعد إعادة الاتصال.'
+                      'تعذر إعادة تشغيل الميكروفون.'
                   );
                 }
               }
@@ -1139,121 +1257,131 @@ export default function MafiaGameScreen() {
           liveKitRoom.on(
             RoomEvent.ParticipantConnected,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
               }
-
-              setVoiceParticipantsVersion(
-                value => value + 1
-              );
             }
           );
 
           liveKitRoom.on(
             RoomEvent.ParticipantDisconnected,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
               }
-
-              setVoiceParticipantsVersion(
-                value => value + 1
-              );
             }
           );
 
           liveKitRoom.on(
             RoomEvent.TrackMuted,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
               }
-
-              setVoiceParticipantsVersion(
-                value => value + 1
-              );
             }
           );
 
           liveKitRoom.on(
             RoomEvent.TrackUnmuted,
             () => {
-              if (!isMountedRef.current) {
-                return;
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
               }
-
-              setVoiceParticipantsVersion(
-                value => value + 1
-              );
             }
           );
 
           /*
            * الاتصال الفعلي.
+           *
+           * أي خطأ هنا يمسكه catch ولا يسمح
+           * له بإسقاط شاشة اللعبة.
            */
           await liveKitRoom.connect(
             server_url,
             token
           );
 
-          /*
-           * التأكد أن الاتصال ما زال مطلوبًا.
-           */
           if (
+            isUnmountingRef.current ||
             !voiceShouldBeConnectedRef.current
           ) {
-            await liveKitRoom
-              .disconnect()
-              .catch(() => {});
+            try {
+              await liveKitRoom.disconnect();
+            } catch {}
 
             if (
               voiceRoomRef.current ===
               liveKitRoom
             ) {
-              voiceRoomRef.current = null;
+              voiceRoomRef.current =
+                null;
             }
-
-            await AudioSession
-              .stopAudioSession()
-              .catch(() => {});
 
             return;
           }
 
+          if (isMountedRef.current) {
+            setVoiceConnected(true);
+            setVoiceConnecting(false);
+          }
+
           /*
-           * ==================================================
-           * الإصلاح الأساسي:
-           * تشغيل الميكروفون مباشرة بعد نجاح connect().
-           * ==================================================
+           * تشغيل الميكروفون صراحة بعد نجاح الاتصال.
+           *
+           * هذا هو الجزء المهم:
+           * الميكروفون لا ينتظر دخول لاعب آخر
+           * ولا ينتظر بدء الجولة.
            */
           try {
-            await liveKitRoom
-              .localParticipant
-              .setMicrophoneEnabled(true);
+            await liveKitRoom.localParticipant
+              .setMicrophoneEnabled(
+                true
+              );
 
-            if (isMountedRef.current) {
-              setVoiceConnected(true);
-              setVoiceConnecting(false);
+            if (
+              isMountedRef.current
+            ) {
               setMicEnabled(true);
               setVoiceError(null);
 
               setVoiceParticipantsVersion(
-                value => value + 1
+                (value) =>
+                  value + 1
               );
             }
           } catch (error: any) {
+            /*
+             * فشل الميكروفون لا يعني فشل اللعبة.
+             * نبقي المستخدم داخل الغرفة.
+             */
             console.error(
               'Enable microphone error:',
               error
             );
 
-            /*
-             * لا نفصل LiveKit عند فشل الميكروفون.
-             * الاتصال يبقى موجودًا.
-             */
-            if (isMountedRef.current) {
-              setVoiceConnected(true);
-              setVoiceConnecting(false);
+            if (
+              isMountedRef.current
+            ) {
               setMicEnabled(false);
 
               setVoiceError(
@@ -1268,36 +1396,54 @@ export default function MafiaGameScreen() {
             error
           );
 
+          /*
+           * تنظيف آمن.
+           */
           if (liveKitRoom) {
             try {
               await liveKitRoom.disconnect();
-            } catch {}
+            } catch (disconnectError) {
+              console.error(
+                'LiveKit cleanup error:',
+                disconnectError
+              );
+            }
           }
 
           if (
             voiceRoomRef.current ===
             liveKitRoom
           ) {
-            voiceRoomRef.current = null;
+            voiceRoomRef.current =
+              null;
           }
 
-          if (isMountedRef.current) {
+          if (
+            isMountedRef.current &&
+            !isUnmountingRef.current
+          ) {
             setVoiceConnected(false);
             setMicEnabled(false);
+            setVoiceConnecting(false);
 
             setVoiceError(
               error?.message ||
-                'تعذر الاتصال بقناة الصوت.'
+                'تعذر الاتصال بالصوت. يمكنك البقاء داخل الغرفة والمحاولة مرة أخرى.'
             );
           }
 
-          try {
-            await AudioSession.stopAudioSession();
-          } catch {}
+          /*
+           * مهم:
+           * لا يوجد router.replace هنا.
+           * خطأ LiveKit لا يخرج المستخدم من اللعبة.
+           */
         } finally {
-          voiceConnectingRef.current = false;
+          voiceConnectingRef.current =
+            false;
 
-          if (isMountedRef.current) {
+          if (
+            isMountedRef.current
+          ) {
             setVoiceConnecting(false);
           }
         }
@@ -1312,20 +1458,18 @@ export default function MafiaGameScreen() {
           voiceRoomRef.current;
 
         if (!currentRoom) {
-          Alert.alert(
-            'الصوت غير متصل',
-            'انتظر حتى يتم الاتصال بقناة الصوت.'
-          );
-
+          /*
+           * نحاول الاتصال بدل إخراج المستخدم.
+           */
+          await connectVoice();
           return;
         }
 
         if (!voiceConnected) {
           Alert.alert(
             'الصوت غير متصل',
-            'انتظر حتى يكتمل الاتصال.'
+            'انتظر حتى يكتمل الاتصال الصوتي.'
           );
-
           return;
         }
 
@@ -1333,18 +1477,23 @@ export default function MafiaGameScreen() {
           !micEnabled;
 
         try {
-          await currentRoom
-            .localParticipant
+          await currentRoom.localParticipant
             .setMicrophoneEnabled(
               nextState
             );
 
-          if (isMountedRef.current) {
-            setMicEnabled(nextState);
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(
+              nextState
+            );
+
             setVoiceError(null);
 
             setVoiceParticipantsVersion(
-              value => value + 1
+              (value) =>
+                value + 1
             );
           }
         } catch (error: any) {
@@ -1353,23 +1502,34 @@ export default function MafiaGameScreen() {
             error
           );
 
-          Alert.alert(
-            'تعذر تشغيل الميكروفون',
-            error?.message ||
-              'تأكد من السماح للتطبيق باستخدام الميكروفون.'
-          );
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(false);
+
+            setVoiceError(
+              error?.message ||
+                'تعذر تشغيل الميكروفون. تأكد من السماح للتطبيق باستخدام الميكروفون.'
+            );
+
+            Alert.alert(
+              'تعذر تشغيل الميكروفون',
+              error?.message ||
+                'تأكد من السماح للتطبيق باستخدام الميكروفون.'
+            );
+          }
         }
       },
       [
         voiceConnected,
         micEnabled,
+        connectVoice,
       ]
     );
 
   /*
    * --------------------------------------------------
-   * توصيل LiveKit فور دخول الغرفة.
-   * لا يعتمد على مرحلة الليل/النهار.
+   * توصيل / فصل LiveKit
    * --------------------------------------------------
    */
 
@@ -1382,11 +1542,13 @@ export default function MafiaGameScreen() {
     }
 
     if (canUseVoice) {
-      voiceShouldBeConnectedRef.current = true;
+      voiceShouldBeConnectedRef.current =
+        true;
 
       void connectVoice();
     } else {
-      voiceShouldBeConnectedRef.current = false;
+      voiceShouldBeConnectedRef.current =
+        false;
 
       void disconnectVoice();
     }
@@ -1401,28 +1563,43 @@ export default function MafiaGameScreen() {
 
   /*
    * --------------------------------------------------
-   * تنظيف LiveKit عند مغادرة الصفحة.
+   * تنظيف LiveKit عند مغادرة الصفحة
    * --------------------------------------------------
    */
 
   useEffect(() => {
     return () => {
-      voiceShouldBeConnectedRef.current = false;
+      isUnmountingRef.current =
+        true;
+
+      voiceShouldBeConnectedRef.current =
+        false;
 
       const currentRoom =
         voiceRoomRef.current;
 
-      voiceRoomRef.current = null;
+      voiceRoomRef.current =
+        null;
 
       if (currentRoom) {
-        currentRoom
-          .disconnect()
-          .catch(() => {});
+        try {
+          currentRoom.disconnect();
+        } catch (error) {
+          console.error(
+            'Unmount LiveKit disconnect error:',
+            error
+          );
+        }
       }
 
-      AudioSession
-        .stopAudioSession()
-        .catch(() => {});
+      try {
+        AudioSession.stopAudioSession();
+      } catch (error) {
+        console.error(
+          'Unmount AudioSession stop error:',
+          error
+        );
+      }
     };
   }, []);
 
@@ -1434,7 +1611,9 @@ export default function MafiaGameScreen() {
 
   const isPlayerMicEnabled =
     useCallback(
-      (userId: string): boolean => {
+      (
+        userId: string
+      ): boolean => {
         void voiceParticipantsVersion;
 
         const currentRoom =
@@ -1461,9 +1640,11 @@ export default function MafiaGameScreen() {
         remoteParticipants.forEach(
           (item: any) => {
             if (
-              item.identity === userId
+              item.identity ===
+              userId
             ) {
-              participant = item;
+              participant =
+                item;
             }
           }
         );
@@ -1535,7 +1716,9 @@ export default function MafiaGameScreen() {
       if (cancelled) return;
 
       try {
-        await heartbeatRoom(roomId);
+        await heartbeatRoom(
+          roomId
+        );
       } catch (error) {
         console.error(
           'heartbeat error:',
@@ -1544,7 +1727,7 @@ export default function MafiaGameScreen() {
       }
     };
 
-    sendHeartbeat();
+    void sendHeartbeat();
 
     const interval =
       setInterval(
@@ -1567,7 +1750,7 @@ export default function MafiaGameScreen() {
   useEffect(() => {
     if (!roomId) return;
 
-    loadGame(true);
+    void loadGame(true);
   }, [
     roomId,
     loadGame,
@@ -1581,7 +1764,8 @@ export default function MafiaGameScreen() {
 
   useEffect(() => {
     if (
-      !gameState?.room?.phase_ends_at
+      !gameState?.room
+        ?.phase_ends_at
     ) {
       setSecondsLeft(0);
       return;
@@ -1589,61 +1773,82 @@ export default function MafiaGameScreen() {
 
     const updateTimer = () => {
       if (
-        !gameState?.room?.phase_ends_at
+        !gameState?.room
+          ?.phase_ends_at
       ) {
         return;
       }
 
       const remaining =
         getSecondsLeft(
-          gameState.room.phase_ends_at
+          gameState.room
+            .phase_ends_at
         );
 
-      if (isMountedRef.current) {
-        setSecondsLeft(remaining);
+      if (
+        isMountedRef.current
+      ) {
+        setSecondsLeft(
+          remaining
+        );
       }
 
       if (
         remaining <= 0 &&
-        gameState.room.status === 'playing' &&
+        gameState.room.status ===
+          'playing' &&
         roomId &&
         !advancingRef.current
       ) {
-        const now = Date.now();
+        const now =
+          Date.now();
 
         if (
           now -
             lastAdvanceRef.current >
           2500
         ) {
-          lastAdvanceRef.current = now;
-          advancingRef.current = true;
+          lastAdvanceRef.current =
+            now;
 
-          advanceMafiaPhase(roomId)
+          advancingRef.current =
+            true;
+
+          advanceMafiaPhase(
+            roomId
+          )
             .then(() => {
-              if (isMountedRef.current) {
-                loadGame(false);
-              }
-            })
-            .catch((error: any) => {
-              const message =
-                error?.message || '';
-
               if (
-                !message.includes(
-                  'phase_not_finished'
-                )
+                isMountedRef.current
               ) {
-                console.error(
-                  'advanceMafiaPhase error:',
-                  error
-                );
+                return loadGame(false);
               }
 
-              loadGame(false);
+              return undefined;
             })
+            .catch(
+              (error: any) => {
+                const message =
+                  error?.message ||
+                  '';
+
+                if (
+                  !message.includes(
+                    'phase_not_finished'
+                  )
+                ) {
+                  console.error(
+                    'advanceMafiaPhase error:',
+                    error
+                  );
+                }
+
+                void loadGame(false);
+              }
+            )
             .finally(() => {
-              advancingRef.current = false;
+              advancingRef.current =
+                false;
             });
         }
       }
@@ -1661,7 +1866,8 @@ export default function MafiaGameScreen() {
       clearInterval(interval);
     };
   }, [
-    gameState?.room?.phase_ends_at,
+    gameState?.room
+      ?.phase_ends_at,
     gameState?.room?.status,
     roomId,
     loadGame,
@@ -1674,11 +1880,10 @@ export default function MafiaGameScreen() {
    */
 
   useEffect(() => {
-    if (!gameState?.room?.id) {
+    if (!gameState?.room?.id)
       return;
-    }
 
-    loadMessages();
+    void loadMessages();
   }, [
     gameState?.room?.id,
     loadMessages,
@@ -1696,7 +1901,7 @@ export default function MafiaGameScreen() {
     const interval =
       setInterval(
         () => {
-          loadGame(false);
+          void loadGame(false);
         },
         2500
       );
@@ -1716,9 +1921,8 @@ export default function MafiaGameScreen() {
    */
 
   useEffect(() => {
-    if (!gameState?.room?.id) {
+    if (!gameState?.room?.id)
       return;
-    }
 
     const currentRoomId =
       gameState.room.id;
@@ -1738,7 +1942,7 @@ export default function MafiaGameScreen() {
               `id=eq.${currentRoomId}`,
           },
           () => {
-            loadGame(false);
+            void loadGame(false);
           }
         )
         .on(
@@ -1751,7 +1955,7 @@ export default function MafiaGameScreen() {
               `room_id=eq.${currentRoomId}`,
           },
           () => {
-            loadGame(false);
+            void loadGame(false);
           }
         )
         .on(
@@ -1763,36 +1967,42 @@ export default function MafiaGameScreen() {
             filter:
               `room_id=eq.${currentRoomId}`,
           },
-          payload => {
+          (payload) => {
             const message =
               payload.new as Message;
 
-            if (!isMountedRef.current) {
+            if (
+              !isMountedRef.current
+            ) {
               return;
             }
 
-            setMessages(current => {
-              if (
-                current.some(
-                  item =>
-                    item.id ===
-                    message.id
-                )
-              ) {
-                return current;
-              }
+            setMessages(
+              (current) => {
+                if (
+                  current.some(
+                    (item) =>
+                      item.id ===
+                      message.id
+                  )
+                ) {
+                  return current;
+                }
 
-              return [
-                ...current,
-                message,
-              ];
-            });
+                return [
+                  ...current,
+                  message,
+                ];
+              }
+            );
           }
         )
         .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(
+        channel
+      );
     };
   }, [
     gameState?.room?.id,
@@ -1824,7 +2034,9 @@ export default function MafiaGameScreen() {
     }
 
     const playerName =
-      profiles[player.user_id]?.username ||
+      profiles[
+        player.user_id
+      ]?.username ||
       player.name ||
       'هذا اللاعب';
 
@@ -1839,59 +2051,66 @@ export default function MafiaGameScreen() {
         {
           text: 'طرد',
           style: 'destructive',
-          onPress: async () => {
-            if (
-              !roomId ||
-              !isMountedRef.current
-            ) {
-              return;
-            }
-
-            setKickingUserId(
-              player.user_id
-            );
-
-            try {
-              await kickRoomPlayer(
-                roomId,
-                player.user_id
-              );
-
+          onPress:
+            async () => {
               if (
+                !roomId ||
                 !isMountedRef.current
               ) {
                 return;
               }
 
-              Alert.alert(
-                'تم الطرد',
-                `تم طرد ${playerName} من الغرفة.`
+              setKickingUserId(
+                player.user_id
               );
 
-              await loadGame(false);
-            } catch (error: any) {
-              console.error(
-                'kickPlayer error:',
-                error
-              );
-
-              if (
-                isMountedRef.current
-              ) {
-                Alert.alert(
-                  'تعذر الطرد',
-                  error?.message ||
-                    'حدث خطأ أثناء طرد اللاعب.'
+              try {
+                await kickRoomPlayer(
+                  roomId,
+                  player.user_id
                 );
-              }
-            } finally {
-              if (
-                isMountedRef.current
+
+                if (
+                  !isMountedRef.current
+                ) {
+                  return;
+                }
+
+                Alert.alert(
+                  'تم الطرد',
+                  `تم طرد ${playerName} من الغرفة.`
+                );
+
+                await loadGame(
+                  false
+                );
+              } catch (
+                error: any
               ) {
-                setKickingUserId(null);
+                console.error(
+                  'kickPlayer error:',
+                  error
+                );
+
+                if (
+                  isMountedRef.current
+                ) {
+                  Alert.alert(
+                    'تعذر الطرد',
+                    error?.message ||
+                      'حدث خطأ أثناء طرد اللاعب.'
+                  );
+                }
+              } finally {
+                if (
+                  isMountedRef.current
+                ) {
+                  setKickingUserId(
+                    null
+                  );
+                }
               }
-            }
-          },
+            },
         },
       ]
     );
@@ -1916,7 +2135,7 @@ export default function MafiaGameScreen() {
 
     const player =
       players.find(
-        item =>
+        (item) =>
           item.id === playerId
       );
 
@@ -1929,10 +2148,11 @@ export default function MafiaGameScreen() {
       return;
     }
 
-    setSelectedTarget(current =>
-      current === playerId
-        ? null
-        : playerId
+    setSelectedTarget(
+      (current) =>
+        current === playerId
+          ? null
+          : playerId
     );
   };
 
@@ -1960,14 +2180,16 @@ export default function MafiaGameScreen() {
       if (
         !canNightAction ||
         !myRole ||
-        !nightActions.includes(action)
+        !nightActions.includes(
+          action
+        )
       ) {
         return;
       }
 
       const target =
         players.find(
-          player =>
+          (player) =>
             player.id ===
             selectedTarget
         );
@@ -1996,7 +2218,9 @@ export default function MafiaGameScreen() {
           );
 
         const selectedName =
-          profiles[target.user_id]?.username ||
+          profiles[
+            target.user_id
+          ]?.username ||
           target.name ||
           'Player';
 
@@ -2013,7 +2237,8 @@ export default function MafiaGameScreen() {
             typeof result ===
             'string'
           ) {
-            resultText = result;
+            resultText =
+              result;
           } else if (
             result &&
             typeof result ===
@@ -2060,7 +2285,9 @@ export default function MafiaGameScreen() {
           );
         } else {
           const info =
-            ACTION_INFO[action];
+            ACTION_INFO[
+              action
+            ];
 
           Alert.alert(
             'تم تنفيذ المهمة',
@@ -2069,7 +2296,9 @@ export default function MafiaGameScreen() {
         }
 
         await loadGame(false);
-      } catch (error: any) {
+      } catch (
+        error: any
+      ) {
         console.error(
           'performNightAction error:',
           error
@@ -2105,7 +2334,7 @@ export default function MafiaGameScreen() {
 
       const target =
         players.find(
-          player =>
+          (player) =>
             player.id ===
             selectedTarget
         );
@@ -2132,7 +2361,9 @@ export default function MafiaGameScreen() {
         );
 
         const targetName =
-          profiles[target.user_id]?.username ||
+          profiles[
+            target.user_id
+          ]?.username ||
           target.name ||
           'Player';
 
@@ -2144,7 +2375,9 @@ export default function MafiaGameScreen() {
         );
 
         await loadGame(false);
-      } catch (error: any) {
+      } catch (
+        error: any
+      ) {
         console.error(
           'performVote error:',
           error
@@ -2189,7 +2422,8 @@ export default function MafiaGameScreen() {
           await supabase.rpc(
             'send_room_message',
             {
-              p_room_id: room.id,
+              p_room_id:
+                room.id,
               p_message: text,
             }
           );
@@ -2199,7 +2433,9 @@ export default function MafiaGameScreen() {
         }
 
         setMessageText('');
-      } catch (error: any) {
+      } catch (
+        error: any
+      ) {
         console.error(
           'sendMessage error:',
           error
@@ -2233,25 +2469,32 @@ export default function MafiaGameScreen() {
         {
           text: 'خروج',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              voiceShouldBeConnectedRef.current =
-                false;
+          onPress:
+            async () => {
+              try {
+                voiceShouldBeConnectedRef.current =
+                  false;
 
-              await disconnectVoice();
+                await disconnectVoice();
 
-              if (roomId) {
-                await leaveRoom(roomId);
-              }
-            } catch (error) {
-              console.error(
-                'leaveGame error:',
+                if (roomId) {
+                  await leaveRoom(
+                    roomId
+                  );
+                }
+              } catch (
                 error
-              );
-            } finally {
-              router.replace('/rooms');
-            }
-          },
+              ) {
+                console.error(
+                  'leaveGame error:',
+                  error
+                );
+              } finally {
+                router.replace(
+                  '/rooms'
+                );
+              }
+            },
         },
       ]
     );
@@ -2259,7 +2502,7 @@ export default function MafiaGameScreen() {
 
   /*
    * ==================================================
-   * LOADING
+   * LOADING SCREENS
    * ==================================================
    */
 
@@ -2271,7 +2514,11 @@ export default function MafiaGameScreen() {
           color="#D7A94B"
         />
 
-        <Text style={styles.loadingText}>
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
           جارٍ العثور على الغرفة...
         </Text>
       </View>
@@ -2281,17 +2528,25 @@ export default function MafiaGameScreen() {
   if (!roomId) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>
+        <Text
+          style={styles.errorText}
+        >
           معرف الغرفة غير موجود.
         </Text>
 
         <Pressable
-          style={styles.primaryButton}
+          style={
+            styles.primaryButton
+          }
           onPress={() =>
-            router.replace('/rooms')
+            router.replace(
+              '/rooms'
+            )
           }
         >
-          <Text style={styles.buttonText}>
+          <Text
+            style={styles.buttonText}
+          >
             العودة إلى الغرف
           </Text>
         </Pressable>
@@ -2307,27 +2562,40 @@ export default function MafiaGameScreen() {
           color="#D7A94B"
         />
 
-        <Text style={styles.loadingText}>
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
           جارٍ تحميل اللعبة...
         </Text>
       </View>
     );
   }
 
-  if (!gameState || !room) {
+  if (
+    !gameState ||
+    !room
+  ) {
     return (
       <View style={styles.center}>
-        <Text style={styles.errorText}>
+        <Text
+          style={styles.errorText}
+        >
           تعذر العثور على حالة اللعبة.
         </Text>
 
         <Pressable
-          style={styles.primaryButton}
+          style={
+            styles.primaryButton
+          }
           onPress={() =>
             loadGame(true)
           }
         >
-          <Text style={styles.buttonText}>
+          <Text
+            style={styles.buttonText}
+          >
             إعادة المحاولة
           </Text>
         </Pressable>
@@ -2344,27 +2612,44 @@ export default function MafiaGameScreen() {
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={
+          styles.content
+        }
         keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
       >
-        <View style={styles.header}>
+        <View
+          style={styles.header}
+        >
           <View>
-            <Text style={styles.logo}>
+            <Text
+              style={styles.logo}
+            >
               MAFIA NIGHT
             </Text>
 
-            <Text style={styles.roomCode}>
+            <Text
+              style={styles.roomCode}
+            >
               الغرفة:{' '}
-              {room.code || room.id}
+              {room.code ||
+                room.id}
             </Text>
           </View>
 
           <Pressable
-            style={styles.exitButton}
-            onPress={leaveGame}
+            style={
+              styles.exitButton
+            }
+            onPress={
+              leaveGame
+            }
           >
-            <Text style={styles.exitText}>
+            <Text
+              style={styles.exitText}
+            >
               خروج
             </Text>
           </Pressable>
@@ -2377,15 +2662,25 @@ export default function MafiaGameScreen() {
               styles.waitingCard,
             ]}
           >
-            <Text style={styles.phaseTitle}>
+            <Text
+              style={
+                styles.phaseTitle
+              }
+            >
               ⏳ انتظار بدء اللعبة
             </Text>
 
-            <Text style={styles.waitingText}>
+            <Text
+              style={
+                styles.waitingText
+              }
+            >
               يمكنكم التحدث هنا مع باقي اللاعبين قبل بدء اللعبة.
             </Text>
 
-            <Text style={styles.roundText}>
+            <Text
+              style={styles.roundText}
+            >
               عدد اللاعبين:{' '}
               {players.length}
             </Text>
@@ -2399,7 +2694,11 @@ export default function MafiaGameScreen() {
                 : styles.dayCard,
             ]}
           >
-            <Text style={styles.phaseTitle}>
+            <Text
+              style={
+                styles.phaseTitle
+              }
+            >
               {gameFinished
                 ? 'انتهت اللعبة'
                 : isNight
@@ -2409,41 +2708,66 @@ export default function MafiaGameScreen() {
 
             {!gameFinished && (
               <>
-                <Text style={styles.timer}>
-                  {formatTime(secondsLeft)}
+                <Text
+                  style={styles.timer}
+                >
+                  {formatTime(
+                    secondsLeft
+                  )}
                 </Text>
 
                 <Text
-                  style={styles.timerCaption}
+                  style={
+                    styles.timerCaption
+                  }
                 >
                   الوقت المتبقي
                 </Text>
               </>
             )}
 
-            <Text style={styles.roundText}>
+            <Text
+              style={styles.roundText}
+            >
               الجولة{' '}
-              {room.game_round || 1}
+              {room.game_round ||
+                1}
             </Text>
           </View>
         )}
 
         {canUseVoice && (
-          <View style={styles.voiceCard}>
-            <View style={styles.voiceHeader}>
+          <View
+            style={
+              styles.voiceCard
+            }
+          >
+            <View
+              style={
+                styles.voiceHeader
+              }
+            >
               <View
-                style={styles.voiceHeaderText}
+                style={
+                  styles.voiceHeaderText
+                }
               >
-                <Text style={styles.voiceTitle}>
+                <Text
+                  style={
+                    styles.voiceTitle
+                  }
+                >
                   🎙️ الصوت
                 </Text>
 
                 <Text
-                  style={styles.voiceSubtitle}
+                  style={
+                    styles.voiceSubtitle
+                  }
                 >
                   {isWaiting
-                    ? '🎙️ الصوت يعمل فور دخول الغرفة'
-                    : '🎙️ يمكنك التحدث مع اللاعبين أثناء وجودك في الغرفة'}
+                    ? 'الصوت يعمل فور دخول الغرفة'
+                    : 'يمكنك التحدث مع اللاعبين أثناء وجودك في الغرفة'}
                 </Text>
               </View>
 
@@ -2465,7 +2789,9 @@ export default function MafiaGameScreen() {
                 />
 
                 <Text
-                  style={styles.voiceStatusText}
+                  style={
+                    styles.voiceStatusText
+                  }
                 >
                   {voiceConnecting
                     ? 'جارٍ الاتصال'
@@ -2478,22 +2804,56 @@ export default function MafiaGameScreen() {
 
             {voiceError && (
               <View
-                style={styles.voiceErrorBox}
+                style={
+                  styles.voiceErrorBox
+                }
               >
                 <Text
-                  style={styles.voiceErrorText}
+                  style={
+                    styles.voiceErrorText
+                  }
                 >
                   {voiceError}
                 </Text>
+
+                {!voiceConnected && (
+                  <Pressable
+                    style={
+                      styles.voiceRetryButton
+                    }
+                    onPress={() =>
+                      void connectVoice()
+                    }
+                    disabled={
+                      voiceConnecting
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.voiceRetryText
+                      }
+                    >
+                      إعادة الاتصال
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
             <View
-              style={styles.voiceControls}
+              style={
+                styles.voiceControls
+              }
             >
-              <View style={styles.voiceInfo}>
+              <View
+                style={
+                  styles.voiceInfo
+                }
+              >
                 <Text
-                  style={styles.voiceInfoTitle}
+                  style={
+                    styles.voiceInfoTitle
+                  }
                 >
                   {micEnabled
                     ? '🎤 الميكروفون يعمل'
@@ -2501,11 +2861,15 @@ export default function MafiaGameScreen() {
                 </Text>
 
                 <Text
-                  style={styles.voiceInfoText}
+                  style={
+                    styles.voiceInfoText
+                  }
                 >
                   {micEnabled
                     ? 'يمكن للاعبين سماعك الآن'
-                    : 'اضغط لتشغيل الميكروفون'}
+                    : voiceConnected
+                    ? 'اضغط لتشغيل الميكروفون'
+                    : 'جارٍ الاتصال بقناة الصوت...'}
                 </Text>
               </View>
 
@@ -2551,26 +2915,45 @@ export default function MafiaGameScreen() {
         )}
 
         {gameFinished && (
-          <View style={styles.winnerCard}>
+          <View
+            style={
+              styles.winnerCard
+            }
+          >
             <Text
-              style={styles.winnerTitle}
+              style={
+                styles.winnerTitle
+              }
             >
               🏆 انتهت اللعبة
             </Text>
 
             <Text
-              style={styles.winnerText}
+              style={
+                styles.winnerText
+              }
             >
               الفائز:{' '}
-              {room.winner || 'غير محدد'}
+              {room.winner ||
+                'غير محدد'}
             </Text>
           </View>
         )}
 
         {!isWaiting && (
-          <View style={styles.roleCard}>
-            <View style={styles.roleHeader}>
-              <Text style={styles.roleTitle}>
+          <View
+            style={styles.roleCard}
+          >
+            <View
+              style={
+                styles.roleHeader
+              }
+            >
+              <Text
+                style={
+                  styles.roleTitle
+                }
+              >
                 دورك
               </Text>
 
@@ -2587,26 +2970,32 @@ export default function MafiaGameScreen() {
               )}
             </View>
 
-            <Text style={styles.roleName}>
+            <Text
+              style={styles.roleName}
+            >
               {roleLabel}
             </Text>
 
             <Text
-              style={styles.roleDescription}
+              style={
+                styles.roleDescription
+              }
             >
               {roleDescription}
             </Text>
 
             {!myAlive && (
               <View
-                style={styles.deadBanner}
+                style={
+                  styles.deadBanner
+                }
               >
                 <Text
                   style={
                     styles.deadBannerText
                   }
                 >
-                  💀 لقد مت — يمكنك متابعة اللعبة، لكن لا يمكنك تنفيذ المهام أو التصويت. الصوت يبقى متاحًا أثناء وجودك في الغرفة.
+                  💀 لقد مت — يمكنك متابعة اللعبة، لكن لا يمكنك تنفيذ المهام أو التصويت. الاتصال الصوتي يبقى متاحًا داخل الغرفة.
                 </Text>
               </View>
             )}
@@ -2614,31 +3003,56 @@ export default function MafiaGameScreen() {
         )}
 
         {eventText && (
-          <View style={styles.eventCard}>
-            <Text style={styles.eventTitle}>
+          <View
+            style={styles.eventCard}
+          >
+            <Text
+              style={styles.eventTitle}
+            >
               آخر حدث
             </Text>
 
-            <Text style={styles.eventText}>
+            <Text
+              style={styles.eventText}
+            >
               {eventText}
             </Text>
           </View>
         )}
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+        <View
+          style={styles.section}
+        >
+          <View
+            style={
+              styles.sectionHeader
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
               اللاعبون
             </Text>
 
-            <Text style={styles.playerCount}>
+            <Text
+              style={
+                styles.playerCount
+              }
+            >
               {alivePlayers.length}/
-              {players.length} أحياء
+              {players.length}{' '}
+              أحياء
             </Text>
           </View>
 
           {canKick && (
-            <View style={styles.hostNotice}>
+            <View
+              style={
+                styles.hostNotice
+              }
+            >
               <Text
                 style={
                   styles.hostNoticeText
@@ -2649,301 +3063,327 @@ export default function MafiaGameScreen() {
             </View>
           )}
 
-          {players.map(player => {
-            const profile =
-              profiles[player.user_id];
+          {players.map(
+            (player) => {
+              const profile =
+                profiles[
+                  player.user_id
+                ];
 
-            const selected =
-              selectedTarget ===
-              player.id;
+              const selected =
+                selectedTarget ===
+                player.id;
 
-            const isMe =
-              player.id ===
-              gameState.my_player_id;
+              const isMe =
+                player.id ===
+                gameState.my_player_id;
 
-            const selectable =
-              player.alive &&
-              !isMe &&
-              myAlive &&
-              !gameFinished &&
-              (
-                isNight
+              const selectable =
+                player.alive &&
+                !isMe &&
+                myAlive &&
+                !gameFinished &&
+                (isNight
                   ? canNightAction
-                  : Boolean(isDay)
-              );
+                  : Boolean(isDay));
 
-            const canKickThisPlayer =
-              canKick &&
-              !isMe &&
-              player.user_id !==
-                myPlayer?.user_id;
+              const canKickThisPlayer =
+                canKick &&
+                !isMe &&
+                player.user_id !==
+                  myPlayer?.user_id;
 
-            const isBeingKicked =
-              kickingUserId ===
-              player.user_id;
+              const isBeingKicked =
+                kickingUserId ===
+                player.user_id;
 
-            const playerMic =
-              canUseVoice &&
-              player.alive &&
-              isPlayerMicEnabled(
-                player.user_id
-              );
+              const playerMic =
+                canUseVoice &&
+                player.alive &&
+                isPlayerMicEnabled(
+                  player.user_id
+                );
 
-            return (
-              <View
-                key={player.id}
-                style={[
-                  styles.playerCard,
-                  !player.alive &&
-                    styles.deadPlayerCard,
-                  selected &&
-                    styles.selectedPlayerCard,
-                ]}
-              >
-                <Pressable
-                  onPress={() => {
-                    if (selectable) {
-                      selectTarget(
-                        player.id
-                      );
-                    }
-                  }}
-                  disabled={
-                    !selectable ||
-                    busy
-                  }
-                  style={styles.playerMain}
+              return (
+                <View
+                  key={player.id}
+                  style={[
+                    styles.playerCard,
+                    !player.alive &&
+                      styles.deadPlayerCard,
+                    selected &&
+                      styles.selectedPlayerCard,
+                  ]}
                 >
-                  <View
+                  <Pressable
+                    onPress={() => {
+                      if (
+                        selectable
+                      ) {
+                        selectTarget(
+                          player.id
+                        );
+                      }
+                    }}
+                    disabled={
+                      !selectable ||
+                      busy
+                    }
                     style={
-                      styles.playerAvatarWrapper
+                      styles.playerMain
                     }
                   >
-                    <PlayerAvatar
-                      player={player}
-                      profile={profile}
-                      size={48}
-                    />
-
-                    {playerMic && (
-                      <View
-                        style={
-                          styles.micStatusBubble
-                        }
-                      >
-                        <Text
-                          style={
-                            styles.micStatusIcon
-                          }
-                        >
-                          🎤
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View
-                    style={styles.playerInfo}
-                  >
                     <View
                       style={
-                        styles.playerNameRow
+                        styles.playerAvatarWrapper
                       }
                     >
-                      <Text
-                        style={[
-                          styles.playerName,
-                          !player.alive &&
-                            styles.deadName,
-                        ]}
-                      >
-                        {profile?.username ||
-                          player.name ||
-                          'Player'}
-                      </Text>
-
-                      {isMe && (
-                        <Text
-                          style={
-                            styles.youBadge
-                          }
-                        >
-                          أنت
-                        </Text>
-                      )}
-
-                      {room.host_id ===
-                        player.user_id && (
-                        <Text
-                          style={
-                            styles.hostBadge
-                          }
-                        >
-                          👑 منشئ
-                        </Text>
-                      )}
-                    </View>
-
-                    <View
-                      style={
-                        styles.playerStatusRow
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.playerStatus
+                      <PlayerAvatar
+                        player={player}
+                        profile={
+                          profile
                         }
-                      >
-                        {player.alive
-                          ? '🟢 حي'
-                          : '💀 مات'}
-                      </Text>
+                        size={48}
+                      />
 
-                      {canUseVoice &&
-                        player.alive && (
+                      {playerMic && (
+                        <View
+                          style={
+                            styles.micStatusBubble
+                          }
+                        >
                           <Text
                             style={
-                              styles.playerVoiceStatus
+                              styles.micStatusIcon
                             }
                           >
-                            {playerMic
-                              ? '🎤 يتحدث'
-                              : '🔇'}
+                            🎤
                           </Text>
-                        )}
+                        </View>
+                      )}
                     </View>
-                  </View>
 
-                  {selected && (
-                    <Text
+                    <View
                       style={
-                        styles.selectedMark
+                        styles.playerInfo
                       }
                     >
-                      ✓
-                    </Text>
-                  )}
-                </Pressable>
-
-                {canKickThisPlayer && (
-                  <Pressable
-                    style={[
-                      styles.kickButton,
-                      isBeingKicked &&
-                        styles.kickButtonDisabled,
-                    ]}
-                    disabled={
-                      isBeingKicked
-                    }
-                    onPress={() =>
-                      kickPlayer(player)
-                    }
-                  >
-                    {isBeingKicked ? (
-                      <ActivityIndicator
-                        size="small"
-                        color="#fff"
-                      />
-                    ) : (
-                      <Text
+                      <View
                         style={
-                          styles.kickButtonText
+                          styles.playerNameRow
                         }
                       >
-                        🚫 طرد
+                        <Text
+                          style={[
+                            styles.playerName,
+                            !player.alive &&
+                              styles.deadName,
+                          ]}
+                        >
+                          {profile?.username ||
+                            player.name ||
+                            'Player'}
+                        </Text>
+
+                        {isMe && (
+                          <Text
+                            style={
+                              styles.youBadge
+                            }
+                          >
+                            أنت
+                          </Text>
+                        )}
+
+                        {room.host_id ===
+                          player.user_id && (
+                          <Text
+                            style={
+                              styles.hostBadge
+                            }
+                          >
+                            👑 منشئ
+                          </Text>
+                        )}
+                      </View>
+
+                      <View
+                        style={
+                          styles.playerStatusRow
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.playerStatus
+                          }
+                        >
+                          {player.alive
+                            ? '🟢 حي'
+                            : '💀 مات'}
+                        </Text>
+
+                        {canUseVoice &&
+                          player.alive && (
+                            <Text
+                              style={
+                                styles.playerVoiceStatus
+                              }
+                            >
+                              {playerMic
+                                ? '🎤 يتحدث'
+                                : '🔇'}
+                            </Text>
+                          )}
+                      </View>
+                    </View>
+
+                    {selected && (
+                      <Text
+                        style={
+                          styles.selectedMark
+                        }
+                      >
+                        ✓
                       </Text>
                     )}
                   </Pressable>
-                )}
-              </View>
-            );
-          })}
-        </View>
 
-        {isNight &&
-          myAlive &&
-          !gameFinished &&
-          nightActions.length > 0 && (
-            <>
-              {nightActions.map(action => {
-                const info =
-                  ACTION_INFO[action];
-
-                return (
-                  <View
-                    key={action}
-                    style={
-                      styles.actionCard
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.actionTitle
-                      }
-                    >
-                      {info.title}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.actionDescription
-                      }
-                    >
-                      {info.description}
-                    </Text>
-
+                  {canKickThisPlayer && (
                     <Pressable
                       style={[
-                        info.danger
-                          ? styles.dangerButton
-                          : styles.primaryButton,
-                        !selectedTarget &&
-                          styles.disabledButton,
+                        styles.kickButton,
+                        isBeingKicked &&
+                          styles.kickButtonDisabled,
                       ]}
                       disabled={
-                        !selectedTarget ||
-                        busy
+                        isBeingKicked
                       }
                       onPress={() =>
-                        performNightAction(
-                          action
+                        kickPlayer(
+                          player
                         )
                       }
                     >
-                      {busy ? (
+                      {isBeingKicked ? (
                         <ActivityIndicator
+                          size="small"
                           color="#fff"
                         />
                       ) : (
                         <Text
                           style={
-                            styles.buttonText
+                            styles.kickButtonText
                           }
                         >
-                          {info.button}
+                          🚫 طرد
                         </Text>
                       )}
                     </Pressable>
-                  </View>
-                );
-              })}
+                  )}
+                </View>
+              );
+            }
+          )}
+        </View>
+
+        {isNight &&
+          myAlive &&
+          !gameFinished &&
+          nightActions.length >
+            0 && (
+            <>
+              {nightActions.map(
+                (action) => {
+                  const info =
+                    ACTION_INFO[
+                      action
+                    ];
+
+                  return (
+                    <View
+                      key={action}
+                      style={
+                        styles.actionCard
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.actionTitle
+                        }
+                      >
+                        {info.title}
+                      </Text>
+
+                      <Text
+                        style={
+                          styles.actionDescription
+                        }
+                      >
+                        {info.description}
+                      </Text>
+
+                      <Pressable
+                        style={[
+                          info.danger
+                            ? styles.dangerButton
+                            : styles.primaryButton,
+                          !selectedTarget &&
+                            styles.disabledButton,
+                        ]}
+                        disabled={
+                          !selectedTarget ||
+                          busy
+                        }
+                        onPress={() =>
+                          performNightAction(
+                            action
+                          )
+                        }
+                      >
+                        {busy ? (
+                          <ActivityIndicator
+                            color="#fff"
+                          />
+                        ) : (
+                          <Text
+                            style={
+                              styles.buttonText
+                            }
+                          >
+                            {
+                              info.button
+                            }
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  );
+                }
+              )}
             </>
           )}
 
         {isNight &&
           myAlive &&
           !gameFinished &&
-          nightActions.length === 0 && (
+          nightActions.length ===
+            0 && (
             <View
-              style={styles.infoCard}
+              style={
+                styles.infoCard
+              }
             >
               <Text
-                style={styles.infoTitle}
+                style={
+                  styles.infoTitle
+                }
               >
                 🌙 لا توجد مهمة ليلية
               </Text>
 
-              <Text style={styles.infoText}>
+              <Text
+                style={styles.infoText}
+              >
                 دورك لا يملك إجراءً ليليًا متاحًا حاليًا. راقب الأحداث واستعد للنهار.
               </Text>
             </View>
@@ -2953,10 +3393,14 @@ export default function MafiaGameScreen() {
           myAlive &&
           !gameFinished && (
             <View
-              style={styles.actionCard}
+              style={
+                styles.actionCard
+              }
             >
               <Text
-                style={styles.actionTitle}
+                style={
+                  styles.actionTitle
+                }
               >
                 🗳️ التصويت
               </Text>
@@ -2979,7 +3423,9 @@ export default function MafiaGameScreen() {
                   !selectedTarget ||
                   busy
                 }
-                onPress={performVote}
+                onPress={
+                  performVote
+                }
               >
                 {busy ? (
                   <ActivityIndicator
@@ -2999,11 +3445,19 @@ export default function MafiaGameScreen() {
           )}
 
         {canChat && (
-          <View style={styles.chatCard}>
-            <View style={styles.chatHeader}>
+          <View
+            style={styles.chatCard}
+          >
+            <View
+              style={
+                styles.chatHeader
+              }
+            >
               <View>
                 <Text
-                  style={styles.chatTitle}
+                  style={
+                    styles.chatTitle
+                  }
                 >
                   {isWaiting
                     ? '💬 دردشة الغرفة'
@@ -3011,7 +3465,9 @@ export default function MafiaGameScreen() {
                 </Text>
 
                 <Text
-                  style={styles.chatSubtitle}
+                  style={
+                    styles.chatSubtitle
+                  }
                 >
                   {isWaiting
                     ? 'التواصل متاح لجميع اللاعبين قبل بدء اللعبة'
@@ -3020,15 +3476,20 @@ export default function MafiaGameScreen() {
               </View>
 
               <View
-                style={styles.onlineDot}
+                style={
+                  styles.onlineDot
+                }
               />
             </View>
 
             <View
-              style={styles.messagesBox}
+              style={
+                styles.messagesBox
+              }
             >
               {messagesLoading &&
-              messages.length === 0 ? (
+              messages.length ===
+                0 ? (
                 <View
                   style={
                     styles.messagesLoading
@@ -3056,79 +3517,87 @@ export default function MafiaGameScreen() {
                   لا توجد رسائل بعد. ابدأ النقاش!
                 </Text>
               ) : (
-                messages.map(message => {
-                  const profile =
-                    profiles[
-                      message.user_id
-                    ];
-
-                  const sender =
-                    players.find(
-                      player =>
-                        player.user_id ===
+                messages.map(
+                  (message) => {
+                    const profile =
+                      profiles[
                         message.user_id
-                    );
+                      ];
 
-                  const isOwn =
-                    message.user_id ===
-                    myPlayer?.user_id;
+                    const sender =
+                      players.find(
+                        (player) =>
+                          player.user_id ===
+                          message.user_id
+                      );
 
-                  return (
-                    <View
-                      key={message.id}
-                      style={[
-                        styles.messageRow,
-                        isOwn &&
-                          styles.myMessageRow,
-                      ]}
-                    >
-                      <PlayerAvatar
-                        player={
-                          sender || {
-                            id: message.user_id,
-                            user_id:
-                              message.user_id,
-                            name:
-                              profile?.username ||
-                              'Player',
-                            avatar_url:
-                              profile?.avatar_url ||
-                              null,
-                            alive: true,
-                          }
-                        }
-                        profile={profile}
-                        size={34}
-                      />
+                    const isOwn =
+                      message.user_id ===
+                      myPlayer?.user_id;
 
+                    return (
                       <View
+                        key={
+                          message.id
+                        }
                         style={[
-                          styles.messageBubble,
+                          styles.messageRow,
                           isOwn &&
-                            styles.myMessageBubble,
+                            styles.myMessageRow,
                         ]}
                       >
-                        <Text
-                          style={
-                            styles.messageSender
+                        <PlayerAvatar
+                          player={
+                            sender || {
+                              id: message.user_id,
+                              user_id:
+                                message.user_id,
+                              name:
+                                profile?.username ||
+                                'Player',
+                              avatar_url:
+                                profile?.avatar_url ||
+                                null,
+                              alive: true,
+                            }
                           }
-                        >
-                          {profile?.username ||
-                            sender?.name ||
-                            'Player'}
-                        </Text>
+                          profile={
+                            profile
+                          }
+                          size={34}
+                        />
 
-                        <Text
-                          style={
-                            styles.messageText
-                          }
+                        <View
+                          style={[
+                            styles.messageBubble,
+                            isOwn &&
+                              styles.myMessageBubble,
+                          ]}
                         >
-                          {message.message}
-                        </Text>
+                          <Text
+                            style={
+                              styles.messageSender
+                            }
+                          >
+                            {profile?.username ||
+                              sender?.name ||
+                              'Player'}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.messageText
+                            }
+                          >
+                            {
+                              message.message
+                            }
+                          </Text>
+                        </View>
                       </View>
-                    </View>
-                  );
-                })
+                    );
+                  }
+                )
               )}
             </View>
 
@@ -3138,15 +3607,21 @@ export default function MafiaGameScreen() {
               }
             >
               <TextInput
-                value={messageText}
-                onChangeText={setMessageText}
+                value={
+                  messageText
+                }
+                onChangeText={
+                  setMessageText
+                }
                 placeholder={
                   isWaiting
                     ? 'اكتب رسالة للاعبين...'
                     : 'اكتب رسالتك...'
                 }
                 placeholderTextColor="#777"
-                style={styles.messageInput}
+                style={
+                  styles.messageInput
+                }
                 multiline
                 maxLength={500}
                 editable={!busy}
@@ -3163,7 +3638,9 @@ export default function MafiaGameScreen() {
                   !messageText.trim() ||
                   busy
                 }
-                onPress={sendMessage}
+                onPress={
+                  sendMessage
+                }
               >
                 {busy ? (
                   <ActivityIndicator
@@ -3184,31 +3661,38 @@ export default function MafiaGameScreen() {
           </View>
         )}
 
-        {isNight && !gameFinished && (
-          <View
-            style={styles.closedChatCard}
-          >
-            <Text
+        {isNight &&
+          !gameFinished && (
+            <View
               style={
-                styles.closedChatTitle
+                styles.closedChatCard
               }
             >
-              🔒 الدردشة مغلقة
-            </Text>
+              <Text
+                style={
+                  styles.closedChatTitle
+                }
+              >
+                🔒 الدردشة مغلقة
+              </Text>
 
-            <Text
-              style={styles.closedChatText}
-            >
-              انتظر حتى يبدأ النهار للتحدث مع اللاعبين.
-            </Text>
-          </View>
-        )}
+              <Text
+                style={
+                  styles.closedChatText
+                }
+              >
+                انتظر حتى يبدأ النهار للتحدث مع اللاعبين.
+              </Text>
+            </View>
+          )}
 
         {!isWaiting &&
           !myAlive &&
           !gameFinished && (
             <View
-              style={styles.spectatorCard}
+              style={
+                styles.spectatorCard
+              }
             >
               <Text
                 style={
@@ -3236,7 +3720,9 @@ export default function MafiaGameScreen() {
             onPress={() =>
               loadGame(true)
             }
-            disabled={refreshing}
+            disabled={
+              refreshing
+            }
           >
             {refreshing ? (
               <ActivityIndicator
@@ -3256,7 +3742,9 @@ export default function MafiaGameScreen() {
 
         {gameFinished && (
           <View
-            style={styles.finishedCard}
+            style={
+              styles.finishedCard
+            }
           >
             <Text
               style={
@@ -3281,11 +3769,15 @@ export default function MafiaGameScreen() {
                 styles.primaryButton
               }
               onPress={() =>
-                router.replace('/rooms')
+                router.replace(
+                  '/rooms'
+                )
               }
             >
               <Text
-                style={styles.buttonText}
+                style={
+                  styles.buttonText
+                }
               >
                 العودة إلى الغرف
               </Text>
@@ -3293,7 +3785,11 @@ export default function MafiaGameScreen() {
           </View>
         )}
 
-        <View style={styles.bottomSpace} />
+        <View
+          style={
+            styles.bottomSpace
+          }
+        />
       </ScrollView>
     </View>
   );
@@ -3512,6 +4008,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  voiceRetryButton: {
+    marginTop: 9,
+    minHeight: 38,
+    borderRadius: 9,
+    backgroundColor: '#3f3a8f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+
+  voiceRetryText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
   voiceControls: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3564,29 +4076,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     marginTop: 2,
-  },
-
-  voiceClosedCard: {
-    backgroundColor: '#111216',
-    borderWidth: 1,
-    borderColor: '#292b31',
-    borderRadius: 16,
-    padding: 15,
-    marginBottom: 14,
-    alignItems: 'center',
-  },
-
-  voiceClosedTitle: {
-    color: '#999',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  voiceClosedText: {
-    color: '#666',
-    fontSize: 12,
-    marginTop: 5,
-    textAlign: 'center',
   },
 
   winnerCard: {
