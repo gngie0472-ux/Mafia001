@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type RoleCard = {
   id: string;
@@ -48,17 +49,56 @@ const ROLES: RoleCard[] = [
       'القضاء على المواطنين حتى تصبح المافيا صاحبة السيطرة.',
   },
   {
-    id: 'detective',
-    name: 'المحقق',
-    team: 'فريق المواطنين',
-    icon: 'search',
-    color: '#8E6CCF',
+    id: 'godfather',
+    name: 'زعيم المافيا',
+    team: 'فريق المافيا',
+    icon: 'diamond',
+    color: '#8B1E3F',
     description:
-      'المحقق يمتلك القدرة على التحقيق في لاعب واحد أثناء الليل لمعرفة ما إذا كان من المافيا.',
+      'زعيم المافيا هو قائد الفريق ويعمل على تنسيق قرارات المافيا أثناء الليل.',
     ability:
-      'اختر لاعبًا واحدًا للتحقيق فيه كل ليلة.',
+      'يقود المافيا ويساعد في تحديد الهدف أثناء الليل.',
     objective:
-      'مساعدة المواطنين على كشف أفراد المافيا دون كشف هويتك.',
+      'حماية المافيا والسيطرة على المدينة.',
+  },
+  {
+    id: 'consigliere',
+    name: 'المستشار',
+    team: 'فريق المافيا',
+    icon: 'briefcase',
+    color: '#9B3150',
+    description:
+      'مساعد مهم لزعيم المافيا، يساعد فريقه في جمع المعلومات عن اللاعبين.',
+    ability:
+      'يساعد فريق المافيا في معرفة معلومات عن اللاعبين وفق قواعد الدور.',
+    objective:
+      'مساعدة المافيا على اكتشاف الأدوار والقضاء على الخصوم.',
+  },
+  {
+    id: 'framer',
+    name: 'المزوّر',
+    team: 'فريق المافيا',
+    icon: 'create',
+    color: '#A33A59',
+    description:
+      'عضو من المافيا يستطيع تضليل التحقيقات وإرباك فريق المواطنين.',
+    ability:
+      'يساعد على جعل لاعب بريء يبدو مشبوهًا أمام بعض التحقيقات.',
+    objective:
+      'حماية المافيا وتضليل فريق المواطنين.',
+  },
+  {
+    id: 'silencer',
+    name: 'المُسكت',
+    team: 'فريق المافيا',
+    icon: 'volume-mute',
+    color: '#7F2947',
+    description:
+      'عضو من المافيا متخصص في إسكات الخصوم وإضعاف قدرتهم على التأثير.',
+    ability:
+      'يستخدم قدرته لإسكات لاعب وفق قواعد الدور.',
+    objective:
+      'تقليل قدرة المواطنين على كشف المافيا.',
   },
   {
     id: 'doctor',
@@ -74,17 +114,212 @@ const ROLES: RoleCard[] = [
       'إنقاذ المواطنين ومساعدة فريقك على البقاء حتى القضاء على المافيا.',
   },
   {
-    id: 'godfather',
-    name: 'زعيم المافيا',
-    team: 'فريق المافيا',
-    icon: 'diamond',
-    color: '#8B1E3F',
+    id: 'detective',
+    name: 'المحقق',
+    team: 'فريق المواطنين',
+    icon: 'search',
+    color: '#8E6CCF',
     description:
-      'زعيم المافيا هو قائد الفريق. يعمل مع المافيا ويشارك في قرارات الليل.',
+      'المحقق يمتلك القدرة على التحقيق في لاعب واحد أثناء الليل لمعرفة معلومات عنه.',
     ability:
-      'يقود المافيا ويساعد في تحديد الهدف أثناء الليل.',
+      'اختر لاعبًا واحدًا للتحقيق فيه كل ليلة.',
     objective:
-      'حماية هوية المافيا والسيطرة على المدينة.',
+      'مساعدة المواطنين على كشف أفراد المافيا دون كشف هويتك.',
+  },
+  {
+    id: 'sheriff',
+    name: 'الشريف',
+    team: 'فريق المواطنين',
+    icon: 'shield-checkmark',
+    color: '#5578D8',
+    description:
+      'دور تحقيقي ضمن فريق المواطنين يساعد على كشف اللاعبين المشبوهين.',
+    ability:
+      'يفحص لاعبًا واحدًا وفق قواعد الشريف.',
+    objective:
+      'كشف اللاعبين الخطرين وحماية المدينة.',
+  },
+  {
+    id: 'bodyguard',
+    name: 'الحارس الشخصي',
+    team: 'فريق المواطنين',
+    icon: 'shield',
+    color: '#3B9B86',
+    description:
+      'حارس يحاول حماية لاعب آخر من الأخطار أثناء الليل.',
+    ability:
+      'اختر لاعبًا لحمايته وفق قواعد الحارس الشخصي.',
+    objective:
+      'حماية الأدوار المهمة في فريق المواطنين.',
+  },
+  {
+    id: 'medium',
+    name: 'الوسيط',
+    team: 'فريق المواطنين',
+    icon: 'chatbubbles',
+    color: '#8067B8',
+    description:
+      'دور متخصص في التواصل والمعلومات المرتبطة باللاعبين الذين خرجوا من اللعبة.',
+    ability:
+      'يستفيد من قدراته الخاصة وفق مرحلة اللعبة وقواعد الدور.',
+    objective:
+      'مساعدة المواطنين باستخدام المعلومات المتاحة له.',
+  },
+  {
+    id: 'vigilante',
+    name: 'المنتقم',
+    team: 'فريق المواطنين',
+    icon: 'flash',
+    color: '#D19A3A',
+    description:
+      'مواطن يمتلك قدرة هجومية يمكن استخدامها ضد لاعب يشتبه بأنه عدو.',
+    ability:
+      'يمكنه استهداف لاعب وفق قواعد المنتقم.',
+    objective:
+      'القضاء على المافيا وحماية المواطنين.',
+  },
+  {
+    id: 'mayor',
+    name: 'العمدة',
+    team: 'فريق المواطنين',
+    icon: 'ribbon',
+    color: '#4D88C7',
+    description:
+      'شخصية مؤثرة في قرارات المدينة والتصويت.',
+    ability:
+      'يمتلك تأثيرًا خاصًا على التصويت وفق قواعد اللعبة.',
+    objective:
+      'قيادة المواطنين للوصول إلى النصر.',
+  },
+  {
+    id: 'tracker',
+    name: 'المتعقب',
+    team: 'فريق المواطنين',
+    icon: 'navigate',
+    color: '#4B9AA5',
+    description:
+      'يتعقب تحركات لاعب أثناء الليل للحصول على معلومات مفيدة.',
+    ability:
+      'يختار لاعبًا لمعرفة تحركاته وفق قواعد الدور.',
+    objective:
+      'جمع معلومات تساعد على كشف المافيا.',
+  },
+  {
+    id: 'lookout',
+    name: 'المراقب',
+    team: 'فريق المواطنين',
+    icon: 'eye',
+    color: '#5D8DC5',
+    description:
+      'يراقب لاعبًا لمعرفة اللاعبين الذين قاموا بزيارته.',
+    ability:
+      'مراقبة لاعب واحد أثناء الليل.',
+    objective:
+      'اكتشاف تحركات المافيا والأدوار الخطرة.',
+  },
+  {
+    id: 'spy',
+    name: 'الجاسوس',
+    team: 'فريق المواطنين',
+    icon: 'finger-print',
+    color: '#7657A9',
+    description:
+      'دور استخباراتي يجمع معلومات سرية يمكن أن تساعد فريق المواطنين.',
+    ability:
+      'يستخدم معلوماته وقدراته الخاصة وفق قواعد اللعبة.',
+    objective:
+      'مساعدة فريق المواطنين على كشف المافيا.',
+  },
+  {
+    id: 'witch',
+    name: 'الساحرة',
+    team: 'فريق المواطنين',
+    icon: 'flask',
+    color: '#9A5BC4',
+    description:
+      'شخصية تمتلك قدرات سحرية يمكن أن تؤثر في أحداث الليل.',
+    ability:
+      'يمكنها استخدام قدرات الإنقاذ أو الهجوم وفق قواعد اللعبة.',
+    objective:
+      'استخدام قدراتها لمساعدة فريقها على الفوز.',
+  },
+  {
+    id: 'ghoul',
+    name: 'الغول',
+    team: 'فريق مستقل',
+    icon: 'skull-outline',
+    color: '#6C8B5B',
+    description:
+      'دور مستقل يمتلك قدرة خاصة مرتبطة بأحداث الليل.',
+    ability:
+      'يستخدم قدرة الغول وفق أحداث الليل وقواعد الدور.',
+    objective:
+      'تحقيق شرط الفوز الخاص بالغول.',
+  },
+  {
+    id: 'cult_leader',
+    name: 'زعيم الطائفة',
+    team: 'فريق الطائفة',
+    icon: 'people-circle',
+    color: '#8C4A9E',
+    description:
+      'قائد فريق الطائفة ويحاول توسيع فريقه خلال اللعبة.',
+    ability:
+      'يحاول تحويل لاعبين إلى أعضاء في الطائفة وفق قواعد اللعبة.',
+    objective:
+      'تكوين الطائفة وتحقيق شرط الفوز الخاص بها.',
+  },
+  {
+    id: 'cultist',
+    name: 'عضو الطائفة',
+    team: 'فريق الطائفة',
+    icon: 'people-circle-outline',
+    color: '#704080',
+    description:
+      'عضو في فريق الطائفة يعمل مع زعيم الطائفة.',
+    ability:
+      'يعمل مع زعيم الطائفة وفق قواعد فريق الطائفة.',
+    objective:
+      'مساعدة الطائفة على تحقيق النصر.',
+  },
+  {
+    id: 'jester',
+    name: 'المهرج',
+    team: 'فريق مستقل',
+    icon: 'happy',
+    color: '#C34B78',
+    description:
+      'شخصية مستقلة هدفها التأثير في نتيجة التصويت.',
+    ability:
+      'يعتمد فوزه على نتيجة التصويت وفق قواعد المهرج.',
+    objective:
+      'تحقيق شرط الفوز الخاص بالمهرج.',
+  },
+  {
+    id: 'serial_killer',
+    name: 'القاتل المتسلسل',
+    team: 'فريق مستقل',
+    icon: 'skull',
+    color: '#A82D3F',
+    description:
+      'قاتل مستقل يعمل بمفرده ويشكل خطرًا على جميع الفرق.',
+    ability:
+      'يستطيع استهداف لاعب أثناء الليل.',
+    objective:
+      'البقاء والقضاء على خصومه وفق شرط الفوز الخاص بالدور.',
+  },
+  {
+    id: 'survivor',
+    name: 'الناجي',
+    team: 'فريق مستقل',
+    icon: 'heart',
+    color: '#B48A3C',
+    description:
+      'لاعب مستقل يركز على البقاء على قيد الحياة حتى نهاية اللعبة.',
+    ability:
+      'يمتلك قدرات دفاعية مرتبطة بقواعد الناجي.',
+    objective:
+      'البقاء على قيد الحياة وتحقيق شرط الفوز.',
   },
 ];
 
@@ -112,11 +347,14 @@ const RULES = [
 ];
 
 export default function InventoryScreen() {
+  const insets = useSafeAreaInsets();
+
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(true);
 
   const selected = useMemo(
-    () => ROLES.find((role) => role.id === selectedRole) ?? null,
+    () =>
+      ROLES.find((role) => role.id === selectedRole) ?? null,
     [selectedRole]
   );
 
@@ -141,7 +379,10 @@ export default function InventoryScreen() {
         </Pressable>
 
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>المخزون</Text>
+          <Text style={styles.headerTitle}>
+            المخزون
+          </Text>
+
           <Text style={styles.headerSubtitle}>
             بطاقات وأدوار Mafia Night
           </Text>
@@ -158,7 +399,12 @@ export default function InventoryScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: 100 + insets.bottom,
+          },
+        ]}
       >
         <View style={styles.introCard}>
           <View style={styles.introIcon}>
@@ -186,6 +432,7 @@ export default function InventoryScreen() {
             <Text style={styles.sectionTitle}>
               جميع البطاقات
             </Text>
+
             <Text style={styles.sectionSubtitle}>
               {ROLES.length} أدوار متاحة
             </Text>
@@ -200,21 +447,28 @@ export default function InventoryScreen() {
 
         <View style={styles.cardsGrid}>
           {ROLES.map((role) => {
-            const isSelected = selectedRole === role.id;
+            const isSelected =
+              selectedRole === role.id;
 
             return (
               <Pressable
                 key={role.id}
                 style={[
                   styles.roleCard,
-                  isSelected && styles.roleCardSelected,
+                  isSelected &&
+                    styles.roleCardSelected,
                 ]}
-                onPress={() => handleRolePress(role)}
+                onPress={() =>
+                  handleRolePress(role)
+                }
               >
                 <View
                   style={[
                     styles.roleIcon,
-                    { backgroundColor: `${role.color}22` },
+                    {
+                      backgroundColor:
+                        `${role.color}22`,
+                    },
                   ]}
                 >
                   <Ionicons
@@ -231,13 +485,18 @@ export default function InventoryScreen() {
                 <View
                   style={[
                     styles.teamBadge,
-                    { backgroundColor: `${role.color}18` },
+                    {
+                      backgroundColor:
+                        `${role.color}18`,
+                    },
                   ]}
                 >
                   <Text
                     style={[
                       styles.teamText,
-                      { color: role.color },
+                      {
+                        color: role.color,
+                      },
                     ]}
                   >
                     {role.team}
@@ -263,7 +522,10 @@ export default function InventoryScreen() {
               <View
                 style={[
                   styles.detailsIcon,
-                  { backgroundColor: `${selected.color}20` },
+                  {
+                    backgroundColor:
+                      `${selected.color}20`,
+                  },
                 ]}
               >
                 <Ionicons
@@ -273,7 +535,9 @@ export default function InventoryScreen() {
                 />
               </View>
 
-              <View style={styles.detailsTitleContainer}>
+              <View
+                style={styles.detailsTitleContainer}
+              >
                 <Text style={styles.detailsTitle}>
                   {selected.name}
                 </Text>
@@ -281,7 +545,9 @@ export default function InventoryScreen() {
                 <Text
                   style={[
                     styles.detailsTeam,
-                    { color: selected.color },
+                    {
+                      color: selected.color,
+                    },
                   ]}
                 >
                   {selected.team}
@@ -289,7 +555,9 @@ export default function InventoryScreen() {
               </View>
 
               <Pressable
-                onPress={() => setSelectedRole(null)}
+                onPress={() =>
+                  setSelectedRole(null)
+                }
                 style={styles.closeButton}
               >
                 <Ionicons
@@ -300,9 +568,13 @@ export default function InventoryScreen() {
               </Pressable>
             </View>
 
-            <View style={styles.detailSeparator} />
+            <View
+              style={styles.detailSeparator}
+            />
 
-            <Text style={styles.detailDescription}>
+            <Text
+              style={styles.detailDescription}
+            >
               {selected.description}
             </Text>
 
@@ -315,7 +587,9 @@ export default function InventoryScreen() {
                 />
               </View>
 
-              <View style={styles.infoTextContainer}>
+              <View
+                style={styles.infoTextContainer}
+              >
                 <Text style={styles.infoTitle}>
                   القدرة
                 </Text>
@@ -335,7 +609,9 @@ export default function InventoryScreen() {
                 />
               </View>
 
-              <View style={styles.infoTextContainer}>
+              <View
+                style={styles.infoTextContainer}
+              >
                 <Text style={styles.infoTitle}>
                   الهدف
                 </Text>
@@ -350,7 +626,9 @@ export default function InventoryScreen() {
 
         <Pressable
           style={styles.rulesHeader}
-          onPress={() => setShowRules((value) => !value)}
+          onPress={() =>
+            setShowRules((value) => !value)
+          }
         >
           <View style={styles.rulesHeaderRight}>
             <View style={styles.rulesIcon}>
@@ -366,14 +644,20 @@ export default function InventoryScreen() {
                 كيف تلعب Mafia Night؟
               </Text>
 
-              <Text style={styles.rulesSubtitle}>
+              <Text
+                style={styles.rulesSubtitle}
+              >
                 شرح سريع للعبة
               </Text>
             </View>
           </View>
 
           <Ionicons
-            name={showRules ? 'chevron-up' : 'chevron-down'}
+            name={
+              showRules
+                ? 'chevron-up'
+                : 'chevron-down'
+            }
             size={22}
             color="#8C8C98"
           />
@@ -386,17 +670,26 @@ export default function InventoryScreen() {
                 key={rule.title}
                 style={[
                   styles.ruleRow,
-                  index !== RULES.length - 1 &&
+                  index !==
+                    RULES.length - 1 &&
                     styles.ruleRowBorder,
                 ]}
               >
                 <View style={styles.ruleNumber}>
-                  <Text style={styles.ruleNumberText}>
+                  <Text
+                    style={
+                      styles.ruleNumberText
+                    }
+                  >
                     {index + 1}
                   </Text>
                 </View>
 
-                <View style={styles.ruleIconContainer}>
+                <View
+                  style={
+                    styles.ruleIconContainer
+                  }
+                >
                   <Ionicons
                     name={
                       rule.icon as keyof typeof Ionicons.glyphMap
@@ -406,7 +699,9 @@ export default function InventoryScreen() {
                   />
                 </View>
 
-                <View style={styles.ruleTextContainer}>
+                <View
+                  style={styles.ruleTextContainer}
+                >
                   <Text style={styles.ruleTitle}>
                     {rule.title}
                   </Text>
@@ -429,21 +724,28 @@ export default function InventoryScreen() {
             />
           </View>
 
-          <View style={styles.friendsTextContainer}>
+          <View
+            style={styles.friendsTextContainer}
+          >
             <Text style={styles.friendsTitle}>
               العب مع أصدقائك
             </Text>
 
             <Text style={styles.friendsText}>
-              أضف أصدقاءك وتواصل معهم قبل بدء المباراة.
+              أضف أصدقاءك وتواصل معهم قبل بدء
+              المباراة.
             </Text>
           </View>
 
           <Pressable
             style={styles.friendsButton}
-            onPress={() => router.push('/friends')}
+            onPress={() =>
+              router.push('/friends')
+            }
           >
-            <Text style={styles.friendsButtonText}>
+            <Text
+              style={styles.friendsButtonText}
+            >
               الأصدقاء
             </Text>
 
@@ -458,29 +760,50 @@ export default function InventoryScreen() {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      <View style={styles.bottomNav}>
+      <View
+        style={[
+          styles.bottomNav,
+          {
+            height: 75 + insets.bottom,
+            paddingBottom: Math.max(
+              insets.bottom,
+              8
+            ),
+          },
+        ]}
+      >
         <Pressable
           style={styles.navItem}
-          onPress={() => router.replace('/home')}
+          onPress={() =>
+            router.replace('/home')
+          }
         >
           <Ionicons
             name="home-outline"
             size={23}
             color="#777782"
           />
-          <Text style={styles.navText}>الرئيسية</Text>
+
+          <Text style={styles.navText}>
+            الرئيسية
+          </Text>
         </Pressable>
 
         <Pressable
           style={styles.navItem}
-          onPress={() => router.replace('/rooms')}
+          onPress={() =>
+            router.replace('/rooms')
+          }
         >
           <Ionicons
             name="game-controller-outline"
             size={23}
             color="#777782"
           />
-          <Text style={styles.navText}>اللعب</Text>
+
+          <Text style={styles.navText}>
+            اللعب
+          </Text>
         </Pressable>
 
         <Pressable style={styles.navItem}>
@@ -491,31 +814,46 @@ export default function InventoryScreen() {
               color="#17171D"
             />
           </View>
-          <Text style={styles.navTextActive}>المخزون</Text>
+
+          <Text
+            style={styles.navTextActive}
+          >
+            المخزون
+          </Text>
         </Pressable>
 
         <Pressable
           style={styles.navItem}
-          onPress={() => router.replace('/friends')}
+          onPress={() =>
+            router.replace('/friends')
+          }
         >
           <Ionicons
             name="people-outline"
             size={23}
             color="#777782"
           />
-          <Text style={styles.navText}>الأصدقاء</Text>
+
+          <Text style={styles.navText}>
+            الأصدقاء
+          </Text>
         </Pressable>
 
         <Pressable
           style={styles.navItem}
-          onPress={() => router.replace('/profile')}
+          onPress={() =>
+            router.replace('/profile')
+          }
         >
           <Ionicons
             name="person-outline"
             size={23}
             color="#777782"
           />
-          <Text style={styles.navText}>حسابي</Text>
+
+          <Text style={styles.navText}>
+            حسابي
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -576,7 +914,6 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 16,
-    paddingBottom: 35,
   },
 
   introCard: {
@@ -685,6 +1022,7 @@ const styles = StyleSheet.create({
   teamText: {
     fontSize: 10,
     fontWeight: '700',
+    textAlign: 'center',
   },
 
   tapText: {
@@ -955,14 +1293,12 @@ const styles = StyleSheet.create({
   },
 
   bottomNav: {
-    height: 75,
     backgroundColor: '#15151A',
     borderTopWidth: 1,
     borderTopColor: '#292930',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingBottom: 6,
   },
 
   navItem: {
