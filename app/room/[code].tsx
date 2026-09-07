@@ -886,11 +886,6 @@ export default function MafiaGameScreen() {
   /*
    * --------------------------------------------------
    * DERIVED STATE
-   *
-   * مهم جدًا:
-   * تم نقل تعريف canUseVoice إلى ما بعد هذه القيم.
-   * هذا يمنع ReferenceError الذي كان قد يؤدي إلى خروج
-   * شاشة اللعبة.
    * --------------------------------------------------
    */
 
@@ -957,11 +952,8 @@ export default function MafiaGameScreen() {
     Boolean(room?.winner);
 
   /*
-   * ==================================================
-   * FIX:
-   * canUseVoice أصبح بعد تعريف room/isWaiting/isDay/
-   * gameFinished.
-   * ==================================================
+   * الصوت متاح منذ الانتظار داخل الغرفة،
+   * وكذلك أثناء النهار للاعب الحي.
    */
   const canUseVoice = Boolean(
     room &&
@@ -1081,10 +1073,6 @@ export default function MafiaGameScreen() {
           return;
         }
 
-        /*
-         * إذا كان هناك اتصال قائم بالفعل فلا ننشئ
-         * Room جديدًا.
-         */
         if (
           voiceRoomRef.current &&
           voiceConnected
@@ -1110,7 +1098,7 @@ export default function MafiaGameScreen() {
           await AudioSession.startAudioSession();
 
           /*
-           * الحصول على Token.
+           * الحصول على LiveKit token.
            */
           const {
             token,
@@ -1121,8 +1109,8 @@ export default function MafiaGameScreen() {
             );
 
           /*
-           * ربما تغيّرت الصفحة أو المرحلة أثناء
-           * انتظار Token.
+           * إذا لم تعد الصفحة تحتاج للصوت،
+           * نوقف العملية.
            */
           if (
             !voiceShouldBeConnectedRef.current
@@ -1135,8 +1123,7 @@ export default function MafiaGameScreen() {
           }
 
           /*
-           * لا ننشئ Room ثانيًا إذا تم إنشاء واحد
-           * أثناء العملية.
+           * منع إنشاء Room ثانية.
            */
           if (voiceRoomRef.current) {
             return;
@@ -1148,9 +1135,14 @@ export default function MafiaGameScreen() {
           voiceRoomRef.current =
             liveKitRoom;
 
+          /*
+           * عند نجاح الاتصال:
+           * - نعلن أن الصوت متصل.
+           * - نشغل الميكروفون تلقائيًا.
+           */
           liveKitRoom.on(
             RoomEvent.Connected,
-            () => {
+            async () => {
               if (
                 !isMountedRef.current
               ) {
@@ -1166,22 +1158,41 @@ export default function MafiaGameScreen() {
               );
 
               /*
-               * الميكروفون مغلق افتراضيًا.
+               * تشغيل الميكروفون تلقائيًا
+               * فور دخول قناة الصوت.
                */
-              liveKitRoom.localParticipant
-                .setMicrophoneEnabled(
-                  false
-                )
-                .catch(
-                  (error) => {
-                    console.error(
-                      'Disable microphone error:',
-                      error
-                    );
-                  }
+              try {
+                await liveKitRoom.localParticipant
+                  .setMicrophoneEnabled(
+                    true
+                  );
+
+                if (
+                  isMountedRef.current
+                ) {
+                  setMicEnabled(true);
+
+                  setVoiceParticipantsVersion(
+                    (value) => value + 1
+                  );
+                }
+              } catch (error: any) {
+                console.error(
+                  'Enable microphone error:',
+                  error
                 );
 
-              setMicEnabled(false);
+                if (
+                  isMountedRef.current
+                ) {
+                  setMicEnabled(false);
+
+                  setVoiceError(
+                    error?.message ||
+                      'تعذر تشغيل الميكروفون. تأكد من السماح للتطبيق باستخدام الميكروفون.'
+                  );
+                }
+              }
             }
           );
 
@@ -1215,16 +1226,41 @@ export default function MafiaGameScreen() {
 
           liveKitRoom.on(
             RoomEvent.Reconnected,
-            () => {
+            async () => {
               if (
-                isMountedRef.current
+                !isMountedRef.current
               ) {
-                setVoiceConnecting(false);
-                setVoiceConnected(true);
+                return;
+              }
 
-                setVoiceParticipantsVersion(
-                  (value) =>
-                    value + 1
+              setVoiceConnecting(false);
+              setVoiceConnected(true);
+
+              /*
+               * بعد إعادة الاتصال نحافظ على
+               * الاتصال الصوتي ونشغل الميكروفون
+               * مجددًا.
+               */
+              try {
+                await liveKitRoom.localParticipant
+                  .setMicrophoneEnabled(
+                    true
+                  );
+
+                if (
+                  isMountedRef.current
+                ) {
+                  setMicEnabled(true);
+
+                  setVoiceParticipantsVersion(
+                    (value) =>
+                      value + 1
+                  );
+                }
+              } catch (error) {
+                console.error(
+                  'Reconnected microphone error:',
+                  error
                 );
               }
             }
@@ -1286,14 +1322,17 @@ export default function MafiaGameScreen() {
             }
           );
 
+          /*
+           * الاتصال الفعلي بـ LiveKit.
+           */
           await liveKitRoom.connect(
             server_url,
             token
           );
 
           /*
-           * إذا أصبحت الصفحة لا تحتاج للصوت
-           * أثناء الاتصال، نفصل مباشرة.
+           * إذا تغيرت الحالة أثناء الاتصال،
+           * نفصل فورًا.
            */
           if (
             !voiceShouldBeConnectedRef.current
@@ -1314,24 +1353,14 @@ export default function MafiaGameScreen() {
           }
 
           /*
-           * تأكيد إغلاق الميكروفون بعد الاتصال.
+           * لا نغلق الميكروفون هنا.
+           *
+           * RoomEvent.Connected هو المسؤول
+           * عن تشغيله تلقائيًا.
            */
-          try {
-            await liveKitRoom.localParticipant
-              .setMicrophoneEnabled(
-                false
-              );
-          } catch (error) {
-            console.error(
-              'Initial microphone disable error:',
-              error
-            );
-          }
-
           if (
             isMountedRef.current
           ) {
-            setMicEnabled(false);
             setVoiceConnected(true);
           }
         } catch (error: any) {
@@ -1357,6 +1386,7 @@ export default function MafiaGameScreen() {
           ) {
             setVoiceConnected(false);
             setMicEnabled(false);
+
             setVoiceError(
               error?.message ||
                 'تعذر الاتصال بالصوت.'
@@ -1420,11 +1450,7 @@ export default function MafiaGameScreen() {
             setMicEnabled(
               nextState
             );
-          }
 
-          if (
-            isMountedRef.current
-          ) {
             setVoiceParticipantsVersion(
               (value) =>
                 value + 1
@@ -1477,8 +1503,7 @@ export default function MafiaGameScreen() {
 
     return () => {
       /*
-       * لا نفصل هنا عند كل إعادة render عادية.
-       * الفصل يتم بواسطة حالة canUseVoice نفسها.
+       * لا نفصل عند كل إعادة render.
        */
     };
   }, [
