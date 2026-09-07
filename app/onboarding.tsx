@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 
 import {
-  Animated,
   Dimensions,
   FlatList,
   StyleSheet,
@@ -68,11 +67,12 @@ export default function OnboardingScreen() {
       );
     }
 
-    // مهم جدًا:
+    // بعد انتهاء الـ Onboarding
+    // ننتقل مباشرة إلى الصفحة الرئيسية الجديدة.
+    //
     // لا نعود إلى "/"
-    // لأن "/" هو بوابة التطبيق.
-    // بعد انتهاء الملاحظات نذهب مباشرة إلى الصفحة الرئيسية.
-    router.replace('/rooms');
+    // لأن "/" هو index.tsx.
+    router.replace('/home');
   };
 
   const nextSlide = () => {
