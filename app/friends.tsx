@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,126 +12,166 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type Friend = {
-  id: string;
-  name: string;
-  username: string;
-  online: boolean;
-  wins: number;
-};
+import {
+  Friend,
+  FriendRequest,
+  FriendProfile,
+  getFriends,
+  getFriendRequests,
+  searchPlayers,
+  sendFriendRequest,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  removeFriend,
+} from '@/lib/friends';
 
-type FriendRequest = {
-  id: string;
-  name: string;
-  username: string;
-};
-
-const INITIAL_FRIENDS: Friend[] = [
-  {
-    id: '1',
-    name: 'لاعب مافيا',
-    username: '@mafia_player',
-    online: true,
-    wins: 12,
-  },
-  {
-    id: '2',
-    name: 'المحقق',
-    username: '@detective',
-    online: true,
-    wins: 8,
-  },
-  {
-    id: '3',
-    name: 'الطبيب',
-    username: '@doctor',
-    online: false,
-    wins: 17,
-  },
-];
-
-const INITIAL_REQUESTS: FriendRequest[] = [
-  {
-    id: 'request-1',
-    name: 'لاعب جديد',
-    username: '@new_player',
-  },
-];
+type SearchPlayer = FriendProfile;
 
 export default function FriendsScreen() {
-  const [friends, setFriends] = useState<Friend[]>(INITIAL_FRIENDS);
-  const [requests, setRequests] =
-    useState<FriendRequest[]>(INITIAL_REQUESTS);
+  const insets = useSafeAreaInsets();
+
+  const [friends, setFriends] = useState<Friend[]>([]);
+  const [requests, setRequests] = useState<FriendRequest[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchPlayer[]>([]);
+
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>(
-    'friends'
-  );
+  const [activeTab, setActiveTab] =
+    useState<'friends' | 'requests'>('friends');
 
-  const filteredFriends = useMemo(() => {
-    const value = search.trim().toLowerCase();
+  const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    if (!value) {
-      return friends;
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const [friendsData, requestsData] = await Promise.all([
+        getFriends(),
+        getFriendRequests(),
+      ]);
+
+      setFriends(friendsData);
+      setRequests(requestsData);
+    } catch (error: any) {
+      console.error('Friends load error:', error);
+
+      Alert.alert(
+        'خطأ',
+        error?.message || 'تعذر تحميل قائمة الأصدقاء.'
+      );
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    return friends.filter(
-      (friend) =>
-        friend.name.toLowerCase().includes(value) ||
-        friend.username.toLowerCase().includes(value)
-    );
-  }, [friends, search]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
-  const handleAddFriend = () => {
+  const handleSearch = async () => {
     const value = search.trim();
 
     if (!value) {
-      Alert.alert(
-        'إضافة صديق',
-        'اكتب اسم اللاعب أو اسم المستخدم أولًا.'
-      );
+      setSearchResults([]);
       return;
     }
 
-    Alert.alert(
-      'تم إرسال الطلب',
-      `تم إرسال طلب صداقة إلى ${value}.`
-    );
+    try {
+      setSearching(true);
 
-    setSearch('');
+      const results = await searchPlayers(value);
+
+      setSearchResults(results);
+    } catch (error: any) {
+      console.error('Player search error:', error);
+
+      Alert.alert(
+        'خطأ',
+        error?.message || 'تعذر البحث عن اللاعبين.'
+      );
+    } finally {
+      setSearching(false);
+    }
   };
 
-  const acceptRequest = (request: FriendRequest) => {
-    const newFriend: Friend = {
-      id: request.id,
-      name: request.name,
-      username: request.username,
-      online: true,
-      wins: 0,
-    };
+  const handleAddFriend = async (player: SearchPlayer) => {
+    try {
+      setActionLoading(player.user_id);
 
-    setFriends((current) => [...current, newFriend]);
+      await sendFriendRequest(player.user_id);
 
-    setRequests((current) =>
-      current.filter((item) => item.id !== request.id)
-    );
+      Alert.alert(
+        'تم إرسال الطلب',
+        `تم إرسال طلب صداقة إلى ${player.username}.`
+      );
 
-    Alert.alert(
-      'تمت الإضافة',
-      `أصبح ${request.name} من أصدقائك الآن.`
-    );
+      setSearchResults((current) =>
+        current.filter((item) => item.user_id !== player.user_id)
+      );
+    } catch (error: any) {
+      console.error('Send friend request error:', error);
+
+      Alert.alert(
+        'تعذر إرسال الطلب',
+        error?.message || 'حدث خطأ أثناء إرسال طلب الصداقة.'
+      );
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const rejectRequest = (requestId: string) => {
-    setRequests((current) =>
-      current.filter((item) => item.id !== requestId)
-    );
+  const handleAccept = async (request: FriendRequest) => {
+    try {
+      setActionLoading(request.id);
+
+      await acceptFriendRequest(request.id);
+
+      await loadData();
+
+      Alert.alert(
+        'تمت الإضافة',
+        `أصبح ${request.username} من أصدقائك الآن.`
+      );
+    } catch (error: any) {
+      console.error('Accept friend request error:', error);
+
+      Alert.alert(
+        'خطأ',
+        error?.message || 'تعذر قبول طلب الصداقة.'
+      );
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const removeFriend = (friend: Friend) => {
+  const handleReject = async (request: FriendRequest) => {
+    try {
+      setActionLoading(request.id);
+
+      await rejectFriendRequest(request.id);
+
+      setRequests((current) =>
+        current.filter((item) => item.id !== request.id)
+      );
+    } catch (error: any) {
+      console.error('Reject friend request error:', error);
+
+      Alert.alert(
+        'خطأ',
+        error?.message || 'تعذر رفض طلب الصداقة.'
+      );
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRemoveFriend = (friend: Friend) => {
     Alert.alert(
       'إزالة صديق',
-      `هل تريد إزالة ${friend.name} من قائمة أصدقائك؟`,
+      `هل تريد إزالة ${friend.username} من قائمة أصدقائك؟`,
       [
         {
           text: 'إلغاء',
@@ -138,19 +180,60 @@ export default function FriendsScreen() {
         {
           text: 'إزالة',
           style: 'destructive',
-          onPress: () => {
-            setFriends((current) =>
-              current.filter((item) => item.id !== friend.id)
-            );
+          onPress: async () => {
+            try {
+              setActionLoading(friend.id);
+
+              await removeFriend(friend.id);
+
+              setFriends((current) =>
+                current.filter((item) => item.id !== friend.id)
+              );
+            } catch (error: any) {
+              console.error('Remove friend error:', error);
+
+              Alert.alert(
+                'خطأ',
+                error?.message || 'تعذر إزالة الصديق.'
+              );
+            } finally {
+              setActionLoading(null);
+            }
           },
         },
       ]
     );
   };
 
+  const filteredFriends = useMemo(() => {
+    const value = search.trim().toLowerCase();
+
+    if (!value) {
+      return friends;
+    }
+
+    return friends.filter((friend) =>
+      friend.username.toLowerCase().includes(value)
+    );
+  }, [friends, search]);
+
+  const clearSearch = () => {
+    setSearch('');
+    setSearchResults([]);
+  };
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* Header */}
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + 10,
+            height: 72 + insets.top,
+          },
+        ]}
+      >
         <Pressable
           style={styles.headerButton}
           onPress={() => router.back()}
@@ -164,6 +247,7 @@ export default function FriendsScreen() {
 
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>الأصدقاء</Text>
+
           <Text style={styles.headerSubtitle}>
             العب وتواصل مع أصدقائك
           </Text>
@@ -180,8 +264,15 @@ export default function FriendsScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingBottom: 110 + insets.bottom,
+          },
+        ]}
       >
+        {/* Hero */}
         <View style={styles.heroCard}>
           <View style={styles.heroIcon}>
             <Ionicons
@@ -197,11 +288,12 @@ export default function FriendsScreen() {
             </Text>
 
             <Text style={styles.heroDescription}>
-              أضف لاعبين جدد، تابع أصدقاءك، وادعهم للعب معك.
+              أضف لاعبين حقيقيين، تواصل معهم، وادعهم للعب معك.
             </Text>
           </View>
         </View>
 
+        {/* Search */}
         <View style={styles.searchCard}>
           <View style={styles.searchContainer}>
             <Ionicons
@@ -212,17 +304,24 @@ export default function FriendsScreen() {
 
             <TextInput
               value={search}
-              onChangeText={setSearch}
-              placeholder="ابحث باسم اللاعب أو اسم المستخدم"
+              onChangeText={(value) => {
+                setSearch(value);
+                if (!value.trim()) {
+                  setSearchResults([]);
+                }
+              }}
+              placeholder="ابحث باسم اللاعب"
               placeholderTextColor="#666670"
               style={styles.searchInput}
               textAlign="right"
               autoCapitalize="none"
+              returnKeyType="search"
+              onSubmitEditing={handleSearch}
             />
 
             {search.length > 0 && (
               <Pressable
-                onPress={() => setSearch('')}
+                onPress={clearSearch}
                 style={styles.clearButton}
               >
                 <Ionicons
@@ -235,21 +334,112 @@ export default function FriendsScreen() {
           </View>
 
           <Pressable
-            style={styles.addButton}
-            onPress={handleAddFriend}
+            style={[
+              styles.addButton,
+              searching && styles.disabledButton,
+            ]}
+            onPress={handleSearch}
+            disabled={searching}
           >
-            <Ionicons
-              name="person-add"
-              size={18}
-              color="#17171D"
-            />
+            {searching ? (
+              <ActivityIndicator
+                size="small"
+                color="#17171D"
+              />
+            ) : (
+              <Ionicons
+                name="search"
+                size={18}
+                color="#17171D"
+              />
+            )}
 
             <Text style={styles.addButtonText}>
-              إضافة صديق
+              {searching ? 'جاري البحث...' : 'بحث عن لاعب'}
             </Text>
           </Pressable>
         </View>
 
+        {/* Search results */}
+        {searchResults.length > 0 && (
+          <View style={styles.searchResultsCard}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>
+                  نتائج البحث
+                </Text>
+
+                <Text style={styles.sectionSubtitle}>
+                  {searchResults.length} لاعب
+                </Text>
+              </View>
+
+              <Ionicons
+                name="person-add"
+                size={20}
+                color="#D7A94B"
+              />
+            </View>
+
+            {searchResults.map((player) => (
+              <View
+                key={player.user_id}
+                style={styles.playerResult}
+              >
+                <View style={styles.avatar}>
+                  {player.avatar_url ? (
+                    <Image
+                      source={{ uri: player.avatar_url }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="person"
+                      size={25}
+                      color="#D7A94B"
+                    />
+                  )}
+                </View>
+
+                <View style={styles.playerInfo}>
+                  <Text style={styles.friendName}>
+                    {player.username}
+                  </Text>
+
+                  <Text style={styles.friendStatsText}>
+                    {player.wins ?? 0} فوز •{' '}
+                    {player.rating ?? 0} تقييم
+                  </Text>
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.addPlayerButton,
+                    actionLoading === player.user_id &&
+                      styles.disabledButton,
+                  ]}
+                  onPress={() => handleAddFriend(player)}
+                  disabled={actionLoading === player.user_id}
+                >
+                  {actionLoading === player.user_id ? (
+                    <ActivityIndicator
+                      size="small"
+                      color="#17171D"
+                    />
+                  ) : (
+                    <Ionicons
+                      name="person-add"
+                      size={18}
+                      color="#17171D"
+                    />
+                  )}
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Tabs */}
         <View style={styles.tabs}>
           <Pressable
             style={[
@@ -346,8 +536,21 @@ export default function FriendsScreen() {
           </Pressable>
         </View>
 
-        {activeTab === 'friends' ? (
+        {/* Loading */}
+        {loading ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator
+              size="large"
+              color="#D7A94B"
+            />
+
+            <Text style={styles.loadingText}>
+              جاري تحميل بيانات الأصدقاء...
+            </Text>
+          </View>
+        ) : activeTab === 'friends' ? (
           <View>
+            {/* Friends section */}
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>
@@ -370,18 +573,19 @@ export default function FriendsScreen() {
               <View style={styles.emptyCard}>
                 <View style={styles.emptyIcon}>
                   <Ionicons
-                    name="search-outline"
+                    name="people-outline"
                     size={30}
                     color="#777782"
                   />
                 </View>
 
                 <Text style={styles.emptyTitle}>
-                  لم يتم العثور على لاعب
+                  لا يوجد أصدقاء بعد
                 </Text>
 
                 <Text style={styles.emptyText}>
-                  جرّب البحث باسم مختلف أو أضف لاعبًا جديدًا.
+                  ابحث عن لاعب حقيقي باستخدام مربع البحث
+                  وأرسل له طلب صداقة.
                 </Text>
               </View>
             ) : (
@@ -391,11 +595,20 @@ export default function FriendsScreen() {
                   style={styles.friendCard}
                 >
                   <View style={styles.friendAvatar}>
-                    <Ionicons
-                      name="person"
-                      size={25}
-                      color="#D7A94B"
-                    />
+                    {friend.avatar_url ? (
+                      <Image
+                        source={{
+                          uri: friend.avatar_url,
+                        }}
+                        style={styles.friendAvatarImage}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="person"
+                        size={25}
+                        color="#D7A94B"
+                      />
+                    )}
 
                     <View
                       style={[
@@ -411,10 +624,6 @@ export default function FriendsScreen() {
 
                   <View style={styles.friendInfo}>
                     <Text style={styles.friendName}>
-                      {friend.name}
-                    </Text>
-
-                    <Text style={styles.friendUsername}>
                       {friend.username}
                     </Text>
 
@@ -446,7 +655,7 @@ export default function FriendsScreen() {
                         />
 
                         <Text style={styles.winsText}>
-                          {friend.wins} فوز
+                          {friend.wins ?? 0} فوز
                         </Text>
                       </View>
                     </View>
@@ -458,7 +667,7 @@ export default function FriendsScreen() {
                       onPress={() =>
                         Alert.alert(
                           'دعوة للعب',
-                          `يمكنك دعوة ${friend.name} عند إنشاء غرفة.`
+                          `يمكنك دعوة ${friend.username} عند إنشاء غرفة.`
                         )
                       }
                     >
@@ -470,14 +679,28 @@ export default function FriendsScreen() {
                     </Pressable>
 
                     <Pressable
-                      style={styles.moreButton}
-                      onPress={() => removeFriend(friend)}
+                      style={[
+                        styles.moreButton,
+                        actionLoading === friend.id &&
+                          styles.disabledButton,
+                      ]}
+                      onPress={() =>
+                        handleRemoveFriend(friend)
+                      }
+                      disabled={actionLoading === friend.id}
                     >
-                      <Ionicons
-                        name="ellipsis-vertical"
-                        size={18}
-                        color="#777782"
-                      />
+                      {actionLoading === friend.id ? (
+                        <ActivityIndicator
+                          size="small"
+                          color="#777782"
+                        />
+                      ) : (
+                        <Ionicons
+                          name="trash-outline"
+                          size={17}
+                          color="#777782"
+                        />
+                      )}
                     </Pressable>
                   </View>
                 </View>
@@ -486,6 +709,7 @@ export default function FriendsScreen() {
           </View>
         ) : (
           <View>
+            {/* Requests */}
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>
@@ -519,7 +743,7 @@ export default function FriendsScreen() {
                 </Text>
 
                 <Text style={styles.emptyText}>
-                  ستظهر هنا طلبات الصداقة التي تصلك.
+                  ستظهر هنا طلبات الصداقة الحقيقية التي تصلك.
                 </Text>
               </View>
             ) : (
@@ -529,20 +753,30 @@ export default function FriendsScreen() {
                   style={styles.requestCard}
                 >
                   <View style={styles.requestAvatar}>
-                    <Ionicons
-                      name="person"
-                      size={25}
-                      color="#D7A94B"
-                    />
+                    {request.avatar_url ? (
+                      <Image
+                        source={{
+                          uri: request.avatar_url,
+                        }}
+                        style={styles.requestAvatarImage}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="person"
+                        size={25}
+                        color="#D7A94B"
+                      />
+                    )}
                   </View>
 
                   <View style={styles.requestInfo}>
                     <Text style={styles.friendName}>
-                      {request.name}
+                      {request.username}
                     </Text>
 
-                    <Text style={styles.friendUsername}>
-                      {request.username}
+                    <Text style={styles.requestStats}>
+                      {request.wins ?? 0} فوز •{' '}
+                      {request.rating ?? 0} تقييم
                     </Text>
 
                     <Text style={styles.requestText}>
@@ -552,23 +786,36 @@ export default function FriendsScreen() {
 
                   <View style={styles.requestActions}>
                     <Pressable
-                      style={styles.acceptButton}
+                      style={[
+                        styles.acceptButton,
+                        actionLoading === request.id &&
+                          styles.disabledButton,
+                      ]}
                       onPress={() =>
-                        acceptRequest(request)
+                        handleAccept(request)
                       }
+                      disabled={actionLoading === request.id}
                     >
-                      <Ionicons
-                        name="checkmark"
-                        size={19}
-                        color="#17171D"
-                      />
+                      {actionLoading === request.id ? (
+                        <ActivityIndicator
+                          size="small"
+                          color="#17171D"
+                        />
+                      ) : (
+                        <Ionicons
+                          name="checkmark"
+                          size={19}
+                          color="#17171D"
+                        />
+                      )}
                     </Pressable>
 
                     <Pressable
                       style={styles.rejectButton}
                       onPress={() =>
-                        rejectRequest(request.id)
+                        handleReject(request)
                       }
+                      disabled={actionLoading === request.id}
                     >
                       <Ionicons
                         name="close"
@@ -583,6 +830,7 @@ export default function FriendsScreen() {
           </View>
         )}
 
+        {/* Tip */}
         <View style={styles.tipCard}>
           <View style={styles.tipIcon}>
             <Ionicons
@@ -603,11 +851,18 @@ export default function FriendsScreen() {
             </Text>
           </View>
         </View>
-
-        <View style={styles.bottomSpace} />
       </ScrollView>
 
-      <View style={styles.bottomNav}>
+      {/* Bottom navigation */}
+      <View
+        style={[
+          styles.bottomNav,
+          {
+            height: 75 + insets.bottom,
+            paddingBottom: insets.bottom + 6,
+          },
+        ]}
+      >
         <Pressable
           style={styles.navItem}
           onPress={() => router.replace('/home')}
@@ -681,9 +936,7 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    height: 82,
     paddingHorizontal: 18,
-    paddingTop: 25,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
@@ -728,7 +981,6 @@ const styles = StyleSheet.create({
 
   content: {
     padding: 16,
-    paddingBottom: 30,
   },
 
   heroCard: {
@@ -812,10 +1064,69 @@ const styles = StyleSheet.create({
     marginTop: 9,
   },
 
+  addPlayerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#D7A94B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  disabledButton: {
+    opacity: 0.55,
+  },
+
   addButtonText: {
     color: '#17171D',
     fontSize: 12,
     fontWeight: '900',
+  },
+
+  searchResultsCard: {
+    backgroundColor: '#19191F',
+    borderWidth: 1,
+    borderColor: '#292930',
+    borderRadius: 18,
+    padding: 13,
+    marginBottom: 14,
+  },
+
+  playerResult: {
+    backgroundColor: '#121217',
+    borderWidth: 1,
+    borderColor: '#292930',
+    borderRadius: 14,
+    padding: 10,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#292417',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 10,
+    overflow: 'hidden',
+  },
+
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  playerInfo: {
+    flex: 1,
+  },
+
+  friendStatsText: {
+    color: '#777782',
+    fontSize: 9,
+    marginTop: 4,
   },
 
   tabs: {
@@ -916,6 +1227,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: 11,
     position: 'relative',
+    overflow: 'hidden',
+  },
+
+  friendAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
 
   onlineDot: {
@@ -937,12 +1254,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
-  },
-
-  friendUsername: {
-    color: '#71717C',
-    fontSize: 10,
-    marginTop: 2,
   },
 
   friendStats: {
@@ -1022,16 +1333,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 11,
+    overflow: 'hidden',
+  },
+
+  requestAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
 
   requestInfo: {
     flex: 1,
   },
 
+  requestStats: {
+    color: '#777782',
+    fontSize: 9,
+    marginTop: 3,
+  },
+
   requestText: {
     color: '#777782',
     fontSize: 9,
-    marginTop: 6,
+    marginTop: 5,
   },
 
   requestActions: {
@@ -1091,6 +1414,23 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
 
+  loadingCard: {
+    backgroundColor: '#19191F',
+    borderWidth: 1,
+    borderColor: '#292930',
+    borderRadius: 18,
+    padding: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+
+  loadingText: {
+    color: '#777782',
+    fontSize: 11,
+    marginTop: 12,
+  },
+
   tipCard: {
     backgroundColor: '#19191F',
     borderWidth: 1,
@@ -1129,19 +1469,17 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 
-  bottomSpace: {
-    height: 20,
-  },
-
   bottomNav: {
-    height: 75,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#15151A',
     borderTopWidth: 1,
     borderTopColor: '#292930',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    paddingBottom: 6,
   },
 
   navItem: {
