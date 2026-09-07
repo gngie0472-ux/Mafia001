@@ -23,7 +23,18 @@ import {
   useRouter,
 } from 'expo-router';
 
+import {
+  AudioSession,
+  registerGlobals,
+  Room,
+  RoomEvent,
+} from '@livekit/react-native';
+
 import { supabase } from '../../lib/supabase';
+
+import {
+  getLiveKitToken,
+} from '../../lib/livekit';
 
 import {
   advanceMafiaPhase,
@@ -362,15 +373,6 @@ export default function MafiaGameScreen() {
       code?: string | string[];
     }>();
 
-  /*
-   * يمكن أن يصل المسار إلى هنا بإحدى الصيغتين:
-   *
-   * /room/UUID
-   * /room/T2GZ6M
-   *
-   * لذلك لا نستخدم قيمة المسار مباشرة
-   * في RPC التي تتطلب UUID.
-   */
   const routeValue = Array.isArray(
     params.code
   )
@@ -422,6 +424,36 @@ export default function MafiaGameScreen() {
   const [kickingUserId, setKickingUserId] =
     useState<string | null>(null);
 
+  /*
+   * ==================================================
+   * LIVEKIT VOICE
+   * ==================================================
+   */
+
+  const voiceRoomRef =
+    useRef<Room | null>(null);
+
+  const voiceConnectingRef =
+    useRef(false);
+
+  const voiceShouldBeConnectedRef =
+    useRef(false);
+
+  const [voiceConnected, setVoiceConnected] =
+    useState(false);
+
+  const [voiceConnecting, setVoiceConnecting] =
+    useState(false);
+
+  const [micEnabled, setMicEnabled] =
+    useState(false);
+
+  const [voiceError, setVoiceError] =
+    useState<string | null>(null);
+
+  const [voiceParticipantsVersion, setVoiceParticipantsVersion] =
+    useState(0);
+
   const lastAdvanceRef =
     useRef<number>(0);
 
@@ -432,15 +464,25 @@ export default function MafiaGameScreen() {
     useRef(true);
 
   /*
+   * تسجيل دعم LiveKit مرة واحدة.
+   */
+  useEffect(() => {
+    try {
+      registerGlobals();
+    } catch (error) {
+      console.error(
+        'LiveKit registerGlobals error:',
+        error
+      );
+    }
+  }, []);
+
+  /*
    * --------------------------------------------------
    * RESOLVE ROOM ID
    * --------------------------------------------------
-   *
-   * إذا كان المسار UUID نستخدمه مباشرة.
-   *
-   * وإذا كان المسار كودًا مثل T2GZ6M،
-   * نبحث عن UUID الحقيقي للغرفة.
    */
+
   useEffect(() => {
     let cancelled = false;
 
@@ -538,6 +580,12 @@ export default function MafiaGameScreen() {
     };
   }, [routeValue, router]);
 
+  /*
+   * --------------------------------------------------
+   * PROFILES
+   * --------------------------------------------------
+   */
+
   const loadProfiles = useCallback(
     async (players: GamePlayer[]) => {
       if (!players.length) {
@@ -595,6 +643,12 @@ export default function MafiaGameScreen() {
     []
   );
 
+  /*
+   * --------------------------------------------------
+   * MESSAGES
+   * --------------------------------------------------
+   */
+
   const loadMessages = useCallback(
     async () => {
       if (!roomId) return;
@@ -637,6 +691,12 @@ export default function MafiaGameScreen() {
     },
     [roomId]
   );
+
+  /*
+   * --------------------------------------------------
+   * GAME
+   * --------------------------------------------------
+   */
 
   const loadGame = useCallback(
     async (showLoader = false) => {
@@ -824,15 +884,557 @@ export default function MafiaGameScreen() {
   }, []);
 
   /*
+   * ==================================================
+   * LIVEKIT FUNCTIONS
+   * ==================================================
+   */
+
+  const disconnectVoice =
+    useCallback(
+      async () => {
+        const currentRoom =
+          voiceRoomRef.current;
+
+        voiceRoomRef.current =
+          null;
+
+        voiceShouldBeConnectedRef.current =
+          false;
+
+        setVoiceConnected(false);
+        setMicEnabled(false);
+        setVoiceError(null);
+
+        if (currentRoom) {
+          try {
+            await currentRoom.disconnect();
+          } catch (error) {
+            console.error(
+              'LiveKit disconnect error:',
+              error
+            );
+          }
+        }
+
+        try {
+          await AudioSession.stopAudioSession();
+        } catch (error) {
+          console.error(
+            'AudioSession stop error:',
+            error
+          );
+        }
+
+        setVoiceParticipantsVersion(
+          (value) => value + 1
+        );
+      },
+      []
+    );
+
+  const connectVoice =
+    useCallback(
+      async () => {
+        if (!roomId) return;
+
+        if (
+          voiceConnectingRef.current
+        ) {
+          return;
+        }
+
+        if (
+          voiceRoomRef.current &&
+          voiceConnected
+        ) {
+          return;
+        }
+
+        voiceConnectingRef.current =
+          true;
+
+        voiceShouldBeConnectedRef.current =
+          true;
+
+        setVoiceConnecting(true);
+        setVoiceError(null);
+
+        try {
+          await AudioSession.startAudioSession();
+
+          const {
+            token,
+            server_url,
+          } =
+            await getLiveKitToken(
+              roomId
+            );
+
+          if (
+            !voiceShouldBeConnectedRef.current
+          ) {
+            return;
+          }
+
+          const room =
+            new Room();
+
+          voiceRoomRef.current =
+            room;
+
+          room.on(
+            RoomEvent.Connected,
+            () => {
+              if (
+                !isMountedRef.current
+              ) {
+                return;
+              }
+
+              setVoiceConnected(true);
+              setVoiceConnecting(false);
+              setVoiceError(null);
+              setVoiceParticipantsVersion(
+                (value) => value + 1
+              );
+
+              /*
+               * الميكروفون مغلق افتراضيًا.
+               */
+              room.localParticipant
+                .setMicrophoneEnabled(
+                  false
+                )
+                .catch(
+                  (error) => {
+                    console.error(
+                      'Disable microphone error:',
+                      error
+                    );
+                  }
+                );
+
+              setMicEnabled(false);
+            }
+          );
+
+          room.on(
+            RoomEvent.Disconnected,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceConnected(false);
+                setMicEnabled(false);
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.Reconnecting,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceConnecting(true);
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.Reconnected,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceConnecting(false);
+                setVoiceConnected(true);
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.ParticipantConnected,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.ParticipantDisconnected,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.TrackMuted,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          room.on(
+            RoomEvent.TrackUnmuted,
+            () => {
+              if (
+                isMountedRef.current
+              ) {
+                setVoiceParticipantsVersion(
+                  (value) =>
+                    value + 1
+                );
+              }
+            }
+          );
+
+          await room.connect(
+            server_url,
+            token
+          );
+
+          if (
+            !voiceShouldBeConnectedRef.current
+          ) {
+            try {
+              await room.disconnect();
+            } catch {}
+
+            return;
+          }
+
+          /*
+           * تأكيد إغلاق الميكروفون بعد الاتصال.
+           */
+          try {
+            await room.localParticipant
+              .setMicrophoneEnabled(
+                false
+              );
+          } catch (error) {
+            console.error(
+              'Initial microphone disable error:',
+              error
+            );
+          }
+
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(false);
+            setVoiceConnected(true);
+          }
+        } catch (error: any) {
+          console.error(
+            'connectVoice error:',
+            error
+          );
+
+          voiceRoomRef.current =
+            null;
+
+          if (
+            isMountedRef.current
+          ) {
+            setVoiceConnected(false);
+            setMicEnabled(false);
+            setVoiceError(
+              error?.message ||
+                'تعذر الاتصال بالصوت.'
+            );
+          }
+
+          try {
+            await AudioSession.stopAudioSession();
+          } catch {}
+        } finally {
+          voiceConnectingRef.current =
+            false;
+
+          if (
+            isMountedRef.current
+          ) {
+            setVoiceConnecting(false);
+          }
+        }
+      },
+      [
+        roomId,
+        voiceConnected,
+      ]
+    );
+
+  const toggleMicrophone =
+    useCallback(
+      async () => {
+        const room =
+          voiceRoomRef.current;
+
+        if (!room) {
+          Alert.alert(
+            'الصوت غير متصل',
+            'انتظر حتى يتم الاتصال بقناة الصوت.'
+          );
+          return;
+        }
+
+        if (!voiceConnected) {
+          Alert.alert(
+            'الصوت غير متصل',
+            'انتظر حتى يكتمل الاتصال.'
+          );
+          return;
+        }
+
+        const nextState =
+          !micEnabled;
+
+        try {
+          await room.localParticipant
+            .setMicrophoneEnabled(
+              nextState
+            );
+
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(
+              nextState
+            );
+          }
+
+          setVoiceParticipantsVersion(
+            (value) =>
+              value + 1
+          );
+        } catch (error: any) {
+          console.error(
+            'toggleMicrophone error:',
+            error
+          );
+
+          Alert.alert(
+            'تعذر تشغيل الميكروفون',
+            error?.message ||
+              'تأكد من السماح للتطبيق باستخدام الميكروفون.'
+          );
+        }
+      },
+      [
+        voiceConnected,
+        micEnabled,
+      ]
+    );
+
+  /*
+   * حالة الصوت المسموح بها حاليًا.
+   */
+  const canUseVoice =
+    Boolean(
+      room &&
+        !gameFinished &&
+        (
+          isWaiting ||
+          (
+            room.status ===
+              'playing' &&
+            isDay &&
+            myAlive
+          )
+        )
+    );
+
+  /*
+   * توصيل/فصل LiveKit حسب مرحلة اللعبة.
+   */
+  useEffect(() => {
+    if (
+      !roomId ||
+      !gameState?.room
+    ) {
+      return;
+    }
+
+    if (canUseVoice) {
+      voiceShouldBeConnectedRef.current =
+        true;
+
+      connectVoice();
+    } else {
+      voiceShouldBeConnectedRef.current =
+        false;
+
+      disconnectVoice();
+    }
+  }, [
+    roomId,
+    gameState?.room?.status,
+    gameState?.room?.game_phase,
+    room?.winner,
+    myAlive,
+    canUseVoice,
+    connectVoice,
+    disconnectVoice,
+  ]);
+
+  /*
+   * تنظيف LiveKit عند مغادرة الصفحة.
+   */
+  useEffect(() => {
+    return () => {
+      voiceShouldBeConnectedRef.current =
+        false;
+
+      const currentRoom =
+        voiceRoomRef.current;
+
+      voiceRoomRef.current =
+        null;
+
+      if (currentRoom) {
+        currentRoom
+          .disconnect()
+          .catch(() => {});
+      }
+
+      AudioSession
+        .stopAudioSession()
+        .catch(() => {});
+    };
+  }, []);
+
+  /*
+   * معرفة هل لاعب معين لديه الميكروفون مفتوح.
+   */
+  const isPlayerMicEnabled =
+    useCallback(
+      (
+        userId: string
+      ): boolean => {
+        /*
+         * استخدام version حتى يعاد حساب الحالة
+         * عند تغير المشاركين أو Track.
+         */
+        void voiceParticipantsVersion;
+
+        const room =
+          voiceRoomRef.current;
+
+        if (!room) {
+          return false;
+        }
+
+        if (
+          room.localParticipant
+            .identity === userId
+        ) {
+          return micEnabled;
+        }
+
+        const remoteParticipants =
+          room.remoteParticipants;
+
+        let participant:
+          | any
+          | null = null;
+
+        remoteParticipants.forEach(
+          (item: any) => {
+            if (
+              item.identity ===
+              userId
+            ) {
+              participant =
+                item;
+            }
+          }
+        );
+
+        if (!participant) {
+          return false;
+        }
+
+        try {
+          if (
+            typeof participant.isMicrophoneEnabled ===
+            'boolean'
+          ) {
+            return participant.isMicrophoneEnabled;
+          }
+        } catch {}
+
+        try {
+          const publication =
+            participant.getTrackPublication?.(
+              'microphone'
+            );
+
+          if (publication) {
+            return !Boolean(
+              publication.isMuted
+            );
+          }
+        } catch {}
+
+        try {
+          const publications =
+            participant.audioTrackPublications;
+
+          if (publications) {
+            for (const publication of publications.values()) {
+              if (
+                publication &&
+                !publication.isMuted
+              ) {
+                return true;
+              }
+            }
+          }
+        } catch {}
+
+        return false;
+      },
+      [
+        micEnabled,
+        voiceParticipantsVersion,
+      ]
+    );
+
+  /*
    * --------------------------------------------------
    * HEARTBEAT
    * --------------------------------------------------
-   *
-   * SQL يستخدم آخر 30 ثانية لتحديد اللاعبين
-   * النشطين في الغرف العامة.
-   *
-   * لذلك نرسل heartbeat كل 10 ثوانٍ.
    */
+
   useEffect(() => {
     if (!roomId) return;
 
@@ -870,6 +1472,12 @@ export default function MafiaGameScreen() {
     roomId,
     loadGame,
   ]);
+
+  /*
+   * --------------------------------------------------
+   * COUNTDOWN
+   * --------------------------------------------------
+   */
 
   useEffect(() => {
     if (
@@ -1012,6 +1620,12 @@ export default function MafiaGameScreen() {
     loadGame,
   ]);
 
+  /*
+   * --------------------------------------------------
+   * REALTIME
+   * --------------------------------------------------
+   */
+
   useEffect(() => {
     if (!gameState?.room?.id)
       return;
@@ -1100,6 +1714,12 @@ export default function MafiaGameScreen() {
     gameState?.room?.id,
     loadGame,
   ]);
+
+  /*
+   * --------------------------------------------------
+   * DERIVED STATE
+   * --------------------------------------------------
+   */
 
   const room =
     (gameState?.room as ExtendedGameRoom) ||
@@ -1203,6 +1823,12 @@ export default function MafiaGameScreen() {
         null
     );
 
+  /*
+   * --------------------------------------------------
+   * KICK
+   * --------------------------------------------------
+   */
+
   const kickPlayer = async (
     player: GamePlayer
   ) => {
@@ -1304,6 +1930,12 @@ export default function MafiaGameScreen() {
     );
   };
 
+  /*
+   * --------------------------------------------------
+   * TARGET
+   * --------------------------------------------------
+   */
+
   const selectTarget = (
     playerId: string
   ) => {
@@ -1337,6 +1969,12 @@ export default function MafiaGameScreen() {
           : playerId
     );
   };
+
+  /*
+   * --------------------------------------------------
+   * NIGHT ACTION
+   * --------------------------------------------------
+   */
 
   const performNightAction =
     async (
@@ -1492,6 +2130,12 @@ export default function MafiaGameScreen() {
       }
     };
 
+  /*
+   * --------------------------------------------------
+   * DAY VOTE
+   * --------------------------------------------------
+   */
+
   const performVote =
     async () => {
       if (
@@ -1567,6 +2211,12 @@ export default function MafiaGameScreen() {
       }
     };
 
+  /*
+   * --------------------------------------------------
+   * CHAT
+   * --------------------------------------------------
+   */
+
   const sendMessage =
     async () => {
       const text =
@@ -1619,6 +2269,12 @@ export default function MafiaGameScreen() {
       }
     };
 
+  /*
+   * --------------------------------------------------
+   * LEAVE
+   * --------------------------------------------------
+   */
+
   const leaveGame = () => {
     Alert.alert(
       'الخروج من الغرفة',
@@ -1634,6 +2290,11 @@ export default function MafiaGameScreen() {
           onPress:
             async () => {
               try {
+                voiceShouldBeConnectedRef.current =
+                  false;
+
+                await disconnectVoice();
+
                 if (roomId) {
                   await leaveRoom(
                     roomId
@@ -1656,6 +2317,12 @@ export default function MafiaGameScreen() {
       ]
     );
   };
+
+  /*
+   * ==================================================
+   * LOADING SCREENS
+   * ==================================================
+   */
 
   if (resolvingRoom) {
     return (
@@ -1754,6 +2421,12 @@ export default function MafiaGameScreen() {
     );
   }
 
+  /*
+   * ==================================================
+   * UI
+   * ==================================================
+   */
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -1799,6 +2472,12 @@ export default function MafiaGameScreen() {
             </Text>
           </Pressable>
         </View>
+
+        {/*
+         * ==================================================
+         * WAITING / GAME PHASE
+         * ==================================================
+         */}
 
         {isWaiting ? (
           <View
@@ -1880,6 +2559,196 @@ export default function MafiaGameScreen() {
             </Text>
           </View>
         )}
+
+        {/*
+         * ==================================================
+         * VOICE CARD
+         * ==================================================
+         */}
+
+        {canUseVoice && (
+          <View
+            style={
+              styles.voiceCard
+            }
+          >
+            <View
+              style={
+                styles.voiceHeader
+              }
+            >
+              <View
+                style={
+                  styles.voiceHeaderText
+                }
+              >
+                <Text
+                  style={
+                    styles.voiceTitle
+                  }
+                >
+                  🎙️ الصوت
+                </Text>
+
+                <Text
+                  style={
+                    styles.voiceSubtitle
+                  }
+                >
+                  {isWaiting
+                    ? 'تحدث مع اللاعبين قبل بدء اللعبة'
+                    : 'الصوت متاح للاعبين الأحياء أثناء النهار'}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.voiceStatusBadge,
+                  voiceConnected
+                    ? styles.voiceConnectedBadge
+                    : styles.voiceDisconnectedBadge,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.voiceStatusDot,
+                    voiceConnected
+                      ? styles.voiceConnectedDot
+                      : styles.voiceDisconnectedDot,
+                  ]}
+                />
+
+                <Text
+                  style={
+                    styles.voiceStatusText
+                  }
+                >
+                  {voiceConnecting
+                    ? 'جارٍ الاتصال'
+                    : voiceConnected
+                    ? 'متصل'
+                    : 'غير متصل'}
+                </Text>
+              </View>
+            </View>
+
+            {voiceError && (
+              <View
+                style={
+                  styles.voiceErrorBox
+                }
+              >
+                <Text
+                  style={
+                    styles.voiceErrorText
+                  }
+                >
+                  {voiceError}
+                </Text>
+              </View>
+            )}
+
+            <View
+              style={
+                styles.voiceControls
+              }
+            >
+              <View
+                style={
+                  styles.voiceInfo
+                }
+              >
+                <Text
+                  style={
+                    styles.voiceInfoTitle
+                  }
+                >
+                  {micEnabled
+                    ? '🎤 الميكروفون يعمل'
+                    : '🔇 الميكروفون مغلق'}
+                </Text>
+
+                <Text
+                  style={
+                    styles.voiceInfoText
+                  }
+                >
+                  {micEnabled
+                    ? 'يمكن للاعبين سماعك الآن'
+                    : 'اضغط لتشغيل الميكروفون'}
+                </Text>
+              </View>
+
+              <Pressable
+                style={[
+                  styles.micButton,
+                  micEnabled &&
+                    styles.micButtonActive,
+                  (!voiceConnected ||
+                    voiceConnecting) &&
+                    styles.disabledMicButton,
+                ]}
+                disabled={
+                  !voiceConnected ||
+                  voiceConnecting
+                }
+                onPress={
+                  toggleMicrophone
+                }
+              >
+                <Text
+                  style={
+                    styles.micButtonIcon
+                  }
+                >
+                  {micEnabled
+                    ? '🎤'
+                    : '🔇'}
+                </Text>
+
+                <Text
+                  style={
+                    styles.micButtonText
+                  }
+                >
+                  {micEnabled
+                    ? 'إيقاف'
+                    : 'تشغيل'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {!canUseVoice &&
+          !isWaiting &&
+          !gameFinished && (
+            <View
+              style={
+                styles.voiceClosedCard
+              }
+            >
+              <Text
+                style={
+                  styles.voiceClosedTitle
+                }
+              >
+                🔇 الصوت مغلق
+              </Text>
+
+              <Text
+                style={
+                  styles.voiceClosedText
+                }
+              >
+                {isNight
+                  ? 'الصوت مغلق أثناء الليل.'
+                  : !myAlive
+                  ? 'أنت ميت ولا يمكنك استخدام الصوت.'
+                  : 'الصوت غير متاح في هذه المرحلة.'}
+              </Text>
+            </View>
+          )}
 
         {gameFinished && (
           <View
@@ -1987,6 +2856,12 @@ export default function MafiaGameScreen() {
           </View>
         )}
 
+        {/*
+         * ==================================================
+         * PLAYERS
+         * ==================================================
+         */}
+
         <View
           style={styles.section}
         >
@@ -2064,6 +2939,13 @@ export default function MafiaGameScreen() {
                 kickingUserId ===
                 player.user_id;
 
+              const playerMic =
+                canUseVoice &&
+                player.alive &&
+                isPlayerMicEnabled(
+                  player.user_id
+                );
+
               return (
                 <View
                   key={player.id}
@@ -2093,13 +2975,35 @@ export default function MafiaGameScreen() {
                       styles.playerMain
                     }
                   >
-                    <PlayerAvatar
-                      player={player}
-                      profile={
-                        profile
+                    <View
+                      style={
+                        styles.playerAvatarWrapper
                       }
-                      size={48}
-                    />
+                    >
+                      <PlayerAvatar
+                        player={player}
+                        profile={
+                          profile
+                        }
+                        size={48}
+                      />
+
+                      {playerMic && (
+                        <View
+                          style={
+                            styles.micStatusBubble
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.micStatusIcon
+                            }
+                          >
+                            🎤
+                          </Text>
+                        </View>
+                      )}
+                    </View>
 
                     <View
                       style={
@@ -2145,15 +3049,34 @@ export default function MafiaGameScreen() {
                         )}
                       </View>
 
-                      <Text
+                      <View
                         style={
-                          styles.playerStatus
+                          styles.playerStatusRow
                         }
                       >
-                        {player.alive
-                          ? '🟢 حي'
-                          : '💀 مات'}
-                      </Text>
+                        <Text
+                          style={
+                            styles.playerStatus
+                          }
+                        >
+                          {player.alive
+                            ? '🟢 حي'
+                            : '💀 مات'}
+                        </Text>
+
+                        {canUseVoice &&
+                          player.alive && (
+                            <Text
+                              style={
+                                styles.playerVoiceStatus
+                              }
+                            >
+                              {playerMic
+                                ? '🎤 يتحدث'
+                                : '🔇'}
+                            </Text>
+                          )}
+                      </View>
                     </View>
 
                     {selected && (
@@ -2204,6 +3127,12 @@ export default function MafiaGameScreen() {
             }
           )}
         </View>
+
+        {/*
+         * ==================================================
+         * NIGHT ACTIONS
+         * ==================================================
+         */}
 
         {isNight &&
           myAlive &&
@@ -2308,6 +3237,12 @@ export default function MafiaGameScreen() {
             </View>
           )}
 
+        {/*
+         * ==================================================
+         * DAY VOTE
+         * ==================================================
+         */}
+
         {isDay &&
           myAlive &&
           !gameFinished && (
@@ -2362,6 +3297,12 @@ export default function MafiaGameScreen() {
               </Pressable>
             </View>
           )}
+
+        {/*
+         * ==================================================
+         * CHAT
+         * ==================================================
+         */}
 
         {canChat && (
           <View
@@ -2841,6 +3782,175 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
+  /*
+   * ==================================================
+   * VOICE STYLES
+   * ==================================================
+   */
+
+  voiceCard: {
+    backgroundColor: '#111216',
+    borderWidth: 1,
+    borderColor: '#35304a',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+  },
+
+  voiceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  voiceHeaderText: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  voiceTitle: {
+    color: '#fff',
+    fontSize: 19,
+    fontWeight: '900',
+  },
+
+  voiceSubtitle: {
+    color: '#888',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+
+  voiceStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+
+  voiceConnectedBadge: {
+    backgroundColor: '#14271c',
+  },
+
+  voiceDisconnectedBadge: {
+    backgroundColor: '#21191a',
+  },
+
+  voiceStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+
+  voiceConnectedDot: {
+    backgroundColor: '#54c77b',
+  },
+
+  voiceDisconnectedDot: {
+    backgroundColor: '#c85b63',
+  },
+
+  voiceStatusText: {
+    color: '#ddd',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  voiceErrorBox: {
+    backgroundColor: '#241417',
+    borderWidth: 1,
+    borderColor: '#52232a',
+    borderRadius: 10,
+    padding: 9,
+    marginTop: 12,
+  },
+
+  voiceErrorText: {
+    color: '#ff9b9b',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+
+  voiceControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 15,
+  },
+
+  voiceInfo: {
+    flex: 1,
+  },
+
+  voiceInfoTitle: {
+    color: '#eee',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  voiceInfoText: {
+    color: '#777',
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  micButton: {
+    minWidth: 88,
+    minHeight: 54,
+    backgroundColor: '#29233f',
+    borderWidth: 1,
+    borderColor: '#50477a',
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  micButtonActive: {
+    backgroundColor: '#40358b',
+    borderColor: '#6f61c4',
+  },
+
+  disabledMicButton: {
+    opacity: 0.4,
+  },
+
+  micButtonIcon: {
+    fontSize: 18,
+  },
+
+  micButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+
+  voiceClosedCard: {
+    backgroundColor: '#111216',
+    borderWidth: 1,
+    borderColor: '#292b31',
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 14,
+    alignItems: 'center',
+  },
+
+  voiceClosedTitle: {
+    color: '#999',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  voiceClosedText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+
   winnerCard: {
     backgroundColor: '#16130a',
     borderWidth: 1,
@@ -2992,6 +4102,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  playerAvatarWrapper: {
+    position: 'relative',
+  },
+
+  micStatusBubble: {
+    position: 'absolute',
+    right: -3,
+    bottom: -3,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#3f3a8f',
+    borderWidth: 2,
+    borderColor: '#111216',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  micStatusIcon: {
+    fontSize: 9,
+  },
+
   deadPlayerCard: {
     opacity: 0.5,
   },
@@ -3065,10 +4197,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  playerStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+
   playerStatus: {
     color: '#888',
     fontSize: 12,
-    marginTop: 4,
+  },
+
+  playerVoiceStatus: {
+    color: '#8f86cf',
+    fontSize: 11,
+    marginLeft: 8,
+    fontWeight: '700',
   },
 
   selectedMark: {
