@@ -205,6 +205,11 @@ async function ensureUser() {
 
 /**
  * إنشاء أو تحميل الملف الشخصي.
+ *
+ * مهم:
+ * عند وجود ملف شخصي مسبق، نحافظ على
+ * الاسم الموجود فيه ولا نعيد تغييره
+ * أثناء الانضمام للغرفة.
  */
 async function ensureProfile(
   username?: string
@@ -215,6 +220,48 @@ async function ensureProfile(
   const user =
     await ensureUser();
 
+  /*
+   * نحاول أولًا تحميل الملف الشخصي
+   * الموجود بالفعل.
+   */
+  const {
+    data: existingProfile,
+    error: profileError,
+  } =
+    await supabase
+      .from('profiles')
+      .select('*')
+      .eq(
+        'user_id',
+        user.id
+      )
+      .maybeSingle();
+
+  if (profileError) {
+    /*
+     * لا نعتبر عدم العثور على الملف
+     * مشكلة قاتلة.
+     */
+    console.warn(
+      'ensureProfile load:',
+      profileError
+    );
+  }
+
+  if (existingProfile) {
+    return {
+      user,
+      profile:
+        existingProfile as PlayerProfile,
+    };
+  }
+
+  /*
+   * لا يوجد ملف شخصي.
+   *
+   * نستخدم الاسم المرسل فقط عند إنشاء
+   * الحساب لأول مرة.
+   */
   const fallbackName =
     username?.trim() ||
     `Player_${user.id.slice(0, 5)}`;
@@ -299,17 +346,18 @@ export async function createRoom(
   const {
     data,
     error,
-  } = await supabase
-    .from('rooms')
-    .insert({
-      code,
-      name,
-      max_players: max,
-      status: 'waiting',
-      host_id: user.id,
-    })
-    .select('*')
-    .single();
+  } =
+    await supabase
+      .from('rooms')
+      .insert({
+        code,
+        name,
+        max_players: max,
+        status: 'waiting',
+        host_id: user.id,
+      })
+      .select('*')
+      .single();
 
   if (error || !data) {
     throw new Error(
@@ -330,9 +378,12 @@ export async function createRoom(
     );
   }
 
+  /*
+   * اسم اللاعب هنا يأتي من الملف الشخصي
+   * الحالي وليس من اسم مؤقت جديد.
+   */
   const playerNameToUse =
     profile.username?.trim() ||
-    playerName.trim() ||
     `Player_${user.id.slice(0, 5)}`;
 
   const {
@@ -416,10 +467,17 @@ export async function getPublicRooms(): Promise<
 /**
  * الانضمام إلى غرفة بواسطة UUID.
  *
- * هذه الدالة هي المسؤولة عن:
- * 1. التأكد من المستخدم.
- * 2. تنفيذ RPC الانضمام.
- * 3. مزامنة اسم وصورة اللاعب.
+ * الدالة الجديدة تعتمد على RPC فقط.
+ *
+ * مهم:
+ * لا نقوم بعملية UPDATE ثانية على
+ * room_players بعد نجاح RPC.
+ *
+ * هذا يمنع الحالة التي:
+ * - ينضم اللاعب فعليًا
+ * - يظهر عند المضيف
+ * - ثم يفشل UPDATE
+ * - فيرى اللاعب رسالة رفض.
  */
 export async function joinPublicRoom(
   roomId: string,
@@ -431,13 +489,16 @@ export async function joinPublicRoom(
     );
   }
 
-  const {
-    user,
-    profile,
-  } =
-    await ensureProfile(
-      playerName
-    );
+  /*
+   * نحتاج المستخدم للتأكد من الجلسة،
+   * ونحاول تحميل الملف الشخصي فقط.
+   *
+   * لن نستخدم playerName لتغيير
+   * الملف الشخصي الموجود.
+   */
+  await ensureProfile(
+    playerName
+  );
 
   const {
     data,
@@ -446,57 +507,65 @@ export async function joinPublicRoom(
     await supabase.rpc(
       'join_public_room',
       {
-        p_room_id: roomId,
+        p_room_id:
+          roomId,
       }
     );
 
   if (error) {
-    throw new Error(
+    const message =
       formatError(
         error,
         'تعذر الانضمام إلى الغرفة'
+      );
+
+    /*
+     * تحويل أخطاء RPC إلى رسائل واضحة.
+     */
+    if (
+      message.includes(
+        'room_not_available'
       )
+    ) {
+      throw new Error(
+        'الغرفة غير موجودة أو بدأت اللعبة بالفعل.'
+      );
+    }
+
+    if (
+      message.includes(
+        'room_full'
+      )
+    ) {
+      throw new Error(
+        'الغرفة ممتلئة.'
+      );
+    }
+
+    if (
+      message.includes(
+        'not_authenticated'
+      )
+    ) {
+      throw new Error(
+        'جلسة اللاعب غير موجودة، أعد المحاولة.'
+      );
+    }
+
+    throw new Error(
+      message
     );
   }
 
   /*
-   * بعد نجاح RPC يجب أن يكون اللاعب
-   * موجودًا في room_players.
+   * الـ RPC أصبح مسؤولًا بالكامل عن:
+   * - إضافة اللاعب
+   * - الاسم
+   * - الصورة
+   * - last_seen_at
+   *
+   * لذلك لا ننفذ UPDATE هنا.
    */
-  const {
-    error: syncError,
-  } =
-    await supabase
-      .from('room_players')
-      .update({
-        name:
-          profile.username?.trim() ||
-          playerName?.trim() ||
-          `Player_${user.id.slice(0, 5)}`,
-        avatar_url:
-          profile.avatar_url ||
-          null,
-        last_seen_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        'room_id',
-        roomId
-      )
-      .eq(
-        'user_id',
-        user.id
-      );
-
-  if (syncError) {
-    throw new Error(
-      formatError(
-        syncError,
-        'تم الانضمام لكن تعذر تحديث بيانات اللاعب'
-      )
-    );
-  }
-
   return data;
 }
 
@@ -527,15 +596,11 @@ export async function joinRoom(
     );
   }
 
-  if (!playerName.trim()) {
-    throw new Error(
-      'أدخل اسم اللاعب'
-    );
-  }
-
   /*
-   * نحصل على المستخدم والملف الشخصي
-   * مرة واحدة فقط.
+   * اسم اللاعب يستخدم فقط إذا كان
+   * هذا الحساب لا يملك Profile أصلًا.
+   *
+   * إذا كان لديه Profile، لن نعيد تسميته.
    */
   const {
     user,
@@ -547,10 +612,6 @@ export async function joinRoom(
 
   /*
    * البحث عن الغرفة بالكود فقط.
-   *
-   * لا نستخدم status هنا في الاستعلام
-   * حتى نستطيع إعطاء رسالة واضحة إذا كانت
-   * الغرفة موجودة ولكن مغلقة.
    */
   const {
     data: room,
@@ -599,9 +660,7 @@ export async function joinRoom(
   }
 
   /*
-   * الانضمام باستخدام UUID الحقيقي.
-   *
-   * لا نمرر code إلى RPC.
+   * الانضمام يتم باستخدام UUID الحقيقي.
    */
   const {
     data: joinData,
@@ -616,49 +675,60 @@ export async function joinRoom(
     );
 
   if (joinError) {
-    throw new Error(
+    const message =
       formatError(
         joinError,
         'تعذر الانضمام إلى الغرفة'
+      );
+
+    if (
+      message.includes(
+        'room_not_available'
       )
+    ) {
+      throw new Error(
+        'الغرفة غير موجودة أو بدأت اللعبة بالفعل.'
+      );
+    }
+
+    if (
+      message.includes(
+        'room_full'
+      )
+    ) {
+      throw new Error(
+        'الغرفة ممتلئة.'
+      );
+    }
+
+    if (
+      message.includes(
+        'not_authenticated'
+      )
+    ) {
+      throw new Error(
+        'جلسة اللاعب غير موجودة، أعد المحاولة.'
+      );
+    }
+
+    throw new Error(
+      message
     );
   }
 
   /*
-   * تحديث بيانات اللاعب.
+   * مهم جدًا:
+   *
+   * لا يوجد UPDATE هنا.
+   *
+   * join_public_room أصبح هو المسؤول
+   * عن الاسم والصورة.
+   *
+   * profile يتم تحميله هنا فقط حتى نحافظ
+   * على المتغير والاتساق مع بقية المنطق.
    */
-  const {
-    error: profileSyncError,
-  } =
-    await supabase
-      .from('room_players')
-      .update({
-        name:
-          profile.username?.trim() ||
-          playerName.trim(),
-        avatar_url:
-          profile.avatar_url ||
-          null,
-        last_seen_at:
-          new Date().toISOString(),
-      })
-      .eq(
-        'room_id',
-        room.id
-      )
-      .eq(
-        'user_id',
-        user.id
-      );
-
-  if (profileSyncError) {
-    throw new Error(
-      formatError(
-        profileSyncError,
-        'تم الانضمام إلى الغرفة لكن تعذر تحديث بيانات اللاعب'
-      )
-    );
-  }
+  void user;
+  void profile;
 
   /*
    * نعيد بيانات الغرفة الأصلية.
