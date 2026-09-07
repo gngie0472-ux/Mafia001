@@ -353,8 +353,7 @@ export default function InventoryScreen() {
   const [showRules, setShowRules] = useState(true);
 
   const selected = useMemo(
-    () =>
-      ROLES.find((role) => role.id === selectedRole) ?? null,
+    () => ROLES.find((role) => role.id === selectedRole) ?? null,
     [selectedRole]
   );
 
@@ -366,32 +365,42 @@ export default function InventoryScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      {/* HEADER */}
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 10 },
+        ]}
+      >
         <Pressable
           style={styles.headerButton}
           onPress={() => router.back()}
         >
           <Ionicons
             name="arrow-forward"
-            size={23}
-            color="#FFFFFF"
+            size={22}
+            color="#F4E7C1"
           />
         </Pressable>
 
         <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerKicker}>
+            MAFIA NIGHT
+          </Text>
+
           <Text style={styles.headerTitle}>
             المخزون
           </Text>
 
           <Text style={styles.headerSubtitle}>
-            بطاقات وأدوار Mafia Night
+            مجموعة أدوار اللعبة
           </Text>
         </View>
 
         <View style={styles.headerIcon}>
           <Ionicons
             name="albums"
-            size={22}
+            size={21}
             color="#D7A94B"
           />
         </View>
@@ -406,47 +415,62 @@ export default function InventoryScreen() {
           },
         ]}
       >
+        {/* INTRO */}
         <View style={styles.introCard}>
-          <View style={styles.introIcon}>
-            <Ionicons
-              name="sparkles"
-              size={27}
-              color="#D7A94B"
-            />
+          <View style={styles.introGlow} />
+
+          <View style={styles.introTop}>
+            <View style={styles.introIcon}>
+              <Ionicons
+                name="sparkles"
+                size={25}
+                color="#E5BE68"
+              />
+            </View>
+
+            <View style={styles.introBadge}>
+              <Text style={styles.introBadgeText}>
+                {ROLES.length} بطاقة
+              </Text>
+            </View>
           </View>
 
-          <View style={styles.introText}>
-            <Text style={styles.introTitle}>
-              بطاقات اللعبة
-            </Text>
+          <Text style={styles.introTitle}>
+            مجموعة الشخصيات
+          </Text>
 
-            <Text style={styles.introDescription}>
-              تعرّف على جميع الأدوار وقدراتها قبل بدء اللعبة.
-              كل دور له هدف مختلف وطريقة لعب خاصة.
-            </Text>
+          <Text style={styles.introDescription}>
+            اكتشف جميع أدوار Mafia Night وقدراتها وأهدافها.
+            اختر أي بطاقة لمعرفة تفاصيل الشخصية.
+          </Text>
+
+          <View style={styles.introLine}>
+            <View style={styles.introLineGold} />
           </View>
         </View>
 
+        {/* SECTION TITLE */}
         <View style={styles.sectionHeader}>
           <View>
             <Text style={styles.sectionTitle}>
-              جميع البطاقات
+              بطاقات الأدوار
             </Text>
 
             <Text style={styles.sectionSubtitle}>
-              {ROLES.length} أدوار متاحة
+              اختر بطاقة لاستكشاف قدراتها
             </Text>
           </View>
 
-          <Ionicons
-            name="grid"
-            size={22}
-            color="#D7A94B"
-          />
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>
+              {ROLES.length}
+            </Text>
+          </View>
         </View>
 
+        {/* CARDS */}
         <View style={styles.cardsGrid}>
-          {ROLES.map((role) => {
+          {ROLES.map((role, index) => {
             const isSelected =
               selectedRole === role.id;
 
@@ -455,27 +479,58 @@ export default function InventoryScreen() {
                 key={role.id}
                 style={[
                   styles.roleCard,
+                  {
+                    borderColor: isSelected
+                      ? role.color
+                      : '#302D2B',
+                  },
                   isSelected &&
                     styles.roleCardSelected,
                 ]}
-                onPress={() =>
-                  handleRolePress(role)
-                }
+                onPress={() => handleRolePress(role)}
               >
                 <View
                   style={[
-                    styles.roleIcon,
+                    styles.cardAccent,
+                    { backgroundColor: role.color },
+                  ]}
+                />
+
+                <View style={styles.cardTop}>
+                  <Text style={styles.cardNumber}>
+                    {String(index + 1).padStart(2, '0')}
+                  </Text>
+
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={16}
+                    color="#6F6A66"
+                  />
+                </View>
+
+                <View
+                  style={[
+                    styles.roleArtwork,
                     {
-                      backgroundColor:
-                        `${role.color}22`,
+                      borderColor: `${role.color}55`,
+                      backgroundColor: `${role.color}14`,
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={role.icon}
-                    size={29}
-                    color={role.color}
-                  />
+                  <View
+                    style={[
+                      styles.roleArtworkInner,
+                      {
+                        borderColor: `${role.color}35`,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={role.icon}
+                      size={43}
+                      color={role.color}
+                    />
+                  </View>
                 </View>
 
                 <Text style={styles.roleName}>
@@ -486,58 +541,89 @@ export default function InventoryScreen() {
                   style={[
                     styles.teamBadge,
                     {
-                      backgroundColor:
-                        `${role.color}18`,
+                      borderColor: `${role.color}55`,
+                      backgroundColor: `${role.color}12`,
                     },
                   ]}
                 >
+                  <View
+                    style={[
+                      styles.teamDot,
+                      { backgroundColor: role.color },
+                    ]}
+                  />
+
                   <Text
                     style={[
                       styles.teamText,
-                      {
-                        color: role.color,
-                      },
+                      { color: role.color },
                     ]}
                   >
                     {role.team}
                   </Text>
                 </View>
 
-                <Text
-                  style={styles.tapText}
-                  numberOfLines={1}
-                >
-                  {isSelected
-                    ? 'إخفاء التفاصيل'
-                    : 'اضغط لمعرفة التفاصيل'}
-                </Text>
+                <View style={styles.cardBottom}>
+                  <Text style={styles.tapText}>
+                    {isSelected
+                      ? 'مفتوحة'
+                      : 'اضغط للتفاصيل'}
+                  </Text>
+
+                  <Ionicons
+                    name={
+                      isSelected
+                        ? 'chevron-up'
+                        : 'chevron-down'
+                    }
+                    size={14}
+                    color="#77716C"
+                  />
+                </View>
               </Pressable>
             );
           })}
         </View>
 
+        {/* DETAILS */}
         {selected && (
-          <View style={styles.detailsCard}>
+          <View
+            style={[
+              styles.detailsCard,
+              {
+                borderColor: `${selected.color}70`,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.detailsAccent,
+                { backgroundColor: selected.color },
+              ]}
+            />
+
             <View style={styles.detailsHeader}>
               <View
                 style={[
-                  styles.detailsIcon,
+                  styles.detailsArtwork,
                   {
-                    backgroundColor:
-                      `${selected.color}20`,
+                    backgroundColor: `${selected.color}14`,
+                    borderColor: `${selected.color}55`,
                   },
                 ]}
               >
                 <Ionicons
                   name={selected.icon}
-                  size={30}
+                  size={31}
                   color={selected.color}
                 />
               </View>
 
-              <View
-                style={styles.detailsTitleContainer}
-              >
+              <View style={styles.detailsTitleContainer}>
+                <Text style={styles.detailsOverline}>
+                  بطاقة الدور
+                </Text>
+
                 <Text style={styles.detailsTitle}>
                   {selected.name}
                 </Text>
@@ -545,9 +631,7 @@ export default function InventoryScreen() {
                 <Text
                   style={[
                     styles.detailsTeam,
-                    {
-                      color: selected.color,
-                    },
+                    { color: selected.color },
                   ]}
                 >
                   {selected.team}
@@ -555,42 +639,46 @@ export default function InventoryScreen() {
               </View>
 
               <Pressable
-                onPress={() =>
-                  setSelectedRole(null)
-                }
+                onPress={() => setSelectedRole(null)}
                 style={styles.closeButton}
               >
                 <Ionicons
                   name="close"
-                  size={21}
-                  color="#A9A9B4"
+                  size={20}
+                  color="#B9B2AC"
                 />
               </Pressable>
             </View>
 
-            <View
-              style={styles.detailSeparator}
-            />
+            <View style={styles.detailSeparator} />
 
-            <Text
-              style={styles.detailDescription}
-            >
+            <Text style={styles.detailDescription}>
               {selected.description}
             </Text>
 
             <View style={styles.infoBox}>
-              <View style={styles.infoIcon}>
+              <View
+                style={[
+                  styles.infoIcon,
+                  {
+                    backgroundColor: `${selected.color}15`,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="flash"
-                  size={19}
-                  color="#D7A94B"
+                  size={18}
+                  color={selected.color}
                 />
               </View>
 
-              <View
-                style={styles.infoTextContainer}
-              >
-                <Text style={styles.infoTitle}>
+              <View style={styles.infoTextContainer}>
+                <Text
+                  style={[
+                    styles.infoTitle,
+                    { color: selected.color },
+                  ]}
+                >
                   القدرة
                 </Text>
 
@@ -601,18 +689,28 @@ export default function InventoryScreen() {
             </View>
 
             <View style={styles.infoBox}>
-              <View style={styles.infoIcon}>
+              <View
+                style={[
+                  styles.infoIcon,
+                  {
+                    backgroundColor: `${selected.color}15`,
+                  },
+                ]}
+              >
                 <Ionicons
                   name="flag"
-                  size={19}
-                  color="#D7A94B"
+                  size={18}
+                  color={selected.color}
                 />
               </View>
 
-              <View
-                style={styles.infoTextContainer}
-              >
-                <Text style={styles.infoTitle}>
+              <View style={styles.infoTextContainer}>
+                <Text
+                  style={[
+                    styles.infoTitle,
+                    { color: selected.color },
+                  ]}
+                >
                   الهدف
                 </Text>
 
@@ -624,17 +722,16 @@ export default function InventoryScreen() {
           </View>
         )}
 
+        {/* RULES */}
         <Pressable
           style={styles.rulesHeader}
-          onPress={() =>
-            setShowRules((value) => !value)
-          }
+          onPress={() => setShowRules((value) => !value)}
         >
           <View style={styles.rulesHeaderRight}>
             <View style={styles.rulesIcon}>
               <Ionicons
                 name="book"
-                size={22}
+                size={21}
                 color="#D7A94B"
               />
             </View>
@@ -644,23 +741,23 @@ export default function InventoryScreen() {
                 كيف تلعب Mafia Night؟
               </Text>
 
-              <Text
-                style={styles.rulesSubtitle}
-              >
+              <Text style={styles.rulesSubtitle}>
                 شرح سريع للعبة
               </Text>
             </View>
           </View>
 
-          <Ionicons
-            name={
-              showRules
-                ? 'chevron-up'
-                : 'chevron-down'
-            }
-            size={22}
-            color="#8C8C98"
-          />
+          <View style={styles.rulesArrow}>
+            <Ionicons
+              name={
+                showRules
+                  ? 'chevron-up'
+                  : 'chevron-down'
+              }
+              size={19}
+              color="#B9B2AC"
+            />
+          </View>
         </Pressable>
 
         {showRules && (
@@ -670,38 +767,27 @@ export default function InventoryScreen() {
                 key={rule.title}
                 style={[
                   styles.ruleRow,
-                  index !==
-                    RULES.length - 1 &&
+                  index !== RULES.length - 1 &&
                     styles.ruleRowBorder,
                 ]}
               >
                 <View style={styles.ruleNumber}>
-                  <Text
-                    style={
-                      styles.ruleNumberText
-                    }
-                  >
+                  <Text style={styles.ruleNumberText}>
                     {index + 1}
                   </Text>
                 </View>
 
-                <View
-                  style={
-                    styles.ruleIconContainer
-                  }
-                >
+                <View style={styles.ruleIconContainer}>
                   <Ionicons
                     name={
                       rule.icon as keyof typeof Ionicons.glyphMap
                     }
-                    size={21}
+                    size={20}
                     color="#D7A94B"
                   />
                 </View>
 
-                <View
-                  style={styles.ruleTextContainer}
-                >
+                <View style={styles.ruleTextContainer}>
                   <Text style={styles.ruleTitle}>
                     {rule.title}
                   </Text>
@@ -715,37 +801,33 @@ export default function InventoryScreen() {
           </View>
         )}
 
+        {/* FRIENDS */}
         <View style={styles.friendsCard}>
-          <View style={styles.friendsIcon}>
-            <Ionicons
-              name="person-add"
-              size={25}
-              color="#D7A94B"
-            />
-          </View>
+          <View style={styles.friendsTop}>
+            <View style={styles.friendsIcon}>
+              <Ionicons
+                name="person-add"
+                size={22}
+                color="#D7A94B"
+              />
+            </View>
 
-          <View
-            style={styles.friendsTextContainer}
-          >
-            <Text style={styles.friendsTitle}>
-              العب مع أصدقائك
-            </Text>
+            <View style={styles.friendsTextContainer}>
+              <Text style={styles.friendsTitle}>
+                العب مع أصدقائك
+              </Text>
 
-            <Text style={styles.friendsText}>
-              أضف أصدقاءك وتواصل معهم قبل بدء
-              المباراة.
-            </Text>
+              <Text style={styles.friendsText}>
+                أضف أصدقاءك وتواصل معهم قبل بدء المباراة.
+              </Text>
+            </View>
           </View>
 
           <Pressable
             style={styles.friendsButton}
-            onPress={() =>
-              router.push('/friends')
-            }
+            onPress={() => router.push('/friends')}
           >
-            <Text
-              style={styles.friendsButtonText}
-            >
+            <Text style={styles.friendsButtonText}>
               الأصدقاء
             </Text>
 
@@ -760,6 +842,7 @@ export default function InventoryScreen() {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
+      {/* BOTTOM NAV */}
       <View
         style={[
           styles.bottomNav,
@@ -774,13 +857,11 @@ export default function InventoryScreen() {
       >
         <Pressable
           style={styles.navItem}
-          onPress={() =>
-            router.replace('/home')
-          }
+          onPress={() => router.replace('/home')}
         >
           <Ionicons
             name="home-outline"
-            size={23}
+            size={22}
             color="#777782"
           />
 
@@ -791,13 +872,11 @@ export default function InventoryScreen() {
 
         <Pressable
           style={styles.navItem}
-          onPress={() =>
-            router.replace('/rooms')
-          }
+          onPress={() => router.replace('/rooms')}
         >
           <Ionicons
             name="game-controller-outline"
-            size={23}
+            size={22}
             color="#777782"
           />
 
@@ -810,27 +889,23 @@ export default function InventoryScreen() {
           <View style={styles.activeNavIcon}>
             <Ionicons
               name="albums"
-              size={22}
+              size={21}
               color="#17171D"
             />
           </View>
 
-          <Text
-            style={styles.navTextActive}
-          >
+          <Text style={styles.navTextActive}>
             المخزون
           </Text>
         </Pressable>
 
         <Pressable
           style={styles.navItem}
-          onPress={() =>
-            router.replace('/friends')
-          }
+          onPress={() => router.replace('/friends')}
         >
           <Ionicons
             name="people-outline"
-            size={23}
+            size={22}
             color="#777782"
           />
 
@@ -841,13 +916,11 @@ export default function InventoryScreen() {
 
         <Pressable
           style={styles.navItem}
-          onPress={() =>
-            router.replace('/profile')
-          }
+          onPress={() => router.replace('/profile')}
         >
           <Ionicons
             name="person-outline"
-            size={23}
+            size={22}
             color="#777782"
           />
 
@@ -863,25 +936,26 @@ export default function InventoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#101014',
+    backgroundColor: '#0C0B0B',
   },
 
   header: {
-    height: 82,
+    minHeight: 96,
     paddingHorizontal: 18,
-    paddingTop: 25,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#24242B',
-    backgroundColor: '#111116',
+    borderBottomColor: '#272321',
+    backgroundColor: '#100F0F',
   },
 
   headerButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: '#1B1B21',
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: '#1A1817',
+    borderWidth: 1,
+    borderColor: '#302B27',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -891,23 +965,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  headerKicker: {
+    color: '#8B837A',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 1,
+  },
+
   headerTitle: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '800',
+    color: '#F6F1E8',
+    fontSize: 21,
+    fontWeight: '900',
   },
 
   headerSubtitle: {
-    color: '#777782',
-    fontSize: 11,
+    color: '#77716C',
+    fontSize: 10,
     marginTop: 2,
   },
 
   headerIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: '#1B1B21',
+    width: 43,
+    height: 43,
+    borderRadius: 14,
+    backgroundColor: '#1A1817',
+    borderWidth: 1,
+    borderColor: '#302B27',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -917,60 +1001,124 @@ const styles = StyleSheet.create({
   },
 
   introCard: {
-    backgroundColor: '#19191F',
+    overflow: 'hidden',
+    backgroundColor: '#171514',
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#2A2A31',
-    borderRadius: 20,
-    padding: 17,
+    borderColor: '#39312A',
+    padding: 18,
+    marginBottom: 25,
+  },
+
+  introGlow: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: '#D7A94B',
+    opacity: 0.045,
+    right: -55,
+    top: -65,
+  },
+
+  introTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 23,
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
 
   introIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#2A2417',
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#282117',
+    borderWidth: 1,
+    borderColor: '#4A3B21',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 13,
   },
 
-  introText: {
-    flex: 1,
+  introBadge: {
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#211C15',
+    borderWidth: 1,
+    borderColor: '#4A3B21',
+  },
+
+  introBadgeText: {
+    color: '#D7A94B',
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   introTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '800',
-    marginBottom: 5,
+    color: '#F7F1E7',
+    fontSize: 19,
+    fontWeight: '900',
+    textAlign: 'right',
+    marginBottom: 6,
   },
 
   introDescription: {
-    color: '#9999A4',
+    color: '#96908A',
     fontSize: 12,
-    lineHeight: 19,
+    lineHeight: 20,
+    textAlign: 'right',
+  },
+
+  introLine: {
+    height: 1,
+    backgroundColor: '#2D2926',
+    marginTop: 17,
+    overflow: 'hidden',
+  },
+
+  introLineGold: {
+    height: 1,
+    width: 70,
+    backgroundColor: '#D7A94B',
+    alignSelf: 'flex-end',
   },
 
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 13,
+    marginBottom: 14,
   },
 
   sectionTitle: {
-    color: '#FFFFFF',
+    color: '#F4EFE7',
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '900',
+    textAlign: 'right',
   },
 
   sectionSubtitle: {
-    color: '#73737E',
-    fontSize: 11,
+    color: '#716C67',
+    fontSize: 10,
     marginTop: 3,
+    textAlign: 'right',
+  },
+
+  countBadge: {
+    minWidth: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: '#211C15',
+    borderWidth: 1,
+    borderColor: '#493A20',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  countText: {
+    color: '#D7A94B',
+    fontSize: 13,
+    fontWeight: '900',
   },
 
   cardsGrid: {
@@ -980,65 +1128,129 @@ const styles = StyleSheet.create({
   },
 
   roleCard: {
-    width: '48.2%',
-    minHeight: 185,
-    backgroundColor: '#19191F',
-    borderRadius: 18,
+    width: '48.3%',
+    minHeight: 235,
+    marginBottom: 13,
+    borderRadius: 19,
+    backgroundColor: '#151312',
     borderWidth: 1,
-    borderColor: '#292930',
-    padding: 14,
-    marginBottom: 12,
-    alignItems: 'center',
+    padding: 11,
+    overflow: 'hidden',
   },
 
   roleCardSelected: {
-    borderColor: '#D7A94B',
-    backgroundColor: '#1D1C19',
+    backgroundColor: '#191715',
+    transform: [{ scale: 1.01 }],
   },
 
-  roleIcon: {
-    width: 58,
-    height: 58,
+  cardAccent: {
+    position: 'absolute',
+    width: 48,
+    height: 3,
+    top: 0,
+    right: 13,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
+  },
+
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+
+  cardNumber: {
+    color: '#5D5752',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+
+  roleArtwork: {
+    width: 91,
+    height: 105,
+    alignSelf: 'center',
     borderRadius: 18,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 10,
   },
 
+  roleArtworkInner: {
+    width: 69,
+    height: 83,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   roleName: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: '#F2EDE5',
+    fontSize: 15,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 7,
+  },
+
+  teamBadge: {
+    minHeight: 25,
+    borderRadius: 9,
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  teamDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginLeft: 5,
+  },
+
+  teamText: {
+    fontSize: 8,
     fontWeight: '800',
     textAlign: 'center',
   },
 
-  teamBadge: {
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    marginTop: 7,
-  },
-
-  teamText: {
-    fontSize: 10,
-    fontWeight: '700',
-    textAlign: 'center',
+  cardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 4,
   },
 
   tapText: {
-    color: '#676772',
-    fontSize: 9,
-    marginTop: 11,
+    color: '#6F6964',
+    fontSize: 8,
+    fontWeight: '700',
   },
 
   detailsCard: {
-    backgroundColor: '#19191F',
-    borderRadius: 20,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#171514',
+    borderRadius: 21,
     borderWidth: 1,
-    borderColor: '#3A3528',
     padding: 17,
     marginTop: 4,
-    marginBottom: 22,
+    marginBottom: 23,
+  },
+
+  detailsAccent: {
+    position: 'absolute',
+    top: 0,
+    right: 18,
+    width: 65,
+    height: 3,
+    borderBottomLeftRadius: 5,
+    borderBottomRightRadius: 5,
   },
 
   detailsHeader: {
@@ -1046,67 +1258,81 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  detailsIcon: {
-    width: 57,
-    height: 57,
+  detailsArtwork: {
+    width: 60,
+    height: 60,
     borderRadius: 17,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 13,
+    marginLeft: 12,
   },
 
   detailsTitleContainer: {
     flex: 1,
   },
 
+  detailsOverline: {
+    color: '#77716C',
+    fontSize: 9,
+    fontWeight: '700',
+    marginBottom: 2,
+    textAlign: 'right',
+  },
+
   detailsTitle: {
-    color: '#FFFFFF',
+    color: '#F6F0E8',
     fontSize: 19,
-    fontWeight: '800',
+    fontWeight: '900',
+    textAlign: 'right',
   },
 
   detailsTeam: {
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 4,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 3,
+    textAlign: 'right',
   },
 
   closeButton: {
     width: 34,
     height: 34,
-    borderRadius: 10,
-    backgroundColor: '#24242B',
+    borderRadius: 11,
+    backgroundColor: '#24201E',
+    borderWidth: 1,
+    borderColor: '#38322E',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   detailSeparator: {
     height: 1,
-    backgroundColor: '#2A2A31',
+    backgroundColor: '#2C2825',
     marginVertical: 15,
   },
 
   detailDescription: {
-    color: '#B3B3BC',
-    fontSize: 13,
-    lineHeight: 21,
+    color: '#B1ABA4',
+    fontSize: 12,
+    lineHeight: 20,
     textAlign: 'right',
-    marginBottom: 14,
+    marginBottom: 9,
   },
 
   infoBox: {
-    backgroundColor: '#15151A',
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: '#11100F',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#2A2724',
+    padding: 11,
     flexDirection: 'row',
     marginTop: 8,
   },
 
   infoIcon: {
-    width: 35,
-    height: 35,
-    borderRadius: 10,
-    backgroundColor: '#292417',
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -1117,24 +1343,24 @@ const styles = StyleSheet.create({
   },
 
   infoTitle: {
-    color: '#D7A94B',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
     marginBottom: 3,
+    textAlign: 'right',
   },
 
   infoText: {
-    color: '#9E9EA8',
+    color: '#94908B',
     fontSize: 11,
     lineHeight: 18,
     textAlign: 'right',
   },
 
   rulesHeader: {
-    backgroundColor: '#19191F',
-    borderRadius: 18,
+    backgroundColor: '#171514',
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: '#292930',
+    borderColor: '#302C29',
     minHeight: 72,
     padding: 13,
     flexDirection: 'row',
@@ -1146,36 +1372,50 @@ const styles = StyleSheet.create({
   rulesHeaderRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
 
   rulesIcon: {
-    width: 45,
-    height: 45,
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    backgroundColor: '#292417',
+    backgroundColor: '#292117',
+    borderWidth: 1,
+    borderColor: '#443720',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 11,
   },
 
   rulesTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+    color: '#F2ECE4',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'right',
   },
 
   rulesSubtitle: {
-    color: '#777782',
-    fontSize: 10,
+    color: '#77716C',
+    fontSize: 9,
     marginTop: 3,
+    textAlign: 'right',
+  },
+
+  rulesArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#211F1D',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   rulesContainer: {
-    backgroundColor: '#19191F',
-    borderRadius: 18,
+    backgroundColor: '#151413',
+    borderRadius: 19,
     borderWidth: 1,
-    borderColor: '#292930',
-    paddingHorizontal: 14,
+    borderColor: '#302C29',
+    paddingHorizontal: 13,
     marginBottom: 16,
   },
 
@@ -1187,14 +1427,16 @@ const styles = StyleSheet.create({
 
   ruleRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#28282F',
+    borderBottomColor: '#292623',
   },
 
   ruleNumber: {
     width: 25,
     height: 25,
     borderRadius: 8,
-    backgroundColor: '#2A2417',
+    backgroundColor: '#282117',
+    borderWidth: 1,
+    borderColor: '#443720',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 8,
@@ -1202,15 +1444,15 @@ const styles = StyleSheet.create({
 
   ruleNumberText: {
     color: '#D7A94B',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
   },
 
   ruleIconContainer: {
     width: 38,
     height: 38,
     borderRadius: 11,
-    backgroundColor: '#222228',
+    backgroundColor: '#211F1D',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
@@ -1221,35 +1463,41 @@ const styles = StyleSheet.create({
   },
 
   ruleTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
+    color: '#F1ECE5',
+    fontSize: 12,
+    fontWeight: '900',
     marginBottom: 4,
+    textAlign: 'right',
   },
 
   ruleText: {
-    color: '#8F8F9A',
-    fontSize: 11,
-    lineHeight: 18,
+    color: '#85807B',
+    fontSize: 10,
+    lineHeight: 17,
     textAlign: 'right',
   },
 
   friendsCard: {
-    backgroundColor: '#19191F',
+    backgroundColor: '#171514',
     borderWidth: 1,
-    borderColor: '#3A3528',
-    borderRadius: 19,
+    borderColor: '#443720',
+    borderRadius: 20,
     padding: 14,
     marginTop: 8,
+  },
+
+  friendsTop: {
     flexDirection: 'row',
     alignItems: 'center',
   },
 
   friendsIcon: {
-    width: 47,
-    height: 47,
+    width: 48,
+    height: 48,
     borderRadius: 14,
-    backgroundColor: '#292417',
+    backgroundColor: '#292117',
+    borderWidth: 1,
+    borderColor: '#443720',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 11,
@@ -1260,31 +1508,35 @@ const styles = StyleSheet.create({
   },
 
   friendsTitle: {
-    color: '#FFFFFF',
+    color: '#F3EDE5',
     fontSize: 14,
-    fontWeight: '800',
+    fontWeight: '900',
+    textAlign: 'right',
   },
 
   friendsText: {
-    color: '#81818C',
+    color: '#817B75',
     fontSize: 10,
     lineHeight: 16,
     marginTop: 3,
+    textAlign: 'right',
   },
 
   friendsButton: {
-    minHeight: 38,
-    borderRadius: 11,
+    minHeight: 42,
+    borderRadius: 12,
     backgroundColor: '#D7A94B',
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 13,
   },
 
   friendsButtonText: {
     color: '#17171D',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '900',
   },
 
@@ -1293,9 +1545,9 @@ const styles = StyleSheet.create({
   },
 
   bottomNav: {
-    backgroundColor: '#15151A',
+    backgroundColor: '#121110',
     borderTopWidth: 1,
-    borderTopColor: '#292930',
+    borderTopColor: '#292623',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
@@ -1318,7 +1570,7 @@ const styles = StyleSheet.create({
   },
 
   navText: {
-    color: '#777782',
+    color: '#77716C',
     fontSize: 9,
     marginTop: 3,
   },
@@ -1326,7 +1578,7 @@ const styles = StyleSheet.create({
   navTextActive: {
     color: '#D7A94B',
     fontSize: 9,
-    fontWeight: '800',
+    fontWeight: '900',
     marginTop: 1,
   },
 });
