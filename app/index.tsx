@@ -51,7 +51,7 @@ export default function OnboardingScreen() {
    * التحقق من حالة الـ Onboarding.
    *
    * إذا كان المستخدم أنهى الـ Onboarding سابقًا،
-   * لا نعرضه مرة أخرى وننتقل مباشرة إلى الغرف.
+   * لا نعرضه مرة أخرى وننتقل مباشرة إلى الصفحة الرئيسية.
    */
   useEffect(() => {
     let mounted = true;
@@ -68,7 +68,7 @@ export default function OnboardingScreen() {
         }
 
         if (completed === 'true') {
-          router.replace('/rooms');
+          router.replace('/home');
           return;
         }
       } catch (error) {
@@ -93,11 +93,10 @@ export default function OnboardingScreen() {
   /*
    * إنهاء الـ Onboarding.
    *
-   * مهم جدًا:
-   * لا نرجع إلى '/' لأن '/' هو index.tsx نفسه،
-   * وهذا كان سبب الحلقة اللانهائية.
+   * لا نعود إلى "/"
+   * لأن "/" هو index.tsx نفسه.
    *
-   * بدلًا من ذلك ننتقل مباشرة إلى /rooms.
+   * بعد الانتهاء نذهب مباشرة إلى الصفحة الرئيسية.
    */
   const finishOnboarding = async () => {
     try {
@@ -112,7 +111,7 @@ export default function OnboardingScreen() {
       );
     }
 
-    router.replace('/rooms');
+    router.replace('/home');
   };
 
   const nextSlide = () => {
