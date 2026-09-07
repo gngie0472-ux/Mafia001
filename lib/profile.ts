@@ -9,43 +9,121 @@ export type Profile = {
   rating: number;
 };
 
+/**
+ * التأكد من وجود جلسة تسجيل دخول صالحة.
+ *
+ * في React Native نعتمد أولًا على getSession()
+ * لأن الجلسة محفوظة في AsyncStorage بواسطة supabase.ts.
+ *
+ * ثم نستخدم getUser() للتأكد من هوية المستخدم
+ * عندما تكون الجلسة موجودة.
+ */
 async function ensureAuth() {
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  try {
+    const {
+      data: sessionData,
+      error: sessionError,
+    } = await supabase.auth.getSession();
 
-  if (error) {
+    if (sessionError) {
+      console.error(
+        'getSession error:',
+        sessionError
+      );
+
+      throw new Error(
+        'تعذر التحقق من جلسة تسجيل الدخول.'
+      );
+    }
+
+    const session =
+      sessionData?.session;
+
+    if (!session?.access_token) {
+      throw new Error(
+        'يجب تسجيل الدخول أولاً.'
+      );
+    }
+
+    /*
+     * بعد التأكد من وجود session،
+     * نحصل على المستخدم الحالي.
+     */
+    const {
+      data: userData,
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error(
+        'getUser error:',
+        userError
+      );
+
+      throw new Error(
+        'جلسة تسجيل الدخول غير صالحة. يرجى تسجيل الدخول مرة أخرى.'
+      );
+    }
+
+    const user =
+      userData?.user;
+
+    if (!user) {
+      throw new Error(
+        'يجب تسجيل الدخول أولاً.'
+      );
+    }
+
+    return user;
+  } catch (error: any) {
+    console.error(
+      'ensureAuth error:',
+      error
+    );
+
+    /*
+     * نحول أخطاء Supabase مثل:
+     * Auth session missing!
+     * إلى رسالة مفهومة للمستخدم.
+     */
+    if (
+      error?.message ===
+        'Auth session missing!' ||
+      error?.name ===
+        'AuthSessionMissingError'
+    ) {
+      throw new Error(
+        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
+      );
+    }
+
     throw error;
   }
-
-  if (!user) {
-    throw new Error(
-      'يجب تسجيل الدخول أولاً.'
-    );
-  }
-
-  return user;
 }
 
 export async function getCurrentUserId(): Promise<string> {
-  const user = await ensureAuth();
+  const user =
+    await ensureAuth();
+
   return user.id;
 }
 
 export async function getMyProfile(): Promise<Profile> {
   await ensureAuth();
 
-  const { data, error } =
-    await supabase.rpc(
-      'get_my_profile'
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'get_my_profile'
+  );
 
   if (error) {
     console.error(
       'getMyProfile error:',
       error
     );
+
     throw error;
   }
 
@@ -62,6 +140,10 @@ export async function saveMyProfile(
   username: string,
   avatarUrl?: string | null
 ): Promise<Profile> {
+  /*
+   * مهم:
+   * نتحقق من الجلسة قبل استدعاء RPC.
+   */
   await ensureAuth();
 
   const cleanName =
@@ -73,21 +155,39 @@ export async function saveMyProfile(
     );
   }
 
-  const { data, error } =
-    await supabase.rpc(
-      'ensure_my_profile',
-      {
-        p_username: cleanName,
-        p_avatar_url:
-          avatarUrl ?? null,
-      }
-    );
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    'ensure_my_profile',
+    {
+      p_username:
+        cleanName,
+
+      p_avatar_url:
+        avatarUrl ?? null,
+    }
+  );
 
   if (error) {
     console.error(
       'saveMyProfile error:',
       error
     );
+
+    /*
+     * إذا كان الخطأ بسبب انتهاء الجلسة،
+     * نعرض رسالة عربية واضحة.
+     */
+    if (
+      error.message ===
+        'Auth session missing!'
+    ) {
+      throw new Error(
+        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
+      );
+    }
+
     throw error;
   }
 
@@ -103,7 +203,8 @@ export async function saveMyProfile(
 export async function uploadAvatar(
   imageUri: string
 ): Promise<string> {
-  const user = await ensureAuth();
+  const user =
+    await ensureAuth();
 
   if (!imageUri) {
     throw new Error(
@@ -126,7 +227,9 @@ export async function uploadAvatar(
   const filePath =
     `${user.id}/avatar-${Date.now()}.jpg`;
 
-  const { error: uploadError } =
+  const {
+    error: uploadError,
+  } =
     await supabase.storage
       .from('avatars')
       .upload(
@@ -135,6 +238,7 @@ export async function uploadAvatar(
         {
           contentType:
             'image/jpeg',
+
           upsert: true,
         }
       );
@@ -144,6 +248,16 @@ export async function uploadAvatar(
       'uploadAvatar error:',
       uploadError
     );
+
+    if (
+      uploadError.message ===
+        'Auth session missing!'
+    ) {
+      throw new Error(
+        'انتهت جلسة تسجيل الدخول. يرجى تسجيل الدخول مرة أخرى.'
+      );
+    }
+
     throw uploadError;
   }
 
@@ -152,9 +266,13 @@ export async function uploadAvatar(
   } =
     supabase.storage
       .from('avatars')
-      .getPublicUrl(filePath);
+      .getPublicUrl(
+        filePath
+      );
 
-  if (!publicData?.publicUrl) {
+  if (
+    !publicData?.publicUrl
+  ) {
     throw new Error(
       'تعذر الحصول على رابط الصورة.'
     );
@@ -167,7 +285,15 @@ export async function saveMyProfileWithAvatar(
   username: string,
   imageUri?: string | null
 ): Promise<Profile> {
-  let avatarUrl: string | null = null;
+  let avatarUrl:
+    | string
+    | null = null;
+
+  /*
+   * نتأكد من تسجيل الدخول قبل بدء عملية الحفظ
+   * سواء كانت هناك صورة أم لا.
+   */
+  await ensureAuth();
 
   if (imageUri) {
     avatarUrl =
