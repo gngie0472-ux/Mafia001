@@ -25,6 +25,7 @@ import {
 
 import { supabase } from '../../lib/supabase';
 import { getMyProfile } from '../../lib/profile';
+
 import {
   getGameState,
   submitDayVote,
@@ -37,6 +38,31 @@ import type {
 } from '../../lib/game';
 
 import { getLiveKitToken } from '../../lib/livekit';
+
+/* =========================================================
+   LIVEKIT
+========================================================= */
+
+import {
+  AudioSession,
+  registerGlobals,
+} from '@livekit/react-native';
+
+/*
+ * IMPORTANT:
+ * registerGlobals must be called before using LiveKit.
+ *
+ * It is intentionally outside the component so it is not
+ * executed every time the microphone button is pressed.
+ */
+try {
+  registerGlobals();
+} catch (error) {
+  console.error(
+    'LiveKit registerGlobals error:',
+    error,
+  );
+}
 
 /* =========================================================
    TYPES
@@ -63,8 +89,14 @@ type VoiceRoom = any;
    HELPERS
 ========================================================= */
 
-function getErrorMessage(error: any, fallback: string) {
-  if (typeof error === 'string' && error.trim()) {
+function getErrorMessage(
+  error: any,
+  fallback: string,
+) {
+  if (
+    typeof error === 'string' &&
+    error.trim()
+  ) {
     return error;
   }
 
@@ -75,6 +107,13 @@ function getErrorMessage(error: any, fallback: string) {
     return error.message;
   }
 
+  if (
+    error?.reason &&
+    typeof error.reason === 'string'
+  ) {
+    return error.reason;
+  }
+
   return fallback;
 }
 
@@ -83,7 +122,8 @@ function getSecondsLeft(
 ) {
   if (!value) return 0;
 
-  const timestamp = new Date(value).getTime();
+  const timestamp =
+    new Date(value).getTime();
 
   if (!Number.isFinite(timestamp)) {
     return 0;
@@ -103,9 +143,8 @@ function formatTime(seconds: number) {
     Math.floor(seconds),
   );
 
-  const minutes = Math.floor(
-    safe / 60,
-  );
+  const minutes =
+    Math.floor(safe / 60);
 
   const remaining = safe % 60;
 
@@ -121,7 +160,9 @@ function formatTime(seconds: number) {
 function roleLabel(
   role: string | null | undefined,
 ) {
-  switch (String(role).toLowerCase()) {
+  switch (
+    String(role).toLowerCase()
+  ) {
     case 'mafia':
       return 'المافيا';
 
@@ -167,7 +208,9 @@ function PlayerAvatar({
         },
       ]}
     >
-      <Text style={styles.avatarText}>
+      <Text
+        style={styles.avatarText}
+      >
         {initials}
       </Text>
     </View>
@@ -186,15 +229,18 @@ export default function MafiaGameScreen() {
       code?: string | string[];
     }>();
 
-  const roomId = Array.isArray(params.code)
+  const roomId = Array.isArray(
+    params.code,
+  )
     ? params.code[0]
     : params.code;
 
-  const mountedRef = useRef(true);
+  const mountedRef =
+    useRef(true);
 
-  /* -------------------------------------------------------
+  /* =======================================================
      DATA
-  ------------------------------------------------------- */
+  ======================================================= */
 
   const [gameState, setGameState] =
     useState<GameState | null>(null);
@@ -223,12 +269,18 @@ export default function MafiaGameScreen() {
   const [currentUserId, setCurrentUserId] =
     useState('');
 
-  /* -------------------------------------------------------
-     VOICE
-  ------------------------------------------------------- */
+  /* =======================================================
+     VOICE STATE
+  ======================================================= */
 
   const voiceRoomRef =
     useRef<VoiceRoom | null>(null);
+
+  const voiceConnectingRef =
+    useRef(false);
+
+  const audioSessionStartedRef =
+    useRef(false);
 
   const [voiceConnected, setVoiceConnected] =
     useState(false);
@@ -248,7 +300,10 @@ export default function MafiaGameScreen() {
       if (!roomId) return;
 
       try {
-        if (showLoader && mountedRef.current) {
+        if (
+          showLoader &&
+          mountedRef.current
+        ) {
           setLoading(true);
         }
 
@@ -275,7 +330,9 @@ export default function MafiaGameScreen() {
           error,
         );
 
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           Alert.alert(
             'خطأ',
             getErrorMessage(
@@ -285,7 +342,9 @@ export default function MafiaGameScreen() {
           );
         }
       } finally {
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setLoading(false);
         }
       }
@@ -329,7 +388,9 @@ export default function MafiaGameScreen() {
           (data || []) as Message[];
 
         if (!rows.length) {
-          if (mountedRef.current) {
+          if (
+            mountedRef.current
+          ) {
             setMessages([]);
           }
 
@@ -339,7 +400,8 @@ export default function MafiaGameScreen() {
         const userIds = [
           ...new Set(
             rows.map(
-              (item) => item.user_id,
+              (item) =>
+                item.user_id,
             ),
           ),
         ];
@@ -360,12 +422,18 @@ export default function MafiaGameScreen() {
           new Map<
             string,
             {
-              username: string | null;
-              avatar_url: string | null;
+              username:
+                | string
+                | null;
+              avatar_url:
+                | string
+                | null;
             }
           >();
 
-        (profiles || []).forEach(
+        (
+          profiles || []
+        ).forEach(
           (profile: any) => {
             profileMap.set(
               profile.user_id,
@@ -394,8 +462,12 @@ export default function MafiaGameScreen() {
               null,
           }));
 
-        if (mountedRef.current) {
-          setMessages(normalized);
+        if (
+          mountedRef.current
+        ) {
+          setMessages(
+            normalized,
+          );
         }
       } catch (error) {
         console.error(
@@ -502,23 +574,24 @@ export default function MafiaGameScreen() {
 
     let cancelled = false;
 
-    const heartbeat = async () => {
-      if (cancelled) return;
+    const heartbeat =
+      async () => {
+        if (cancelled) return;
 
-      try {
-        await supabase.rpc(
-          'heartbeat_room',
-          {
-            p_room_id: roomId,
-          },
-        );
-      } catch (error) {
-        console.error(
-          'heartbeat error:',
-          error,
-        );
-      }
-    };
+        try {
+          await supabase.rpc(
+            'heartbeat_room',
+            {
+              p_room_id: roomId,
+            },
+          );
+        } catch (error) {
+          console.error(
+            'heartbeat error:',
+            error,
+          );
+        }
+      };
 
     void heartbeat();
 
@@ -547,13 +620,6 @@ export default function MafiaGameScreen() {
 
   const me =
     gameState?.me || null;
-
-  const currentPlayer =
-    players.find(
-      (player) =>
-        player.user_id ===
-        currentUserId,
-    ) || null;
 
   const myAlive =
     Boolean(me?.alive);
@@ -588,20 +654,6 @@ export default function MafiaGameScreen() {
       [players],
     );
 
-  const selectablePlayers =
-    useMemo(
-      () =>
-        alivePlayers.filter(
-          (player) =>
-            player.user_id !==
-            currentUserId,
-        ),
-      [
-        alivePlayers,
-        currentUserId,
-      ],
-    );
-
   const myRole =
     me?.role || null;
 
@@ -616,6 +668,60 @@ export default function MafiaGameScreen() {
     myAlive &&
     !gameFinished &&
     !busy;
+
+  /* =======================================================
+     ADVANCE PHASE
+  ======================================================= */
+
+  const advancingRef =
+    useRef(false);
+
+  const advancePhase =
+    useCallback(async () => {
+      if (
+        !roomId ||
+        advancingRef.current
+      ) {
+        return;
+      }
+
+      advancingRef.current =
+        true;
+
+      try {
+        await supabase.rpc(
+          'advance_mafia_phase',
+          {
+            p_room_id: roomId,
+          },
+        );
+
+        await loadGame(false);
+      } catch (error: any) {
+        const message =
+          getErrorMessage(
+            error,
+            '',
+          );
+
+        if (
+          !message.includes(
+            'phase_not_finished',
+          )
+        ) {
+          console.error(
+            'advance phase error:',
+            error,
+          );
+        }
+      } finally {
+        advancingRef.current =
+          false;
+      }
+    }, [
+      roomId,
+      loadGame,
+    ]);
 
   /* =======================================================
      COUNTDOWN
@@ -634,7 +740,9 @@ export default function MafiaGameScreen() {
       const remaining =
         getSecondsLeft(end);
 
-      if (mountedRef.current) {
+      if (
+        mountedRef.current
+      ) {
         setSecondsLeft(
           remaining,
         );
@@ -664,59 +772,8 @@ export default function MafiaGameScreen() {
   }, [
     room?.phase_ends_at,
     room?.status,
+    advancePhase,
   ]);
-
-  /* =======================================================
-     ADVANCE PHASE
-  ======================================================= */
-
-  const advancingRef =
-    useRef(false);
-
-  const advancePhase =
-    useCallback(async () => {
-      if (
-        !roomId ||
-        advancingRef.current
-      ) {
-        return;
-      }
-
-      advancingRef.current = true;
-
-      try {
-        await supabase.rpc(
-          'advance_mafia_phase',
-          {
-            p_room_id: roomId,
-          },
-        );
-
-        await loadGame(false);
-      } catch (error: any) {
-        const message =
-          getErrorMessage(
-            error,
-            '',
-          );
-
-        if (
-          !message.includes(
-            'phase_not_finished',
-          )
-        ) {
-          console.error(
-            'advance phase error:',
-            error,
-          );
-        }
-      } finally {
-        advancingRef.current = false;
-      }
-    }, [
-      roomId,
-      loadGame,
-    ]);
 
   /* =======================================================
      SELECT TARGET
@@ -812,7 +869,9 @@ export default function MafiaGameScreen() {
           ),
         );
       } finally {
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setBusy(false);
         }
       }
@@ -853,10 +912,8 @@ export default function MafiaGameScreen() {
         }
 
         if (
-          action ===
-            'kill' &&
-          myRole !==
-            'mafia'
+          action === 'kill' &&
+          myRole !== 'mafia'
         ) {
           Alert.alert(
             'غير مسموح',
@@ -866,10 +923,8 @@ export default function MafiaGameScreen() {
         }
 
         if (
-          action ===
-            'protect' &&
-          myRole !==
-            'doctor'
+          action === 'protect' &&
+          myRole !== 'doctor'
         ) {
           Alert.alert(
             'غير مسموح',
@@ -881,8 +936,7 @@ export default function MafiaGameScreen() {
         if (
           action ===
             'investigate' &&
-          myRole !==
-            'detective'
+          myRole !== 'detective'
         ) {
           Alert.alert(
             'غير مسموح',
@@ -932,7 +986,8 @@ export default function MafiaGameScreen() {
           ) {
             Alert.alert(
               'نتيجة التحقيق',
-              result.result.is_mafia
+              result.result
+                .is_mafia
                 ? 'هذا اللاعب من المافيا.'
                 : 'هذا اللاعب ليس من المافيا.',
             );
@@ -953,7 +1008,9 @@ export default function MafiaGameScreen() {
             ),
           );
         } finally {
-          if (mountedRef.current) {
+          if (
+            mountedRef.current
+          ) {
             setBusy(false);
           }
         }
@@ -1039,7 +1096,9 @@ export default function MafiaGameScreen() {
           ),
         );
       } finally {
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setBusy(false);
         }
       }
@@ -1098,7 +1157,9 @@ export default function MafiaGameScreen() {
           ),
         );
       } finally {
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setBusy(false);
         }
       }
@@ -1118,6 +1179,8 @@ export default function MafiaGameScreen() {
       if (!roomId) return;
 
       try {
+        await disconnectVoice();
+
         await supabase
           .from('room_players')
           .delete()
@@ -1144,6 +1207,7 @@ export default function MafiaGameScreen() {
       roomId,
       currentUserId,
       router,
+      disconnectVoice,
     ]);
 
   /* =======================================================
@@ -1228,47 +1292,112 @@ export default function MafiaGameScreen() {
     );
 
   /* =======================================================
-     VOICE
+     VOICE - DISCONNECT
   ======================================================= */
 
   const disconnectVoice =
     useCallback(async () => {
       try {
-        if (
-          voiceRoomRef.current
-        ) {
-          await voiceRoomRef.current.disconnect();
-        }
-      } catch (error) {
-        console.error(
-          'disconnect voice:',
-          error,
-        );
-      } finally {
+        const voiceRoom =
+          voiceRoomRef.current;
+
         voiceRoomRef.current =
           null;
 
-        if (mountedRef.current) {
+        if (voiceRoom) {
+          try {
+            await voiceRoom.disconnect();
+          } catch (error) {
+            console.error(
+              'LiveKit disconnect error:',
+              error,
+            );
+          }
+        }
+      } finally {
+        voiceConnectingRef.current =
+          false;
+
+        if (
+          mountedRef.current
+        ) {
           setVoiceConnected(
             false,
           );
           setMicEnabled(false);
+          setVoiceLoading(false);
+        }
+
+        if (
+          audioSessionStartedRef.current
+        ) {
+          try {
+            await AudioSession.stopAudioSession();
+          } catch (error) {
+            console.error(
+              'AudioSession stop error:',
+              error,
+            );
+          } finally {
+            audioSessionStartedRef.current =
+              false;
+          }
         }
       }
     }, []);
 
+  /* =======================================================
+     VOICE - CONNECT
+  ======================================================= */
+
   const connectVoice =
     useCallback(async () => {
+      if (!roomId) {
+        return;
+      }
+
       if (
-        !roomId ||
         voiceRoomRef.current
       ) {
         return;
       }
 
-      setVoiceLoading(true);
+      if (
+        voiceConnectingRef.current
+      ) {
+        return;
+      }
+
+      voiceConnectingRef.current =
+        true;
+
+      if (
+        mountedRef.current
+      ) {
+        setVoiceLoading(true);
+      }
+
+      let voiceRoom:
+        | VoiceRoom
+        | null = null;
 
       try {
+        /*
+         * 1. Start native AudioSession BEFORE
+         *    connecting to LiveKit.
+         */
+        if (
+          !audioSessionStartedRef.current
+        ) {
+          await AudioSession.startAudioSession();
+
+          audioSessionStartedRef.current =
+            true;
+        }
+
+        /*
+         * 2. Get LiveKit token.
+         */
         const token =
           await getLiveKitToken(
             roomId,
@@ -1283,16 +1412,22 @@ export default function MafiaGameScreen() {
           );
         }
 
+        /*
+         * 3. Import Room only after the
+         *    native audio environment is ready.
+         */
         const livekit =
           await import(
             '@livekit/react-native'
           );
 
-        try {
-          livekit.registerGlobals();
-        } catch {}
+        /*
+         * registerGlobals is normally called
+         * at module/app startup. Calling it here
+         * is intentionally NOT required.
+         */
 
-        const voiceRoom =
+        voiceRoom =
           new livekit.Room();
 
         voiceRoomRef.current =
@@ -1301,6 +1436,14 @@ export default function MafiaGameScreen() {
         voiceRoom.on(
           livekit.RoomEvent.Disconnected,
           () => {
+            if (
+              voiceRoomRef.current ===
+              voiceRoom
+            ) {
+              voiceRoomRef.current =
+                null;
+            }
+
             if (
               mountedRef.current
             ) {
@@ -1311,12 +1454,12 @@ export default function MafiaGameScreen() {
                 false,
               );
             }
-
-            voiceRoomRef.current =
-              null;
           },
         );
 
+        /*
+         * 4. Connect.
+         */
         await voiceRoom.connect(
           token.server_url,
           token.token,
@@ -1325,33 +1468,113 @@ export default function MafiaGameScreen() {
         if (
           !mountedRef.current
         ) {
-          await voiceRoom.disconnect();
+          try {
+            await voiceRoom.disconnect();
+          } catch {}
+
           return;
         }
 
         setVoiceConnected(
           true,
         );
-      } catch (error: any) {
-        voiceRoomRef.current =
-          null;
 
-        Alert.alert(
-          'الصوت',
-          getErrorMessage(
-            error,
-            'تعذر الاتصال بالصوت.',
-          ),
+        /*
+         * 5. Enable microphone.
+         *
+         * The original code only connected first
+         * and waited for a second press. This version
+         * enables the microphone immediately after
+         * successful connection.
+         */
+        await voiceRoom.localParticipant.setMicrophoneEnabled(
+          true,
         );
+
+        if (
+          mountedRef.current
+        ) {
+          setMicEnabled(true);
+        }
+      } catch (error: any) {
+        console.error(
+          'connectVoice error:',
+          error,
+        );
+
+        if (
+          voiceRoom &&
+          voiceRoomRef.current ===
+            voiceRoom
+        ) {
+          voiceRoomRef.current =
+            null;
+
+          try {
+            await voiceRoom.disconnect();
+          } catch {}
+        }
+
+        /*
+         * If connection failed, don't leave the
+         * native audio session running.
+         */
+        if (
+          audioSessionStartedRef.current
+        ) {
+          try {
+            await AudioSession.stopAudioSession();
+          } catch {}
+
+          audioSessionStartedRef.current =
+            false;
+        }
+
+        if (
+          mountedRef.current
+        ) {
+          setVoiceConnected(
+            false,
+          );
+          setMicEnabled(false);
+
+          Alert.alert(
+            'الميكروفون',
+            getErrorMessage(
+              error,
+              'تعذر تشغيل الميكروفون. تأكد من منح التطبيق صلاحية استخدام الميكروفون.',
+            ),
+          );
+        }
       } finally {
-        if (mountedRef.current) {
+        voiceConnectingRef.current =
+          false;
+
+        if (
+          mountedRef.current
+        ) {
           setVoiceLoading(false);
         }
       }
     }, [roomId]);
 
+  /* =======================================================
+     VOICE - TOGGLE MICROPHONE
+  ======================================================= */
+
   const toggleMicrophone =
     useCallback(async () => {
+      if (
+        voiceConnectingRef.current ||
+        voiceLoading
+      ) {
+        return;
+      }
+
+      /*
+       * First press:
+       * connect + start microphone.
+       */
       if (
         !voiceRoomRef.current
       ) {
@@ -1359,18 +1582,39 @@ export default function MafiaGameScreen() {
         return;
       }
 
+      const voiceRoom =
+        voiceRoomRef.current;
+
+      if (!voiceRoom) {
+        await connectVoice();
+        return;
+      }
+
       try {
+        if (
+          mountedRef.current
+        ) {
+          setVoiceLoading(true);
+        }
+
         const next =
           !micEnabled;
 
-        await voiceRoomRef.current.localParticipant.setMicrophoneEnabled(
+        await voiceRoom.localParticipant.setMicrophoneEnabled(
           next,
         );
 
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setMicEnabled(next);
         }
       } catch (error: any) {
+        console.error(
+          'toggleMicrophone error:',
+          error,
+        );
+
         Alert.alert(
           'الميكروفون',
           getErrorMessage(
@@ -1378,11 +1622,22 @@ export default function MafiaGameScreen() {
             'تعذر تغيير حالة الميكروفون.',
           ),
         );
+      } finally {
+        if (
+          mountedRef.current
+        ) {
+          setVoiceLoading(false);
+        }
       }
     }, [
       connectVoice,
       micEnabled,
+      voiceLoading,
     ]);
+
+  /* =======================================================
+     VOICE CLEANUP
+  ======================================================= */
 
   useEffect(() => {
     return () => {
@@ -1406,7 +1661,9 @@ export default function MafiaGameScreen() {
           loadMessages(),
         ]);
       } finally {
-        if (mountedRef.current) {
+        if (
+          mountedRef.current
+        ) {
           setRefreshing(false);
         }
       }
@@ -1419,7 +1676,10 @@ export default function MafiaGameScreen() {
      LOADING
   ======================================================= */
 
-  if (loading && !gameState) {
+  if (
+    loading &&
+    !gameState
+  ) {
     return (
       <View
         style={styles.center}
@@ -1459,7 +1719,9 @@ export default function MafiaGameScreen() {
         </Text>
 
         <Pressable
-          style={styles.primaryButton}
+          style={
+            styles.primaryButton
+          }
           onPress={() =>
             router.replace(
               '/rooms',
@@ -1483,7 +1745,9 @@ export default function MafiaGameScreen() {
   ======================================================= */
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+    >
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={
@@ -1493,7 +1757,9 @@ export default function MafiaGameScreen() {
       >
         {/* HEADER */}
 
-        <View style={styles.header}>
+        <View
+          style={styles.header}
+        >
           <Pressable
             onPress={() =>
               Alert.alert(
@@ -1515,7 +1781,9 @@ export default function MafiaGameScreen() {
                 ],
               )
             }
-            style={styles.backButton}
+            style={
+              styles.backButton
+            }
           >
             <Text
               style={styles.backText}
@@ -1525,7 +1793,9 @@ export default function MafiaGameScreen() {
           </Pressable>
 
           <View
-            style={styles.headerCenter}
+            style={
+              styles.headerCenter
+            }
           >
             <Text
               style={styles.roomName}
@@ -1593,7 +1863,9 @@ export default function MafiaGameScreen() {
               style={styles.timerBox}
             >
               <Text
-                style={styles.timerLabel}
+                style={
+                  styles.timerLabel
+                }
               >
                 الوقت
               </Text>
@@ -1624,9 +1896,7 @@ export default function MafiaGameScreen() {
             <Text
               style={styles.roleTitle}
             >
-              {roleLabel(
-                myRole,
-              )}
+              {roleLabel(myRole)}
             </Text>
 
             <Text
@@ -1702,9 +1972,7 @@ export default function MafiaGameScreen() {
                   ]}
                 >
                   <PlayerAvatar
-                    player={
-                      player
-                    }
+                    player={player}
                   />
 
                   <View
@@ -1784,7 +2052,7 @@ export default function MafiaGameScreen() {
               <Text
                 style={styles.waitingText}
               >
-                عدد اللاعبين:{" "}
+                عدد اللاعبين:{' '}
                 {players.length}
               </Text>
 
@@ -1825,7 +2093,9 @@ export default function MafiaGameScreen() {
               style={styles.card}
             >
               <Text
-                style={styles.sectionTitle}
+                style={
+                  styles.sectionTitle
+                }
               >
                 {isNight
                   ? 'مهمتك الليلية'
@@ -1992,7 +2262,9 @@ export default function MafiaGameScreen() {
           style={styles.card}
         >
           <Text
-            style={styles.sectionTitle}
+            style={
+              styles.sectionTitle
+            }
           >
             💬 الدردشة
           </Text>
@@ -2001,9 +2273,11 @@ export default function MafiaGameScreen() {
             style={styles.chatBox}
           >
             {messages.length ===
-              0 ? (
+            0 ? (
               <Text
-                style={styles.emptyText}
+                style={
+                  styles.emptyText
+                }
               >
                 لا توجد رسائل بعد.
               </Text>
@@ -2038,11 +2312,11 @@ export default function MafiaGameScreen() {
                             styles.messageAvatarText
                           }
                         >
-                          {(message.username ||
-                            'P')
-                            .charAt(
-                              0,
-                            )
+                          {(
+                            message.username ||
+                            'P'
+                          )
+                            .charAt(0)
                             .toUpperCase()}
                         </Text>
                       </View>
@@ -2123,11 +2397,15 @@ export default function MafiaGameScreen() {
         {/* REFRESH */}
 
         <Pressable
-          style={styles.refreshButton}
+          style={
+            styles.refreshButton
+          }
           onPress={() => {
             void refresh();
           }}
-          disabled={refreshing}
+          disabled={
+            refreshing
+          }
         >
           <Text
             style={
@@ -2182,486 +2460,493 @@ export default function MafiaGameScreen() {
    STYLES
 ========================================================= */
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#050609',
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  content: {
-    paddingTop: 48,
-    paddingHorizontal: 16,
-    paddingBottom: 40,
-  },
-
-  center: {
-    flex: 1,
-    backgroundColor: '#050609',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-
-  loadingText: {
-    color: '#fff',
-    marginTop: 14,
-    fontSize: 15,
-  },
-
-  errorTitle: {
-    color: '#fff',
-    fontSize: 21,
-    fontWeight: '900',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-
-  errorText: {
-    color: '#aaa',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-
-  header: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-
-  backButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#11141a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  backText: {
-    color: '#fff',
-    fontSize: 34,
-    lineHeight: 38,
-  },
-
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-
-  roomName: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '900',
-  },
-
-  roomCode: {
-    color: '#777',
-    fontSize: 10,
-    marginTop: 4,
-  },
-
-  micButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: '#11141a',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  micButtonActive: {
-    backgroundColor: '#1c3827',
-  },
-
-  micText: {
-    fontSize: 20,
-  },
-
-  statusCard: {
-    backgroundColor: '#11141a',
-    borderWidth: 1,
-    borderColor: '#282c34',
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-
-  statusTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-
-  statusSub: {
-    color: '#8b8e96',
-    marginTop: 5,
-    fontSize: 13,
-  },
-
-  timerBox: {
-    alignItems: 'center',
-  },
-
-  timerLabel: {
-    color: '#777',
-    fontSize: 10,
-  },
-
-  timer: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '900',
-    marginTop: 2,
-  },
-
-  roleCard: {
-    backgroundColor: '#17151e',
-    borderWidth: 1,
-    borderColor: '#413650',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-  },
-
-  roleTitle: {
-    color: '#e1b85b',
-    fontSize: 24,
-    fontWeight: '900',
-    marginTop: 8,
-  },
-
-  roleStatus: {
-    color: '#aaa',
-    marginTop: 6,
-  },
-
-  card: {
-    backgroundColor: '#0f1217',
-    borderWidth: 1,
-    borderColor: '#252932',
-    borderRadius: 18,
-    padding: 15,
-    marginBottom: 12,
-  },
-
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-
-  sectionTitle: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '900',
-  },
-
-  count: {
-    color: '#888',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  playerRow: {
-    minHeight: 70,
-    borderRadius: 14,
-    backgroundColor: '#15181e',
-    marginTop: 8,
-    padding: 9,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#20242c',
-  },
-
-  playerSelected: {
-    borderColor: '#d7a94b',
-    backgroundColor: '#211d13',
-  },
-
-  playerDead: {
-    opacity: 0.45,
-  },
-
-  avatar: {
-    backgroundColor: '#252a34',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  avatarText: {
-    color: '#fff',
-    fontSize: 19,
-    fontWeight: '900',
-  },
-
-  playerInfo: {
-    flex: 1,
-    marginLeft: 11,
-  },
-
-  playerName: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-
-  playerStatus: {
-    color: '#777',
-    fontSize: 11,
-    marginTop: 4,
-  },
-
-  kickButton: {
-    paddingHorizontal: 11,
-    paddingVertical: 8,
-    borderRadius: 9,
-    backgroundColor: '#32191d',
-    marginLeft: 6,
-  },
-
-  kickText: {
-    color: '#ff9c9c',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-
-  selectedText: {
-    color: '#d7a94b',
-    fontSize: 22,
-    fontWeight: '900',
-    marginLeft: 8,
-  },
-
-  waitingText: {
-    color: '#999',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-
-  primaryButton: {
-    minHeight: 50,
-    borderRadius: 14,
-    backgroundColor: '#d7a94b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  disabledButton: {
-    opacity: 0.4,
-  },
-
-  primaryButtonText: {
-    color: '#080808',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  hint: {
-    color: '#777',
-    fontSize: 13,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 9,
-    marginTop: 12,
-  },
-
-  actionButton: {
-    minHeight: 48,
-    flex: 1,
-    minWidth: '30%',
-    borderRadius: 13,
-    backgroundColor: '#222731',
-    borderWidth: 1,
-    borderColor: '#353a45',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 10,
-  },
-
-  actionText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  voteButton: {
-    minHeight: 50,
-    marginTop: 12,
-    borderRadius: 13,
-    backgroundColor: '#7e242d',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  voteText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  eventCard: {
-    backgroundColor: '#16191f',
-    borderWidth: 1,
-    borderColor: '#292e37',
-    borderRadius: 16,
-    padding: 15,
-    marginBottom: 12,
-  },
-
-  eventTitle: {
-    color: '#d7a94b',
-    fontSize: 13,
-    fontWeight: '900',
-    marginBottom: 6,
-  },
-
-  eventText: {
-    color: '#ddd',
-    fontSize: 13,
-    lineHeight: 20,
-  },
-
-  chatBox: {
-    marginTop: 12,
-    maxHeight: 320,
-  },
-
-  emptyText: {
-    color: '#666',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-
-  messageRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-
-  messageAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-  },
-
-  messageAvatarPlaceholder: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#282d37',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  messageAvatarText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '900',
-  },
-
-  messageBody: {
-    flex: 1,
-    marginLeft: 9,
-    backgroundColor: '#171a20',
-    borderRadius: 12,
-    padding: 9,
-  },
-
-  messageUser: {
-    color: '#d7a94b',
-    fontSize: 11,
-    fontWeight: '900',
-    marginBottom: 3,
-  },
-
-  messageText: {
-    color: '#ddd',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-
-  messageInputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginTop: 10,
-  },
-
-  messageInput: {
-    flex: 1,
-    minHeight: 46,
-    maxHeight: 100,
-    borderRadius: 12,
-    backgroundColor: '#171a20',
-    borderWidth: 1,
-    borderColor: '#292e37',
-    color: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    textAlignVertical: 'top',
-  },
-
-  sendButton: {
-    minHeight: 46,
-    marginLeft: 8,
-    paddingHorizontal: 15,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  sendText: {
-    color: '#000',
-    fontSize: 13,
-    fontWeight: '900',
-  },
-
-  refreshButton: {
-    minHeight: 48,
-    borderRadius: 13,
-    backgroundColor: '#171a20',
-    borderWidth: 1,
-    borderColor: '#2b3039',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-
-  refreshText: {
-    color: '#ddd',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  leaveButton: {
-    minHeight: 50,
-    borderRadius: 13,
-    backgroundColor: '#251313',
-    borderWidth: 1,
-    borderColor: '#472020',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  leaveText: {
-    color: '#ff9b9b',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-});
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#050609',
+    },
+
+    scroll: {
+      flex: 1,
+    },
+
+    content: {
+      paddingTop: 48,
+      paddingHorizontal: 16,
+      paddingBottom: 40,
+    },
+
+    center: {
+      flex: 1,
+      backgroundColor: '#050609',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+    },
+
+    loadingText: {
+      color: '#fff',
+      marginTop: 14,
+      fontSize: 15,
+    },
+
+    errorTitle: {
+      color: '#fff',
+      fontSize: 21,
+      fontWeight: '900',
+      marginBottom: 10,
+      textAlign: 'center',
+    },
+
+    errorText: {
+      color: '#aaa',
+      fontSize: 14,
+      textAlign: 'center',
+      marginBottom: 24,
+    },
+
+    header: {
+      minHeight: 64,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 14,
+    },
+
+    backButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
+      backgroundColor: '#11141a',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    backText: {
+      color: '#fff',
+      fontSize: 34,
+      lineHeight: 38,
+    },
+
+    headerCenter: {
+      flex: 1,
+      alignItems: 'center',
+      paddingHorizontal: 10,
+    },
+
+    roomName: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '900',
+    },
+
+    roomCode: {
+      color: '#777',
+      fontSize: 10,
+      marginTop: 4,
+    },
+
+    micButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
+      backgroundColor: '#11141a',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    micButtonActive: {
+      backgroundColor: '#1c3827',
+    },
+
+    micText: {
+      fontSize: 20,
+    },
+
+    statusCard: {
+      backgroundColor: '#11141a',
+      borderWidth: 1,
+      borderColor: '#282c34',
+      borderRadius: 18,
+      padding: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+
+    statusTitle: {
+      color: '#fff',
+      fontSize: 20,
+      fontWeight: '900',
+    },
+
+    statusSub: {
+      color: '#8b8e96',
+      marginTop: 5,
+      fontSize: 13,
+    },
+
+    timerBox: {
+      alignItems: 'center',
+    },
+
+    timerLabel: {
+      color: '#777',
+      fontSize: 10,
+    },
+
+    timer: {
+      color: '#fff',
+      fontSize: 24,
+      fontWeight: '900',
+      marginTop: 2,
+    },
+
+    roleCard: {
+      backgroundColor: '#17151e',
+      borderWidth: 1,
+      borderColor: '#413650',
+      borderRadius: 18,
+      padding: 16,
+      marginBottom: 12,
+    },
+
+    roleTitle: {
+      color: '#e1b85b',
+      fontSize: 24,
+      fontWeight: '900',
+      marginTop: 8,
+    },
+
+    roleStatus: {
+      color: '#aaa',
+      marginTop: 6,
+    },
+
+    card: {
+      backgroundColor: '#0f1217',
+      borderWidth: 1,
+      borderColor: '#252932',
+      borderRadius: 18,
+      padding: 15,
+      marginBottom: 12,
+    },
+
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+
+    sectionTitle: {
+      color: '#fff',
+      fontSize: 17,
+      fontWeight: '900',
+    },
+
+    count: {
+      color: '#888',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    playerRow: {
+      minHeight: 70,
+      borderRadius: 14,
+      backgroundColor: '#15181e',
+      marginTop: 8,
+      padding: 9,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: '#20242c',
+    },
+
+    playerSelected: {
+      borderColor: '#d7a94b',
+      backgroundColor: '#211d13',
+    },
+
+    playerDead: {
+      opacity: 0.45,
+    },
+
+    avatar: {
+      backgroundColor: '#252a34',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    avatarText: {
+      color: '#fff',
+      fontSize: 19,
+      fontWeight: '900',
+    },
+
+    playerInfo: {
+      flex: 1,
+      marginLeft: 11,
+    },
+
+    playerName: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: '800',
+    },
+
+    playerStatus: {
+      color: '#777',
+      fontSize: 11,
+      marginTop: 4,
+    },
+
+    kickButton: {
+      paddingHorizontal: 11,
+      paddingVertical: 8,
+      borderRadius: 9,
+      backgroundColor: '#32191d',
+      marginLeft: 6,
+    },
+
+    kickText: {
+      color: '#ff9c9c',
+      fontSize: 11,
+      fontWeight: '900',
+    },
+
+    selectedText: {
+      color: '#d7a94b',
+      fontSize: 22,
+      fontWeight: '900',
+      marginLeft: 8,
+    },
+
+    waitingText: {
+      color: '#999',
+      marginBottom: 12,
+      textAlign: 'center',
+    },
+
+    primaryButton: {
+      minHeight: 50,
+      borderRadius: 14,
+      backgroundColor: '#d7a94b',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    disabledButton: {
+      opacity: 0.4,
+    },
+
+    primaryButtonText: {
+      color: '#080808',
+      fontSize: 15,
+      fontWeight: '900',
+    },
+
+    hint: {
+      color: '#777',
+      fontSize: 13,
+      marginTop: 10,
+      marginBottom: 10,
+    },
+
+    actionGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 9,
+      marginTop: 12,
+    },
+
+    actionButton: {
+      minHeight: 48,
+      flex: 1,
+      minWidth: '30%',
+      borderRadius: 13,
+      backgroundColor: '#222731',
+      borderWidth: 1,
+      borderColor: '#353a45',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 10,
+    },
+
+    actionText: {
+      color: '#fff',
+      fontSize: 13,
+      fontWeight: '900',
+    },
+
+    voteButton: {
+      minHeight: 50,
+      marginTop: 12,
+      borderRadius: 13,
+      backgroundColor: '#7e242d',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    voteText: {
+      color: '#fff',
+      fontSize: 15,
+      fontWeight: '900',
+    },
+
+    eventCard: {
+      backgroundColor: '#16191f',
+      borderWidth: 1,
+      borderColor: '#292e37',
+      borderRadius: 16,
+      padding: 15,
+      marginBottom: 12,
+    },
+
+    eventTitle: {
+      color: '#d7a94b',
+      fontSize: 13,
+      fontWeight: '900',
+      marginBottom: 6,
+    },
+
+    eventText: {
+      color: '#ddd',
+      fontSize: 13,
+      lineHeight: 20,
+    },
+
+    chatBox: {
+      marginTop: 12,
+      maxHeight: 320,
+    },
+
+    emptyText: {
+      color: '#666',
+      textAlign: 'center',
+      paddingVertical: 20,
+    },
+
+    messageRow: {
+      flexDirection: 'row',
+      marginBottom: 10,
+    },
+
+    messageAvatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+    },
+
+    messageAvatarPlaceholder: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: '#282d37',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    messageAvatarText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: '900',
+    },
+
+    messageBody: {
+      flex: 1,
+      marginLeft: 9,
+      backgroundColor: '#171a20',
+      borderRadius: 12,
+      padding: 9,
+    },
+
+    messageUser: {
+      color: '#d7a94b',
+      fontSize: 11,
+      fontWeight: '900',
+      marginBottom: 3,
+    },
+
+    messageText: {
+      color: '#ddd',
+      fontSize: 13,
+      lineHeight: 18,
+    },
+
+    messageInputRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      marginTop: 10,
+    },
+
+    messageInput: {
+      flex: 1,
+      minHeight: 46,
+      maxHeight: 100,
+      borderRadius: 12,
+      backgroundColor: '#171a20',
+      borderWidth: 1,
+      borderColor: '#292e37',
+      color: '#fff',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      textAlignVertical: 'top',
+    },
+
+    sendButton: {
+      minHeight: 46,
+      marginLeft: 8,
+      paddingHorizontal: 15,
+      borderRadius: 12,
+      backgroundColor: '#fff',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    sendText: {
+      color: '#000',
+      fontSize: 13,
+      fontWeight: '900',
+    },
+
+    refreshButton: {
+      minHeight: 48,
+      borderRadius: 13,
+      backgroundColor: '#171a20',
+      borderWidth: 1,
+      borderColor: '#2b3039',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+
+    refreshText: {
+      color: '#ddd',
+      fontSize: 13,
+      fontWeight: '800',
+    },
+
+    leaveButton: {
+      minHeight: 50,
+      borderRadius: 13,
+      backgroundColor: '#251313',
+      borderWidth: 1,
+      borderColor: '#472020',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+
+    leaveText: {
+      color: '#ff9b9b',
+      fontSize: 14,
+      fontWeight: '800',
+    },
+  });
+
+مهم جدًا قبل أن تجرب: هذا الملف يفترض أن مشروعك يحتوي فعلًا على إعداد LiveKit Native/Expo الصحيح. LiveKit يطلب في مشروع Expo تثبيت "@livekit/react-native" و"@livekit/react-native-expo-plugin" و"@livekit/react-native-webrtc" و"@config-plugins/react-native-webrtc"، وإضافة الـ plugins إلى "app.json"/"app.config.js". كما أن LiveKit لا يعمل مع Expo Go.
+
+وأيضًا غيّرت السلوك بحيث أول ضغطة على المايك تتصل بـ LiveKit وتشغّل الميكروفون مباشرة بدل أن تتصل فقط ثم تحتاج لضغطة ثانية.
+
+إذا كان التطبيق ما زال يخرج فور الضغط بعد استبدال هذا الملف، فلا نواصل تعديل "[code].tsx" عشوائيًا؛ عندها سيكون الـ crash على الأرجح من Native LiveKit/Android configuration أو صلاحية RECORD_AUDIO، وسنحتاج فحص "app.json" و"package.json" وملفات Android.
