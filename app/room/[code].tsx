@@ -41,10 +41,6 @@ import type {
 
 import { getLiveKitToken } from '../../lib/livekit';
 
-import {
-  AudioSession,
-} from '@livekit/react-native';
-
 type GameRoom = GameState['room'] & {
   host_id?: string | null;
   phase_ends_at?: string | null;
@@ -60,6 +56,7 @@ type Message = {
 };
 
 type VoiceRoom = any;
+type LiveKitModule = any;
 
 function getErrorMessage(
   error: any,
@@ -219,11 +216,19 @@ export default function MafiaGameScreen() {
     useState('');
 
   /*
-   * LiveKit is deliberately NOT initialized at module level.
-   * This prevents a native LiveKit initialization failure from
-   * terminating the entire game screen before the user presses
-   * the microphone button.
+   * IMPORTANT:
+   *
+   * LiveKit is NOT imported at module level.
+   *
+   * This is intentional. Loading @livekit/react-native when the
+   * room screen opens can initialize native WebRTC code before
+   * the user ever asks for voice.
+   *
+   * LiveKit is loaded only after the microphone button is pressed.
    */
+  const livekitModuleRef =
+    useRef<LiveKitModule | null>(null);
+
   const voiceRoomRef =
     useRef<VoiceRoom | null>(null);
 
@@ -1015,9 +1020,11 @@ export default function MafiaGameScreen() {
     );
 
   /*
-   * Voice cleanup is declared BEFORE leaveRoom.
-   * This avoids the temporal-dead-zone problem caused by
-   * leaveRoom referring to disconnectVoice before it existed.
+   * Stop voice without importing LiveKit.
+   *
+   * If the user never pressed the microphone button,
+   * livekitModuleRef.current stays null and no native LiveKit
+   * code is loaded during cleanup.
    */
   const disconnectVoice =
     useCallback(
@@ -1043,11 +1050,19 @@ export default function MafiaGameScreen() {
             }
           }
         } finally {
+          /*
+           * AudioSession is accessed only if LiveKit was already
+           * loaded by an explicit voice request.
+           */
+          const livekit =
+            livekitModuleRef.current;
+
           if (
-            audioSessionStartedRef.current
+            audioSessionStartedRef.current &&
+            livekit?.AudioSession
           ) {
             try {
-              await AudioSession.stopAudioSession();
+              await livekit.AudioSession.stopAudioSession();
             } catch (error) {
               console.error(
                 'AudioSession stop error:',
@@ -1057,6 +1072,9 @@ export default function MafiaGameScreen() {
               audioSessionStartedRef.current =
                 false;
             }
+          } else {
+            audioSessionStartedRef.current =
+              false;
           }
 
           if (mountedRef.current) {
@@ -1135,9 +1153,8 @@ export default function MafiaGameScreen() {
 
         try {
           /*
-           * Permission is requested only when voice is actually
-           * requested. The game screen itself remains independent
-           * from microphone permission.
+           * Ask for microphone permission only after the user
+           * explicitly presses the voice button.
            */
           const permission =
             await requestMicrophonePermission();
@@ -1149,20 +1166,66 @@ export default function MafiaGameScreen() {
           }
 
           /*
-           * Start AudioSession before creating the LiveKit room.
+           * Load LiveKit only now.
+           *
+           * There is intentionally NO static import of
+           * @livekit/react-native at the top of this file.
+           */
+          let livekit =
+            livekitModuleRef.current;
+
+          if (!livekit) {
+            livekit =
+              await import(
+                '@livekit/react-native'
+              );
+
+            livekitModuleRef.current =
+              livekit;
+          }
+
+          if (
+            !livekit ||
+            !livekit.Room ||
+            !livekit.AudioSession
+          ) {
+            throw new Error(
+              'تعذر تحميل مكونات الصوت.',
+            );
+          }
+
+          /*
+           * Register WebRTC globals only after explicit voice
+           * request.
+           */
+          try {
+            livekit.registerGlobals();
+          } catch (error) {
+            console.error(
+              'LiveKit registerGlobals error:',
+              error,
+            );
+
+            throw new Error(
+              'تعذر تهيئة نظام الصوت. يمكنك متابعة اللعبة بدون الصوت.',
+            );
+          }
+
+          /*
+           * Start AudioSession immediately before connecting.
            */
           if (
             !audioSessionStartedRef.current
           ) {
-            await AudioSession.startAudioSession();
+            await livekit.AudioSession.startAudioSession();
 
             audioSessionStartedRef.current =
               true;
           }
 
           /*
-           * Resolve the route code to the real room UUID inside
-           * getLiveKitToken().
+           * getLiveKitToken() accepts either a UUID or short room
+           * code and resolves the real UUID internally.
            */
           const token =
             await getLiveKitToken(
@@ -1179,36 +1242,20 @@ export default function MafiaGameScreen() {
           }
 
           /*
-           * LiveKit native imports happen only after the user
-           * explicitly requests voice.
+           * Create the native LiveKit Room only after all previous
+           * steps succeeded.
            */
-          const livekit =
-            await import(
-              '@livekit/react-native'
-            );
-
-          /*
-           * registerGlobals is deliberately executed here,
-           * inside a protected try/catch, rather than at module
-           * load time. A voice initialization error therefore
-           * cannot navigate away from or terminate the game
-           * through normal JavaScript control flow.
-           */
-          try {
-            livekit.registerGlobals();
-          } catch (error) {
-            console.error(
-              'LiveKit registerGlobals error:',
-              error,
-            );
-          }
-
           createdRoom =
             new livekit.Room();
 
           voiceRoomRef.current =
             createdRoom;
 
+          /*
+           * IMPORTANT:
+           * Connecting the voice room does not navigate away
+           * from the Mafia game.
+           */
           await createdRoom.connect(
             token.server_url,
             token.token,
@@ -1242,6 +1289,9 @@ export default function MafiaGameScreen() {
             error,
           );
 
+          /*
+           * Voice failure must NOT leave the Mafia room.
+           */
           if (
             createdRoom &&
             voiceRoomRef.current ===
@@ -1255,16 +1305,20 @@ export default function MafiaGameScreen() {
             } catch {}
           }
 
+          const livekit =
+            livekitModuleRef.current;
+
           if (
-            audioSessionStartedRef.current
+            audioSessionStartedRef.current &&
+            livekit?.AudioSession
           ) {
             try {
-              await AudioSession.stopAudioSession();
+              await livekit.AudioSession.stopAudioSession();
             } catch {}
-
-            audioSessionStartedRef.current =
-              false;
           }
+
+          audioSessionStartedRef.current =
+            false;
 
           if (mountedRef.current) {
             setVoiceConnected(false);
@@ -1304,7 +1358,8 @@ export default function MafiaGameScreen() {
         }
 
         /*
-         * First press connects and turns the microphone on.
+         * First press:
+         * load LiveKit -> connect -> enable microphone.
          */
         if (
           !voiceRoomRef.current
@@ -1369,8 +1424,8 @@ export default function MafiaGameScreen() {
 
         try {
           /*
-           * Voice cleanup happens first, but a voice error never
-           * prevents the player from leaving normally.
+           * Voice cleanup happens first.
+           * A voice cleanup error never prevents normal leaving.
            */
           try {
             await disconnectVoice();
@@ -1500,7 +1555,9 @@ export default function MafiaGameScreen() {
   useEffect(() => {
     return () => {
       /*
-       * Cleanup is best-effort and never performs navigation.
+       * Cleanup never navigates.
+       *
+       * If LiveKit was never used, this does not import LiveKit.
        */
       void disconnectVoice();
     };
