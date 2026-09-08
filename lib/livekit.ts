@@ -1,5 +1,3 @@
-// lib/livekit.ts
-
 import { supabase } from './supabase';
 
 export type LiveKitTokenResponse = {
