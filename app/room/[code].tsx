@@ -871,18 +871,7 @@ export default function MafiaGameScreen() {
     room?.status ===
       'finished' ||
     Boolean(room?.winner);
-  const isNight =
-room?.game_phase ===
-'night';
-
-const isDay =
-room?.game_phase ===
-'day';
-
-const gameFinished =
-room?.status ===
-'finished' ||
-Boolean(room?.winner);
+  
 
 /*
 
