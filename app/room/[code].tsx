@@ -9,7 +9,6 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -46,6 +45,7 @@ import {
   NightAction,
   submitDayVote,
   submitNightAction,
+  startMafiaGame,
 } from '../../lib/game';
 
 import {
@@ -293,3111 +293,7 @@ function getEventText(
   }
 }
 
-function PlayerAvatar({
-  player,
-  profile,
-  size = 48,
-}: {
-  player: GamePlayer;
-  profile?: ProfileMap[string];
-  size?: number;
-}) {
-  const uri =
-    profile?.avatar_url ||
-    player.avatar_url ||
-    null;
-
-  if (uri) {
-    return (
-      <Image
-        source={{ uri }}
-        style={[
-          styles.avatar,
-          {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-          },
-          !player.alive && styles.deadAvatar,
-        ]}
-      />
-    );
-  }
-
-  return (
-    <View
-      style={[
-        styles.avatarPlaceholder,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-        },
-        !player.alive && styles.deadAvatar,
-      ]}
-    >
-      <Text style={styles.avatarText}>
-        {(
-          profile?.username ||
-          player.name ||
-          'P'
-        )
-          .charAt(0)
-          .toUpperCase()}
-      </Text>
-    </View>
-  );
-}
-
-export default function MafiaGameScreen() {
-  const router = useRouter();
-
-  const params =
-    useLocalSearchParams<{
-      code?: string | string[];
-    }>();
-
-  const routeValue = Array.isArray(params.code)
-    ? params.code[0]
-    : params.code;
-
-  const [roomId, setRoomId] =
-    useState<string | null>(null);
-
-  const [resolvingRoom, setResolvingRoom] =
-    useState(true);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [gameState, setGameState] =
-    useState<GameState | null>(null);
-
-  const [myRole, setMyRole] =
-    useState<GameRole | null>(null);
-
-  const [myAlive, setMyAlive] =
-    useState(true);
-
-  const [profiles, setProfiles] =
-    useState<ProfileMap>({});
-
-  const [selectedTarget, setSelectedTarget] =
-    useState<string | null>(null);
-
-  const [busy, setBusy] =
-    useState(false);
-
-  const [secondsLeft, setSecondsLeft] =
-    useState(0);
-
-  const [messages, setMessages] =
-    useState<Message[]>([]);
-
-  const [messageText, setMessageText] =
-    useState('');
-
-  const [messagesLoading, setMessagesLoading] =
-    useState(false);
-
-  const [kickingUserId, setKickingUserId] =
-    useState<string | null>(null);
-
-  const voiceRoomRef =
-    useRef<Room | null>(null);
-
-  const voiceConnectingRef =
-    useRef(false);
-
-  const voiceShouldBeConnectedRef =
-    useRef(false);
-
-  const isUnmountingRef =
-    useRef(false);
-
-  const [voiceConnected, setVoiceConnected] =
-    useState(false);
-
-  const [voiceConnecting, setVoiceConnecting] =
-    useState(false);
-
-  const [micEnabled, setMicEnabled] =
-    useState(false);
-
-  const [voiceError, setVoiceError] =
-    useState<string | null>(null);
-
-  const [
-    voiceParticipantsVersion,
-    setVoiceParticipantsVersion,
-  ] = useState(0);
-
-  const lastAdvanceRef =
-    useRef<number>(0);
-
-  const advancingRef =
-    useRef(false);
-
-  const isMountedRef =
-    useRef(true);
-
-  useEffect(() => {
-    try {
-      registerGlobals();
-    } catch (error) {
-      console.error(
-        'LiveKit registerGlobals error:',
-        error
-      );
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const resolveRoomId = async () => {
-      if (!routeValue) {
-        if (!cancelled) {
-          setRoomId(null);
-          setResolvingRoom(false);
-          setLoading(false);
-        }
-
-        return;
-      }
-
-      const uuidRegex =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-      if (uuidRegex.test(routeValue)) {
-        if (!cancelled) {
-          setRoomId(routeValue);
-          setResolvingRoom(false);
-        }
-
-        return;
-      }
-
-      try {
-        const normalizedCode =
-          routeValue
-            .trim()
-            .toUpperCase();
-
-        const {
-          data,
-          error,
-        } = await supabase
-          .from('rooms')
-          .select('id')
-          .eq('code', normalizedCode)
-          .maybeSingle();
-
-        if (error) {
-          throw error;
-        }
-
-        if (!data?.id) {
-          throw new Error(
-            'الغرفة غير موجودة أو لم تعد متاحة.'
-          );
-        }
-
-        if (!cancelled) {
-          setRoomId(data.id);
-          setResolvingRoom(false);
-        }
-      } catch (error: any) {
-        console.error(
-          'resolveRoomId error:',
-          error
-        );
-
-        if (!cancelled) {
-          setRoomId(null);
-          setResolvingRoom(false);
-          setLoading(false);
-
-          Alert.alert(
-            'تعذر العثور على الغرفة',
-            error?.message ||
-              'كود الغرفة غير صحيح.',
-            [
-              {
-                text: 'العودة',
-                onPress: () =>
-                  router.replace('/rooms'),
-              },
-            ],
-            {
-              cancelable: false,
-            }
-          );
-        }
-      }
-    };
-
-    resolveRoomId();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [routeValue, router]);
-
-  const loadProfiles = useCallback(
-    async (players: GamePlayer[]) => {
-      if (!players.length) {
-        setProfiles({});
-        return;
-      }
-
-      const userIds = players
-        .map(
-          (player) =>
-            player.user_id
-        )
-        .filter(Boolean);
-
-      if (!userIds.length) return;
-
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('profiles')
-        .select(
-          'user_id, username, avatar_url'
-        )
-        .in(
-          'user_id',
-          userIds
-        );
-
-      if (error) {
-        console.error(
-          'loadProfiles error:',
-          error
-        );
-        return;
-      }
-
-      const map: ProfileMap = {};
-
-      for (const profile of data || []) {
-        map[profile.user_id] = {
-          username:
-            profile.username ||
-            'Player',
-          avatar_url:
-            profile.avatar_url ||
-            null,
-        };
-      }
-
-      if (isMountedRef.current) {
-        setProfiles(map);
-      }
-    },
-    []
-  );
-
-  const loadMessages = useCallback(
-    async () => {
-      if (!roomId) return;
-
-      setMessagesLoading(true);
-
-      try {
-        const {
-          data,
-          error,
-        } = await supabase
-          .from('room_messages')
-          .select(
-            'id, room_id, user_id, message, created_at'
-          )
-          .eq(
-            'room_id',
-            roomId
-          )
-          .order('created_at', {
-            ascending: true,
-          })
-          .limit(100);
-
-        if (error) {
-          console.error(
-            'loadMessages error:',
-            error
-          );
-        } else if (
-          isMountedRef.current
-        ) {
-          setMessages(
-            (data || []) as Message[]
-          );
-        }
-      } catch (error) {
-        console.error(
-          'loadMessages unexpected error:',
-          error
-        );
-      } finally {
-        if (isMountedRef.current) {
-          setMessagesLoading(false);
-        }
-      }
-    },
-    [roomId]
-  );
-
-  const loadGame = useCallback(
-    async (showLoader = false) => {
-      if (!roomId) {
-        return;
-      }
-
-      if (showLoader) {
-        setRefreshing(true);
-      }
-
-      try {
-        const {
-          data: userData,
-        } =
-          await supabase.auth.getUser();
-
-        const currentUserId =
-          userData.user?.id;
-
-        if (!currentUserId) {
-          throw new Error(
-            'يجب تسجيل الدخول أولًا.'
-          );
-        }
-
-        const {
-          data: membership,
-          error: membershipError,
-        } = await supabase
-          .from('room_players')
-          .select('id')
-          .eq(
-            'room_id',
-            roomId
-          )
-          .eq(
-            'user_id',
-            currentUserId
-          )
-          .maybeSingle();
-
-        if (membershipError) {
-          console.error(
-            'membership check error:',
-            membershipError
-          );
-        }
-
-        const state =
-          await getGameState(roomId);
-
-        if (!isMountedRef.current) {
-          return;
-        }
-
-        setGameState(state);
-
-        if (
-          state.room.status ===
-          'waiting'
-        ) {
-          setMyRole(null);
-          setMyAlive(true);
-        } else {
-          const role =
-            await getMyRole(roomId);
-
-          if (!isMountedRef.current) {
-            return;
-          }
-
-          setMyRole(role.role);
-          setMyAlive(role.alive);
-        }
-
-        await loadProfiles(
-          state.players
-        );
-      } catch (error: any) {
-        console.error(
-          'loadGame error:',
-          error
-        );
-
-        if (
-          isMountedRef.current
-        ) {
-          const message =
-            error?.message || '';
-
-          if (
-            message.includes(
-              'not a member'
-            ) ||
-            message.includes(
-              'player not found'
-            ) ||
-            (message.includes(
-              'لاعب'
-            ) &&
-              message.includes(
-                'الغرفة'
-              ))
-          ) {
-            Alert.alert(
-              'تم إخراجك من الغرفة',
-              'لم تعد عضوًا في هذه الغرفة.',
-              [
-                {
-                  text: 'حسنًا',
-                  onPress: () =>
-                    router.replace(
-                      '/rooms'
-                    ),
-                },
-              ],
-              {
-                cancelable: false,
-              }
-            );
-
-            return;
-          }
-
-          Alert.alert(
-            'تعذر تحميل اللعبة',
-            message ||
-              'حدث خطأ أثناء تحميل حالة اللعبة.'
-          );
-        }
-      } finally {
-        if (
-          isMountedRef.current
-        ) {
-          setLoading(false);
-          setRefreshing(false);
-        }
-      }
-    },
-    [
-      roomId,
-      loadProfiles,
-      router,
-    ]
-  );
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    isUnmountingRef.current = false;
-
-    return () => {
-      isMountedRef.current = false;
-      isUnmountingRef.current = true;
-    };
-  }, []);
-
-  const room =
-    (gameState?.room as ExtendedGameRoom) ||
-    null;
-
-  const players =
-    gameState?.players || [];
-
-  const alivePlayers =
-    useMemo(
-      () =>
-        players.filter(
-          (player) =>
-            player.alive
-        ),
-      [players]
-    );
-
-  const myPlayer =
-    useMemo(
-      () =>
-        players.find(
-          (player) =>
-            player.id ===
-            gameState?.my_player_id
-        ) || null,
-      [
-        players,
-        gameState?.my_player_id,
-      ]
-    );
-
-  const isHost = Boolean(
-    room &&
-      myPlayer &&
-      room.host_id &&
-      room.host_id ===
-        myPlayer.user_id
-  );
-
-  const canKick = Boolean(
-    isHost &&
-      room?.status ===
-        'waiting'
-  );
-
-  const isWaiting =
-    room?.status ===
-    'waiting';
-
-  const isNight =
-    room?.game_phase ===
-    'night';
-
-  const isDay =
-    room?.game_phase ===
-    'day';
-
-  const gameFinished =
-    room?.status ===
-      'finished' ||
-    Boolean(room?.winner);
-  
-
-/*
-
-==================================================
-
-الصوت أصبح متاحًا بمجرد دخول الغرفة.
-
-لا نعتمد على المرحلة الليلية/النهارية.
-
-هذا يمنع قطع LiveKit عند انتقال الجولة.
-
-==================================================
-*/
-
-
-const canUseVoice = Boolean(
-room &&
-!gameFinished
-);
-
-const canChat = Boolean(
-room &&
-!gameFinished &&
-(
-isWaiting ||
-(isDay && myAlive)
-)
-);
-
-const nightActions =
-myRole
-? ROLE_ACTIONS[myRole] || []
-: [];
-
-const canNightAction =
-Boolean(
-isNight &&
-myAlive &&
-!gameFinished &&
-nightActions.length >
-0
-);
-
-const roleLabel = myRole
-? ROLE_LABELS[myRole]
-: 'لم يتم توزيع الدور بعد';
-
-const roleDescription =
-myRole
-? ROLE_DESCRIPTIONS[myRole]
-: 'سيتم توزيع دورك تلقائيًا عند بدء اللعبة.';
-
-const eventText =
-getEventText(
-room?.last_event ||
-null
-);
-
-/*
-
-==================================================
-
-LIVEKIT FUNCTIONS
-
-==================================================
-*/
-
-
-const disconnectVoice =
-useCallback(
-async () => {
-const currentRoom =
-voiceRoomRef.current;
-
-voiceRoomRef.current =  
-      null;  
-
-    voiceShouldBeConnectedRef.current =  
-      false;  
-
-    if (isMountedRef.current) {  
-      setVoiceConnected(false);  
-      setMicEnabled(false);  
-      setVoiceConnecting(false);  
-      setVoiceError(null);  
-    }  
-
-    if (currentRoom) {  
-      try {  
-        await currentRoom.disconnect();  
-      } catch (error) {  
-        console.error(  
-          'LiveKit disconnect error:',  
-          error  
-        );  
-      }  
-    }  
-
-    try {  
-      await AudioSession.stopAudioSession();  
-    } catch (error) {  
-      console.error(  
-        'AudioSession stop error:',  
-        error  
-      );  
-    }  
-
-    if (isMountedRef.current) {  
-      setVoiceParticipantsVersion(  
-        (value) => value + 1  
-      );  
-    }  
-  },  
-  []  
-);
-
-const connectVoice =
-useCallback(
-async () => {
-if (!roomId) return;
-
-/*  
-     * لا نسمح بإنشاء اتصالين في نفس الوقت.  
-     */  
-    if (  
-      voiceConnectingRef.current  
-    ) {  
-      return;  
-    }  
-
-    /*  
-     * إذا كانت هناك غرفة LiveKit بالفعل،  
-     * لا ننشئ Room ثانية.  
-     */  
-    if (voiceRoomRef.current) {  
-      return;  
-    }  
-
-    if (  
-      isUnmountingRef.current ||  
-      !isMountedRef.current  
-    ) {  
-      return;  
-    }  
-
-    voiceConnectingRef.current =  
-      true;  
-
-    voiceShouldBeConnectedRef.current =  
-      true;  
-
-    if (isMountedRef.current) {  
-      setVoiceConnecting(true);  
-      setVoiceError(null);  
-    }  
-
-    let liveKitRoom:  
-      | Room  
-      | null = null;  
-
-    try {  
-      /*  
-       * تشغيل AudioSession قبل LiveKit.  
-       *  
-       * أي خطأ هنا لا يجب أن يغلق التطبيق.  
-       */  
-      try {  
-        await AudioSession.startAudioSession();  
-      } catch (audioError) {  
-        console.error(  
-          'AudioSession start error:',  
-          audioError  
-        );  
-      }  
-
-      if (  
-        isUnmountingRef.current ||  
-        !voiceShouldBeConnectedRef.current  
-      ) {  
-        return;  
-      }  
-
-      /*  
-       * الحصول على التوكن.  
-       */  
-      const {  
-        token,  
-        server_url,  
-      } =  
-        await getLiveKitToken(  
-          roomId  
-        );  
-
-      if (  
-        !token ||  
-        !server_url  
-      ) {  
-        throw new Error(  
-          'لم يتم الحصول على بيانات الاتصال الصوتي.'  
-        );  
-      }  
-
-      if (  
-        isUnmountingRef.current ||  
-        !voiceShouldBeConnectedRef.current  
-      ) {  
-        return;  
-      }  
-
-      /*  
-       * إنشاء غرفة LiveKit واحدة فقط.  
-       */  
-      liveKitRoom =  
-        new Room();  
-
-      voiceRoomRef.current =  
-        liveKitRoom;  
-
-      /*  
-       * عند الاتصال.  
-       *  
-       * لا نشغل الميكروفون هنا حتى لا يحدث  
-       * استدعاء مزدوج أثناء connect().  
-       */  
-      liveKitRoom.on(  
-        RoomEvent.Connected,  
-        () => {  
-          if (  
-            !isMountedRef.current ||  
-            isUnmountingRef.current  
-          ) {  
-            return;  
-          }  
-
-          setVoiceConnected(true);  
-          setVoiceConnecting(false);  
-          setVoiceError(null);  
-
-          setVoiceParticipantsVersion(  
-            (value) =>  
-              value + 1  
-          );  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.Disconnected,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceConnected(false);  
-            setMicEnabled(false);  
-            setVoiceConnecting(false);  
-
-            setVoiceParticipantsVersion(  
-              (value) =>  
-                value + 1  
-            );  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.Reconnecting,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceConnecting(true);  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.Reconnected,  
-        async () => {  
-          if (  
-            !isMountedRef.current ||  
-            isUnmountingRef.current  
-          ) {  
-            return;  
-          }  
-
-          setVoiceConnecting(false);  
-          setVoiceConnected(true);  
-
-          /*  
-           * إعادة تشغيل الميكروفون بعد إعادة الاتصال.  
-           */  
-          try {  
-            await liveKitRoom?.localParticipant  
-              .setMicrophoneEnabled(  
-                true  
-              );  
-
-            if (  
-              isMountedRef.current  
-            ) {  
-              setMicEnabled(true);  
-              setVoiceError(null);  
-
-              setVoiceParticipantsVersion(  
-                (value) =>  
-                  value + 1  
-              );  
-            }  
-          } catch (error: any) {  
-            console.error(  
-              'Reconnected microphone error:',  
-              error  
-            );  
-
-            if (  
-              isMountedRef.current  
-            ) {  
-              setMicEnabled(false);  
-              setVoiceError(  
-                error?.message ||  
-                  'تعذر إعادة تشغيل الميكروفون.'  
-              );  
-            }  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.ParticipantConnected,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceParticipantsVersion(  
-              (value) =>  
-                value + 1  
-            );  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.ParticipantDisconnected,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceParticipantsVersion(  
-              (value) =>  
-                value + 1  
-            );  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.TrackMuted,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceParticipantsVersion(  
-              (value) =>  
-                value + 1  
-            );  
-          }  
-        }  
-      );  
-
-      liveKitRoom.on(  
-        RoomEvent.TrackUnmuted,  
-        () => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            setVoiceParticipantsVersion(  
-              (value) =>  
-                value + 1  
-            );  
-          }  
-        }  
-      );  
-
-      /*  
-       * الاتصال الفعلي.  
-       *  
-       * أي خطأ هنا يمسكه catch ولا يسمح  
-       * له بإسقاط شاشة اللعبة.  
-       */  
-      await liveKitRoom.connect(  
-        server_url,  
-        token  
-      );  
-
-      if (  
-        isUnmountingRef.current ||  
-        !voiceShouldBeConnectedRef.current  
-      ) {  
-        try {  
-          await liveKitRoom.disconnect();  
-        } catch {}  
-
-        if (  
-          voiceRoomRef.current ===  
-          liveKitRoom  
-        ) {  
-          voiceRoomRef.current =  
-            null;  
-        }  
-
-        return;  
-      }  
-
-      if (isMountedRef.current) {  
-        setVoiceConnected(true);  
-        setVoiceConnecting(false);  
-      }  
-
-      /*  
-       * تشغيل الميكروفون صراحة بعد نجاح الاتصال.  
-       *  
-       * هذا هو الجزء المهم:  
-       * الميكروفون لا ينتظر دخول لاعب آخر  
-       * ولا ينتظر بدء الجولة.  
-       */  
-      try {  
-        await liveKitRoom.localParticipant  
-          .setMicrophoneEnabled(  
-            true  
-          );  
-
-        if (  
-          isMountedRef.current  
-        ) {  
-          setMicEnabled(true);  
-          setVoiceError(null);  
-
-          setVoiceParticipantsVersion(  
-            (value) =>  
-              value + 1  
-          );  
-        }  
-      } catch (error: any) {  
-        /*  
-         * فشل الميكروفون لا يعني فشل اللعبة.  
-         * نبقي المستخدم داخل الغرفة.  
-         */  
-        console.error(  
-          'Enable microphone error:',  
-          error  
-        );  
-
-        if (  
-          isMountedRef.current  
-        ) {  
-          setMicEnabled(false);  
-
-          setVoiceError(  
-            error?.message ||  
-              'تعذر تشغيل الميكروفون. تأكد من السماح للتطبيق باستخدام الميكروفون.'  
-          );  
-        }  
-      }  
-    } catch (error: any) {  
-      console.error(  
-        'connectVoice error:',  
-        error  
-      );  
-
-      /*  
-       * تنظيف آمن.  
-       */  
-      if (liveKitRoom) {  
-        try {  
-          await liveKitRoom.disconnect();  
-        } catch (disconnectError) {  
-          console.error(  
-            'LiveKit cleanup error:',  
-            disconnectError  
-          );  
-        }  
-      }  
-
-      if (  
-        voiceRoomRef.current ===  
-        liveKitRoom  
-      ) {  
-        voiceRoomRef.current =  
-          null;  
-      }  
-
-      if (  
-        isMountedRef.current &&  
-        !isUnmountingRef.current  
-      ) {  
-        setVoiceConnected(false);  
-        setMicEnabled(false);  
-        setVoiceConnecting(false);  
-
-        setVoiceError(  
-          error?.message ||  
-            'تعذر الاتصال بالصوت. يمكنك البقاء داخل الغرفة والمحاولة مرة أخرى.'  
-        );  
-      }  
-
-      /*  
-       * مهم:  
-       * لا يوجد router.replace هنا.  
-       * خطأ LiveKit لا يخرج المستخدم من اللعبة.  
-       */  
-    } finally {  
-      voiceConnectingRef.current =  
-        false;  
-
-      if (  
-        isMountedRef.current  
-      ) {  
-        setVoiceConnecting(false);  
-      }  
-    }  
-  },  
-  [roomId]  
-);
-
-const toggleMicrophone =
-useCallback(
-async () => {
-const currentRoom =
-voiceRoomRef.current;
-
-if (!currentRoom) {  
-      /*  
-       * نحاول الاتصال بدل إخراج المستخدم.  
-       */  
-      await connectVoice();  
-      return;  
-    }  
-
-    if (!voiceConnected) {  
-      Alert.alert(  
-        'الصوت غير متصل',  
-        'انتظر حتى يكتمل الاتصال الصوتي.'  
-      );  
-      return;  
-    }  
-
-    const nextState =  
-      !micEnabled;  
-
-    try {  
-      await currentRoom.localParticipant  
-        .setMicrophoneEnabled(  
-          nextState  
-        );  
-
-      if (  
-        isMountedRef.current  
-      ) {  
-        setMicEnabled(  
-          nextState  
-        );  
-
-        setVoiceError(null);  
-
-        setVoiceParticipantsVersion(  
-          (value) =>  
-            value + 1  
-        );  
-      }  
-    } catch (error: any) {  
-      console.error(  
-        'toggleMicrophone error:',  
-        error  
-      );  
-
-      if (  
-        isMountedRef.current  
-      ) {  
-        setMicEnabled(false);  
-
-        setVoiceError(  
-          error?.message ||  
-            'تعذر تشغيل الميكروفون. تأكد من السماح للتطبيق باستخدام الميكروفون.'  
-        );  
-
-        Alert.alert(  
-          'تعذر تشغيل الميكروفون',  
-          error?.message ||  
-            'تأكد من السماح للتطبيق باستخدام الميكروفون.'  
-        );  
-      }  
-    }  
-  },  
-  [  
-    voiceConnected,  
-    micEnabled,  
-    connectVoice,  
-  ]  
-);
-
-/*
-
-
----
-
-توصيل / فصل LiveKit
-
-
----
-
-
-*/
-
-/*
-  الصوت اختياري:
-  لا نتصل بـ LiveKit تلقائيًا عند دخول الغرفة.
-  الاتصال يبدأ فقط عندما يضغط اللاعب على زر الميكروفون.
-  هذا يمنع AudioSession / WebRTC من التسبب في خروج التطبيق
-  مباشرة بعد إنشاء أو دخول الغرفة.
-*/
-useEffect(() => {
-  if (!roomId || !gameState?.room) {
-    return;
-  }
-
-  if (!canUseVoice && voiceRoomRef.current) {
-    voiceShouldBeConnectedRef.current = false;
-    void disconnectVoice();
-  }
-}, [
-  roomId,
-  gameState?.room?.status,
-  room?.winner,
-  canUseVoice,
-  disconnectVoice,
-]);
-
-/*
-
-
----
-
-تنظيف LiveKit عند مغادرة الصفحة
-
-
----
-
-
-*/
-
-useEffect(() => {
-return () => {
-isUnmountingRef.current =
-true;
-
-voiceShouldBeConnectedRef.current =  
-    false;  
-
-  const currentRoom =  
-    voiceRoomRef.current;  
-
-  voiceRoomRef.current =  
-    null;  
-
-  if (currentRoom) {  
-    try {  
-      currentRoom.disconnect();  
-    } catch (error) {  
-      console.error(  
-        'Unmount LiveKit disconnect error:',  
-        error  
-      );  
-    }  
-  }  
-
-  try {  
-    AudioSession.stopAudioSession();  
-  } catch (error) {  
-    console.error(  
-      'Unmount AudioSession stop error:',  
-      error  
-    );  
-  }  
-};
-
-}, []);
-
-/*
-
-
----
-
-MICROPHONE STATUS
-
-
----
-
-
-*/
-
-const isPlayerMicEnabled =
-useCallback(
-(
-userId: string
-): boolean => {
-void voiceParticipantsVersion;
-
-const currentRoom =  
-      voiceRoomRef.current;  
-
-    if (!currentRoom) {  
-      return false;  
-    }  
-
-    if (  
-      currentRoom.localParticipant  
-        .identity === userId  
-    ) {  
-      return micEnabled;  
-    }  
-
-    const remoteParticipants =  
-      currentRoom.remoteParticipants;  
-
-    let participant:  
-      | any  
-      | null = null;  
-
-    remoteParticipants.forEach(  
-      (item: any) => {  
-        if (  
-          item.identity ===  
-          userId  
-        ) {  
-          participant =  
-            item;  
-        }  
-      }  
-    );  
-
-    if (!participant) {  
-      return false;  
-    }  
-
-    try {  
-      if (  
-        typeof participant.isMicrophoneEnabled ===  
-        'boolean'  
-      ) {  
-        return participant.isMicrophoneEnabled;  
-      }  
-    } catch {}  
-
-    try {  
-      const publication =  
-        participant.getTrackPublication?.(  
-          'microphone'  
-        );  
-
-      if (publication) {  
-        return !Boolean(  
-          publication.isMuted  
-        );  
-      }  
-    } catch {}  
-
-    try {  
-      const publications =  
-        participant.audioTrackPublications;  
-
-      if (publications) {  
-        for (  
-          const publication of publications.values()  
-        ) {  
-          if (  
-            publication &&  
-            !publication.isMuted  
-          ) {  
-            return true;  
-          }  
-        }  
-      }  
-    } catch {}  
-
-    return false;  
-  },  
-  [  
-    micEnabled,  
-    voiceParticipantsVersion,  
-  ]  
-);
-
-/*
-
-
----
-
-HEARTBEAT
-
-
----
-
-
-*/
-
-useEffect(() => {
-if (!roomId) return;
-
-let cancelled = false;  
-
-const sendHeartbeat = async () => {  
-  if (cancelled) return;  
-
-  try {  
-    await heartbeatRoom(  
-      roomId  
-    );  
-  } catch (error) {  
-    console.error(  
-      'heartbeat error:',  
-      error  
-    );  
-  }  
-};  
-
-void sendHeartbeat();  
-
-const interval =  
-  setInterval(  
-    sendHeartbeat,  
-    10_000  
-  );  
-
-return () => {  
-  cancelled = true;  
-  clearInterval(interval);  
-};
-
-}, [roomId]);
-
-/*
-
-
----
-
-INITIAL GAME LOAD
-
-
----
-
-
-*/
-
-useEffect(() => {
-if (!roomId) return;
-
-void loadGame(true);
-
-}, [
-roomId,
-loadGame,
-]);
-
-/*
-
-
----
-
-COUNTDOWN
-
-
----
-
-
-*/
-
-useEffect(() => {
-if (
-!gameState?.room
-?.phase_ends_at
-) {
-setSecondsLeft(0);
-return;
-}
-
-const updateTimer = () => {  
-  if (  
-    !gameState?.room  
-      ?.phase_ends_at  
-  ) {  
-    return;  
-  }  
-
-  const remaining =  
-    getSecondsLeft(  
-      gameState.room  
-        .phase_ends_at  
-    );  
-
-  if (  
-    isMountedRef.current  
-  ) {  
-    setSecondsLeft(  
-      remaining  
-    );  
-  }  
-
-  if (  
-    remaining <= 0 &&  
-    gameState.room.status ===  
-      'playing' &&  
-    roomId &&  
-    !advancingRef.current  
-  ) {  
-    const now =  
-      Date.now();  
-
-    if (  
-      now -  
-        lastAdvanceRef.current >  
-      2500  
-    ) {  
-      lastAdvanceRef.current =  
-        now;  
-
-      advancingRef.current =  
-        true;  
-
-      advanceMafiaPhase(  
-        roomId  
-      )  
-        .then(() => {  
-          if (  
-            isMountedRef.current  
-          ) {  
-            return loadGame(false);  
-          }  
-          return null;  
-        })  
-        .catch((error) => {  
-          console.error(  
-            'advance phase error:',  
-            error  
-          );  
-        })  
-        .finally(() => {  
-          advancingRef.current =  
-            false;  
-        });  
-    }  
-  }  
-};
-
-updateTimer();
-
-const interval =
-setInterval(
-updateTimer,
-1000
-);
-
-return () => {
-clearInterval(interval);
-};
-
-}, [
-gameState?.room
-?.phase_ends_at,
-gameState?.room?.status,
-roomId,
-loadGame,
-]);
-
-/*
-
-
----
-
-REALTIME
-
-
----
-
-
-*/
-
-useEffect(() => {
-if (!roomId) return;
-
-let cancelled = false;  
-
-const channel =  
-  supabase  
-    .channel(  
-      `room-${roomId}`  
-    )  
-    .on(  
-      'postgres_changes',  
-      {  
-        event: '*',  
-        schema: 'public',  
-        table: 'rooms',  
-        filter: `id=eq.${roomId}`,  
-      },  
-      () => {  
-        if (cancelled) return;  
-
-        void loadGame(false);  
-      }  
-    )  
-    .on(  
-      'postgres_changes',  
-      {  
-        event: '*',  
-        schema: 'public',  
-        table: 'room_players',  
-        filter: `room_id=eq.${roomId}`,  
-      },  
-      () => {  
-        if (cancelled) return;  
-
-        void loadGame(false);  
-      }  
-    )  
-    .subscribe();  
-
-return () => {  
-  cancelled = true;  
-
-  try {  
-    void supabase.removeChannel(  
-      channel  
-    );  
-  } catch (error) {  
-    console.error(  
-      'remove realtime channel error:',  
-      error  
-    );  
-  }  
-};
-
-}, [
-roomId,
-loadGame,
-]);
-
-/*
-
-
----
-
-CURRENT PLAYER
-
-
----
-
-
-*/
-
-const currentPlayer =
-useMemo(
-() =>
-players.find(
-(player) =>
-player.user_id ===
-currentUserId
-) ||
-null,
-[
-players,
-currentUserId,
-]
-);
-
-const currentPlayerAlive =
-Boolean(
-currentPlayer?.is_alive
-);
-
-const alivePlayers =
-useMemo(
-() =>
-players.filter(
-(player) =>
-player.is_alive
-),
-[
-players,
-]
-);
-
-const alivePlayerCount =
-alivePlayers.length;
-
-const mafiaPlayers =
-useMemo(
-() =>
-players.filter(
-(player) =>
-player.role ===
-'mafia' &&
-player.is_alive
-),
-[
-players,
-]
-);
-
-const detectivePlayers =
-useMemo(
-() =>
-players.filter(
-(player) =>
-player.role ===
-'detective' &&
-player.is_alive
-),
-[
-players,
-]
-);
-
-const doctorPlayers =
-useMemo(
-() =>
-players.filter(
-(player) =>
-player.role ===
-'doctor' &&
-player.is_alive
-),
-[
-players,
-]
-);
-
-/*
-
-
----
-
-PLAYER ACTIONS
-
-
----
-
-
-*/
-
-const handleLeaveRoom =
-useCallback(
-async () => {
-if (!roomId) return;
-
-try {  
-      await leaveRoom(  
-        roomId  
-      );  
-
-      if (  
-        isMountedRef.current  
-      ) {  
-        router.replace(  
-          '/rooms'  
-        );  
-      }  
-    } catch (error: any) {  
-      console.error(  
-        'leaveRoom error:',  
-        error  
-      );  
-
-      Alert.alert(  
-        'خطأ',  
-        error?.message ||  
-          'تعذر مغادرة الغرفة.'  
-      );  
-    }  
-  },  
-  [roomId, router]  
-);
-
-const handleKickPlayer =
-useCallback(
-async (
-player: GamePlayer
-) => {
-if (!roomId) return;
-
-if (  
-      player.user_id ===  
-      currentUserId  
-    ) {  
-      return;  
-    }  
-
-    Alert.alert(  
-      'طرد اللاعب',  
-      `هل أنت متأكد من طرد ${  
-        player.display_name ||  
-        'هذا اللاعب'  
-      }؟`,  
-      [  
-        {  
-          text: 'إلغاء',  
-          style: 'cancel',  
-        },  
-        {  
-          text: 'طرد',  
-          style: 'destructive',  
-          onPress: async () => {  
-            try {  
-              await kickRoomPlayer(  
-                roomId,  
-                player.user_id  
-              );  
-
-              await loadGame(  
-                false  
-              );  
-            } catch (error: any) {  
-              console.error(  
-                'kick player error:',  
-                error  
-              );  
-
-              Alert.alert(  
-                'خطأ',  
-                error?.message ||  
-                  'تعذر طرد اللاعب.'  
-              );  
-            }  
-          },  
-        },  
-      ]  
-    );  
-  },  
-  [  
-    roomId,  
-    currentUserId,  
-    loadGame,  
-  ]  
-);
-
-const handleDayVote =
-useCallback(
-async (
-targetUserId: string
-) => {
-if (!roomId) return;
-
-if (  
-      !canDayVote ||  
-      !currentPlayerAlive  
-    ) {  
-      return;  
-    }  
-
-    try {  
-      await submitDayVote(  
-        roomId,  
-        targetUserId  
-      );  
-
-      await loadGame(  
-        false  
-      );  
-    } catch (error: any) {  
-      console.error(  
-        'day vote error:',  
-        error  
-      );  
-
-      Alert.alert(  
-        'خطأ',  
-        error?.message ||  
-          'تعذر تسجيل التصويت.'  
-      );  
-    }  
-  },  
-  [  
-    roomId,  
-    canDayVote,  
-    currentPlayerAlive,  
-    loadGame,  
-  ]  
-);
-
-const handleNightAction =
-useCallback(
-async (
-action: NightAction,
-targetUserId:
-string | null
-) => {
-if (!roomId) return;
-
-if (  
-      !canNightAction ||  
-      !myRole  
-    ) {  
-      return;  
-    }  
-
-    try {  
-      await submitNightAction(  
-        roomId,  
-        action,  
-        targetUserId  
-      );  
-
-      await loadGame(  
-        false  
-      );  
-    } catch (error: any) {  
-      console.error(  
-        'night action error:',  
-        error  
-      );  
-
-      Alert.alert(  
-        'خطأ',  
-        error?.message ||  
-          'تعذر تنفيذ الإجراء.'  
-      );  
-    }  
-  },  
-  [  
-    roomId,  
-    canNightAction,  
-    myRole,  
-    loadGame,  
-  ]  
-);
-
-const handleStartGame =
-useCallback(
-async () => {
-if (!roomId) return;
-
-try {  
-      await advanceMafiaPhase(  
-        roomId  
-      );  
-
-      await loadGame(  
-        false  
-      );  
-    } catch (error: any) {  
-      console.error(  
-        'start game error:',  
-        error  
-      );  
-
-      Alert.alert(  
-        'خطأ',  
-        error?.message ||  
-          'تعذر بدء اللعبة.'  
-      );  
-    }  
-  },  
-  [roomId, loadGame]  
-);
-
-/*
-
-
----
-
-ROLE / GAME UI HELPERS
-
-
----
-
-
-*/
-
-const getPlayerDisplayName =
-useCallback(
-(
-player: GamePlayer
-) => {
-return (
-player.display_name ||
-player.username ||
-'لاعب'
-);
-},
-[]);
-
-const getPlayerInitial =
-useCallback(
-(
-player: GamePlayer
-) => {
-const name =
-getPlayerDisplayName(
-player
-);
-
-return (
-name
-.trim()
-.charAt(0)
-.toUpperCase() ||
-'?'
-);
-},
-[
-getPlayerDisplayName,
-]);
-
-const getPlayerRoleText =
-useCallback(
-(
-player: GamePlayer
-) => {
-if (
-!gameFinished
-) {
-return null;
-}
-
-if (!player.role) {
-return null;
-}
-
-return (
-ROLE_LABELS[
-player.role
-] ||
-player.role
-);
-},
-[
-gameFinished,
-]);
-
-/*
-
-
----
-
-RENDER
-
-
----
-
-
-*/
-
-if (loading) {
-return (
-<View
-style={
-styles.centered
-}
->
-<ActivityIndicator
-size="large"
-/>
-
-<Text
-style={
-styles.loadingText
-}
->
-جارٍ تحميل الغرفة...
-</Text>
-</View>
-);
-}
-
-if (error) {
-return (
-<View
-style={
-styles.centered
-}
->
-<Text
-style={
-styles.errorTitle
-}
->
-حدث خطأ
-</Text>
-
-<Text
-style={
-styles.errorText
-}
->
-{error}
-</Text>
-
-<Pressable
-style={
-styles.primaryButton
-}
-onPress={() =>
-void loadGame(
-true
-)
-}
->
-<Text
-style={
-styles.primaryButtonText
-}
->
-إعادة المحاولة
-</Text>
-</Pressable>
-
-<Pressable
-style={
-styles.secondaryButton
-}
-onPress={() =>
-router.replace(
-'/rooms'
-)
-}
->
-<Text
-style={
-styles.secondaryButtonText
-}
->
-العودة للغرف
-</Text>
-</Pressable>
-</View>
-);
-}
-
-if (!gameState?.room) {
-return (
-<View
-style={
-styles.centered
-}
->
-<Text
-style={
-styles.errorTitle
-}
->
-الغرفة غير موجودة
-</Text>
-
-<Text
-style={
-styles.errorText
-}
->
-تعذر العثور على هذه الغرفة.
-</Text>
-
-<Pressable
-style={
-styles.secondaryButton
-}
-onPress={() =>
-router.replace(
-'/rooms'
-)
-}
->
-<Text
-style={
-styles.secondaryButtonText
-}
->
-العودة للغرف
-</Text>
-</Pressable>
-</View>
-);
-}
-
-const roomStatusText =
-isWaiting
-? 'في الانتظار'
-: gameFinished
-? 'انتهت اللعبة'
-: isNight
-? 'الليل'
-: 'النهار';
-
-const phaseDescription =
-isWaiting
-? 'انتظر حتى يبدأ منشئ الغرفة اللعبة.'
-: gameFinished
-? 'انتهت اللعبة.'
-: isNight
-? 'نفّذ دورك الليلي.'
-: 'وقت النقاش والتصويت.';
-
-const voiceStatusText =
-voiceConnecting
-? 'جارٍ الاتصال بالصوت...'
-: voiceConnected
-? 'الصوت متصل'
-: 'الصوت غير متصل';
-
-const voiceButtonText =
-voiceConnecting
-? 'جارٍ الاتصال...'
-: voiceConnected
-? micEnabled
-? 'إيقاف الميكروفون'
-: 'تشغيل الميكروفون'
-: 'تشغيل الصوت';
-
-return (
-<View
-style={
-styles.container
-}
->
-  <View
-        style={[
-          styles.phaseCard,
-          isNight
-            ? styles.nightCard
-            : styles.dayCard,
-        ]}
-      >
-        <Text
-          style={
-            styles.phaseTitle
-          }
-        >
-          {isNight
-            ? '🌙 الليل'
-            : '☀️ النهار'}
-        </Text>
-
-        <Text
-          style={
-            styles.phaseDescription
-          }
-        >
-          {phaseDescription}
-        </Text>
-
-        {secondsLeft > 0 && (
-          <Text
-            style={
-              styles.timerText
-            }
-          >
-            {formatTime(
-              secondsLeft
-            )}
-          </Text>
-        )}
-      </View>
-    )}
-
-    {gameFinished && (
-      <View
-        style={
-          styles.winnerCard
-        }
-      >
-        <Text
-          style={
-            styles.winnerTitle
-          }
-        >
-          🏆 انتهت اللعبة
-        </Text>
-
-        <Text
-          style={
-            styles.winnerText
-          }
-        >
-          الفائز:{' '}
-          {room.winner ||
-            'غير محدد'}
-        </Text>
-      </View>
-    )}
-
-    <View
-      style={
-        styles.roleCard
-      }
-    >
-      <Text
-        style={
-          styles.sectionTitle
-        }
-      >
-        دورك
-      </Text>
-
-      <Text
-        style={
-          styles.roleTitle
-        }
-      >
-        {roleLabel}
-      </Text>
-
-      <Text
-        style={
-          styles.roleDescription
-        }
-      >
-        {roleDescription}
-      </Text>
-
-      <View
-        style={
-          styles.statusRow
-        }
-      >
-        <View
-          style={[
-            styles.statusDot,
-            currentPlayerAlive
-              ? styles.aliveDot
-              : styles.deadDot,
-          ]}
-        />
-
-        <Text
-          style={
-            styles.statusText
-          }
-        >
-          {currentPlayerAlive
-            ? 'حي'
-            : 'ميت'}
-        </Text>
-      </View>
-    </View>
-
-    <View
-      style={
-        styles.voiceCard
-      }
-    >
-      <View
-        style={
-          styles.voiceHeader
-        }
-      >
-        <View>
-          <Text
-            style={
-              styles.sectionTitle
-            }
-          >
-            🎙️ الصوت
-          </Text>
-
-          <Text
-            style={
-              styles.voiceStatus
-            }
-          >
-            {voiceStatusText}
-          </Text>
-        </View>
-
-        <Pressable
-          style={[
-            styles.micButton,
-            micEnabled &&
-              styles.micButtonActive,
-            voiceConnecting &&
-              styles.disabledMicButton,
-          ]}
-          disabled={
-            voiceConnecting
-          }
-          onPress={
-            toggleMicrophone
-          }
-        >
-          <Text
-            style={
-              styles.micButtonText
-            }
-          >
-            {voiceButtonText}
-          </Text>
-        </Pressable>
-      </View>
-
-      <Text
-        style={
-          styles.voiceHint
-        }
-      >
-        اضغط على تشغيل للاتصال بالصوت
-      </Text>
-
-      {voiceError && (
-        <Text
-          style={
-            styles.voiceError
-          }
-        >
-          {voiceError}
-        </Text>
-      )}
-
-      <View
-        style={
-          styles.voiceParticipants
-        }
-      >
-        {players.map(
-          (player) => (
-            <View
-              key={
-                player.id
-              }
-              style={
-                styles.voiceParticipant
-              }
-            >
-              <View
-                style={
-                  styles.voiceParticipantAvatar
-                }
-              >
-                <Text
-                  style={
-                    styles.voiceParticipantInitial
-                  }
-                >
-                  {getPlayerInitial(
-                    player
-                  )}
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.voiceParticipantInfo
-                }
-              >
-                <Text
-                  style={
-                    styles.voiceParticipantName
-                  }
-                  numberOfLines={
-                    1
-                  }
-                >
-                  {getPlayerDisplayName(
-                    player
-                  )}
-                </Text>
-
-                <Text
-                  style={
-                    styles.voiceParticipantStatus
-                  }
-                >
-                  {isPlayerMicEnabled(
-                    player.user_id
-                  )
-                    ? '🎙️ يتحدث'
-                    : '🔇 مكتوم'}
-                </Text>
-              </View>
-            </View>
-          )
-        )}
-      </View>
-    </View>
-
-    {canNightAction && (
-      <View
-        style={
-          styles.actionCard
-        }
-      >
-        <Text
-          style={
-            styles.sectionTitle
-          }
-        >
-          🌙 مهمتك الليلية
-        </Text>
-
-        <Text
-          style={
-            styles.actionHint
-          }
-        >
-          اختر لاعبًا ثم اختر المهمة التي تريد تنفيذها.
-        </Text>
-
-        <View
-          style={
-            styles.playersGrid
-          }
-        >
-          {players
-            .filter(
-              (player) =>
-                player.alive &&
-                player.id !==
-                  gameState.my_player_id
-            )
-            .map(
-              (player) => {
-                const selected =
-                  selectedTarget ===
-                  player.id;
-
-                return (
-                  <Pressable
-                    key={
-                      player.id
-                    }
-                    style={[
-                      styles.playerCard,
-                      selected &&
-                        styles.selectedPlayerCard,
-                    ]}
-                    onPress={() =>
-                      selectTarget(
-                        player.id
-                      )
-                    }
-                  >
-                    <View
-                      style={
-                        styles.playerAvatar
-                      }
-                    >
-                      <Text
-                        style={
-                          styles.playerAvatarText
-                        }
-                      >
-                        {getPlayerInitial(
-                          player
-                        )}
-                      </Text>
-                    </View>
-
-                    <Text
-                      style={
-                        styles.playerName
-                      }
-                      numberOfLines={
-                        1
-                      }
-                    >
-                      {getPlayerDisplayName(
-                        player
-                      )}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.playerState
-                      }
-                    >
-                      حي
-                    </Text>
-                  </Pressable>
-                );
-              }
-            )}
-        </View>
-
-        {selectedTarget && (
-          <View
-            style={
-              styles.selectedTargetBox
-            }
-          >
-            <Text
-              style={
-                styles.selectedTargetText
-              }
-            >
-              الهدف:{' '}
-              {(() => {
-                const target =
-                  players.find(
-                    (player) =>
-                      player.id ===
-                      selectedTarget
-                  );
-
-                return target
-                  ? getPlayerDisplayName(
-                      target
-                    )
-                  : 'غير محدد';
-              })()}
-            </Text>
-          </View>
-        )}
-
-        <View
-          style={
-            styles.actionsList
-          }
-        >
-          {nightActions.map(
-            (action) => {
-              const info =
-                ACTION_INFO[
-                  action
-                ];
-
-              return (
-                <Pressable
-                  key={
-                    action
-                  }
-                  style={[
-                    styles.actionButton,
-                    (!selectedTarget ||
-                      busy) &&
-                      styles.disabledButton,
-                  ]}
-                  disabled={
-                    !selectedTarget ||
-                    busy
-                  }
-                  onPress={() =>
-                    void performNightAction(
-                      action
-                    )
-                  }
-                >
-                  <Text
-                    style={
-                      styles.actionButtonText
-                    }
-                  >
-                    {info.button}
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.actionButtonDescription
-                    }
-                  >
-                    {info.description}
-                  </Text>
-                </Pressable>
-              );
-            }
-          )}
-        </View>
-      </View>
-    )}
-
-    {isDay &&
-      currentPlayerAlive &&
-      !gameFinished && (
-        <View
-          style={
-            styles.actionCard
-          }
-        >
-          <Text
-            style={
-              styles.sectionTitle
-            }
-          >
-            ☀️ التصويت
-          </Text>
-
-          <Text
-            style={
-              styles.actionHint
-            }
-          >
-            اختر اللاعب الذي تريد التصويت ضده.
-          </Text>
-
-          <View
-            style={
-              styles.playersGrid
-            }
-          >
-            {players
-              .filter(
-                (player) =>
-                  player.alive &&
-                  player.id !==
-                    gameState.my_player_id
-              )
-              .map(
-                (player) => {
-                  const selected =
-                    selectedTarget ===
-                    player.id;
-
-                  return (
-                    <Pressable
-                      key={
-                        player.id
-                      }
-                      style={[
-                        styles.playerCard,
-                        selected &&
-                          styles.selectedPlayerCard,
-                      ]}
-                      onPress={() =>
-                        selectTarget(
-                          player.id
-                        )
-                      }
-                    >
-                      <View
-                        style={
-                          styles.playerAvatar
-                        }
-                      >
-                        <Text
-                          style={
-                            styles.playerAvatarText
-                          }
-                        >
-                          {getPlayerInitial(
-                            player
-                          )}
-                        </Text>
-                      </View>
-
-                      <Text
-                        style={
-                          styles.playerName
-                        }
-                        numberOfLines={
-                          1
-                        }
-                      >
-                        {getPlayerDisplayName(
-                          player
-                        )}
-                      </Text>
-
-                      <Text
-                        style={
-                          styles.playerState
-                        }
-                      >
-                        حي
-                      </Text>
-                    </Pressable>
-                  );
-                }
-              )}
-          </View>
-
-          <Pressable
-            style={[
-              styles.voteButton,
-              (!selectedTarget ||
-                busy) &&
-                styles.disabledButton,
-            ]}
-            disabled={
-              !selectedTarget ||
-              busy
-            }
-            onPress={
-              performVote
-            }
-          >
-            <Text
-              style={
-                styles.voteButtonText
-              }
-            >
-              {busy
-                ? 'جارٍ التصويت...'
-                : 'تأكيد التصويت'}
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
-    <View
-      style={
-        styles.playersCard
-      }
-    >
-      <View
-        style={
-          styles.playersHeader
-        }
-      >
-        <Text
-          style={
-            styles.sectionTitle
-          }
-        >
-          👥 اللاعبون
-        </Text>
-
-        <Text
-          style={
-            styles.playerCount
-          }
-        >
-          {players.length}
-        </Text>
-      </View>
-
-      {players.map(
-        (player) => {
-          const isMe =
-            player.user_id ===
-            currentUserId;
-
-          const playerName =
-            getPlayerDisplayName(
-              player
-            );
-
-          const isAlive =
-            player.alive ??
-            player.is_alive;
-
-          return (
-            <View
-              key={
-                player.id
-              }
-              style={
-                styles.playerRow
-              }
-            >
-              <View
-                style={
-                  styles.playerRowAvatar
-                }
-              >
-                <Text
-                  style={
-                    styles.playerRowAvatarText
-                  }
-                >
-                  {getPlayerInitial(
-                    player
-                  )}
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.playerRowInfo
-                }
-              >
-                <View
-                  style={
-                    styles.playerRowNameContainer
-                  }
-                >
-                  <Text
-                    style={
-                      styles.playerRowName
-                    }
-                    numberOfLines={
-                      1
-                    }
-                  >
-                    {playerName}
-                  </Text>
-
-                  {isMe && (
-                    <Text
-                      style={
-                        styles.youBadge
-                      }
-                    >
-                      أنت
-                    </Text>
-                  )}
-                </View>
-
-                <Text
-                  style={
-                    styles.playerRowStatus
-                  }
-                >
-                  {isAlive
-                    ? 'حي'
-                    : 'ميت'}
-
-                  {gameFinished &&
-                    getPlayerRoleText(
-                      player
-                    )
-                      ? ` • ${getPlayerRoleText(
-                          player
-                        )}`
-                      : ''}
-                </Text>
-              </View>
-
-              {canKick &&
-                !isMe && (
-                  <Pressable
-                    style={
-                      styles.kickButton
-                    }
-                    disabled={
-                      kickingUserId ===
-                      player.user_id
-                    }
-                    onPress={() =>
-                      void kickPlayer(
-                        player
-                      )
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.kickButtonText
-                      }
-                    >
-                      {kickingUserId ===
-                      player.user_id
-                        ? '...'
-                        : 'طرد'}
-                    </Text>
-                  </Pressable>
-                )}
-            </View>
-          );
-        }
-      )}
-    </View>
-
-    <View
-      style={
-        styles.chatCard
-      }
-    >
-      <Text
-        style={
-          styles.sectionTitle
-        }
-      >
-        💬 الدردشة
-      </Text>
-
-      <View
-        style={
-          styles.messagesContainer
-        }
-      >
-        {messages.length ===
-        0 ? (
-          <Text
-            style={
-              styles.emptyMessages
-            }
-          >
-            لا توجد رسائل بعد.
-          </Text>
-        ) : (
-          messages.map(
-            (message) => {
-              const sender =
-                profiles[
-                  message.user_id
-                ]?.username ||
-                message.username ||
-                'Player';
-
-              const isMine =
-                message.user_id ===
-                currentUserId;
-
-              return (
-                <View
-                  key={
-                    message.id
-                  }
-                  style={[
-                    styles.messageRow,
-                    isMine &&
-                      styles.myMessageRow,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.messageBubble,
-                      isMine &&
-                        styles.myMessageBubble,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.messageSender,
-                        isMine &&
-                          styles.myMessageSender,
-                      ]}
-                    >
-                      {sender}
-                    </Text>
-
-                    <Text
-                      style={[
-                        styles.messageText,
-                        isMine &&
-                          styles.myMessageText,
-                      ]}
-                    >
-                      {message.message}
-                    </Text>
-                  </View>
-                </View>
-              );
-            }
-          )
-        )}
-      </View>
-
-      <View
-        style={
-          styles.chatInputRow
-        }
-      >
-        <TextInput
-          style={
-            styles.chatInput
-          }
-          value={
-            messageText
-          }
-          onChangeText={
-            setMessageText
-          }
-          placeholder="اكتب رسالة..."
-          placeholderTextColor="#777"
-          editable={
-            canChat &&
-            !busy
-          }
-          multiline
-          maxLength={
-            500
-          }
-        />
-
-        <Pressable
-          style={[
-            styles.sendButton,
-            (!canChat ||
-              !messageText.trim() ||
-              busy) &&
-              styles.disabledButton,
-          ]}
-          disabled={
-            !canChat ||
-            !messageText.trim() ||
-            busy
-          }
-          onPress={
-            sendMessage
-          }
-        >
-          <Text
-            style={
-              styles.sendButtonText
-            }
-          >
-            إرسال
-          </Text>
-        </Pressable>
-      </View>
-    </View>
-
-    {isWaiting &&
-      canStartGame && (
-        <Pressable
-          style={
-            styles.startButton
-          }
-          onPress={
-            handleStartGame
-          }
-        >
-          <Text
-            style={
-              styles.startButtonText
-            }
-          >
-            🎮 بدء اللعبة
-          </Text>
-        </Pressable>
-      )}
-
-    <Pressable
-      style={
-        styles.leaveButton
-      }
-      onPress={
-        leaveGame
-      }
-    >
-      <Text
-        style={
-          styles.leaveButtonText
-        }
-      >
-        مغادرة الغرفة
-      </Text>
-    </Pressable>
-  </ScrollView>
-</View>
-);
-  const styles =
+const styles =
   StyleSheet.create({
     container: {
       flex: 1,
@@ -3902,8 +798,7 @@ styles.container
       maxHeight: 320,
       marginBottom: 12,
     },
-
-    emptyMessages: {
+     emptyMessages: {
       color: '#777',
       fontSize: 13,
       textAlign: 'center',
@@ -4046,3 +941,2306 @@ styles.container
       fontWeight: '800',
     },
   });
+
+
+export default function MafiaGameScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ code?: string | string[] }>();
+  const routeValue = Array.isArray(params.code) ? params.code[0] : params.code;
+
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [resolvingRoom, setResolvingRoom] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [myRole, setMyRole] = useState<GameRole | null>(null);
+  const [myAlive, setMyAlive] = useState(true);
+  const [profiles, setProfiles] = useState<ProfileMap>({});
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [kickingUserId, setKickingUserId] = useState<string | null>(null);
+  const voiceRoomRef = useRef<Room | null>(null);
+  const voiceConnectingRef = useRef(false);
+  const voiceShouldBeConnectedRef = useRef(false);
+  const isUnmountingRef = useRef(false);
+  const [voiceConnected, setVoiceConnected] = useState(false);
+  const [voiceConnecting, setVoiceConnecting] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceParticipantsVersion, setVoiceParticipantsVersion] = useState(0);
+  const lastAdvanceRef = useRef(0);
+  const advancingRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    isUnmountingRef.current = false;
+    try { registerGlobals(); } catch (e) { console.error('LiveKit registerGlobals error:', e); }
+    return () => {
+      isMountedRef.current = false;
+      isUnmountingRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveRoomId = async () => {
+      if (!routeValue) {
+        if (!cancelled) {
+          setRoomId(null);
+          setResolvingRoom(false);
+          setLoading(false);
+        }
+        return;
+      }
+
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+      if (uuidRegex.test(routeValue)) {
+        if (!cancelled) {
+          setRoomId(routeValue);
+          setResolvingRoom(false);
+        }
+        return;
+      }
+
+      try {
+        const normalizedCode = routeValue.trim().toUpperCase();
+
+        const { data, error } = await supabase
+          .from('rooms')
+          .select('id')
+          .eq('code', normalizedCode)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        if (!data?.id) {
+          throw new Error('الغرفة غير موجودة أو لم تعد متاحة.');
+        }
+
+        if (!cancelled) {
+          setRoomId(data.id);
+          setResolvingRoom(false);
+        }
+      } catch (e: any) {
+        console.error('resolveRoomId error:', e);
+
+        if (!cancelled) {
+          setRoomId(null);
+          setResolvingRoom(false);
+          setLoading(false);
+          setErrorMessage(e?.message || 'كود الغرفة غير صحيح.');
+        }
+      }
+    };
+
+    void resolveRoomId();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [routeValue]);
+
+  const loadProfiles = useCallback(async (gamePlayers: GamePlayer[]) => {
+    if (!gamePlayers.length) {
+      setProfiles({});
+      return;
+    }
+
+    const userIds = gamePlayers
+      .map(p => p.user_id)
+      .filter(Boolean);
+
+    if (!userIds.length) return;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('user_id, username, avatar_url')
+      .in('user_id', userIds);
+
+    if (error) {
+      console.error('loadProfiles error:', error);
+      return;
+    }
+
+    const map: ProfileMap = {};
+
+    for (const profile of data || []) {
+      map[profile.user_id] = {
+        username: profile.username || 'Player',
+        avatar_url: profile.avatar_url || null,
+      };
+    }
+
+    if (isMountedRef.current) {
+      setProfiles(map);
+    }
+  }, []);
+
+  const loadMessages = useCallback(async () => {
+    if (!roomId) return;
+
+    setMessagesLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('room_messages')
+        .select(
+          'id, room_id, user_id, message, created_at'
+        )
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true })
+        .limit(100);
+
+      if (error) throw error;
+
+      if (isMountedRef.current) {
+        setMessages((data || []) as Message[]);
+      }
+    } catch (e) {
+      console.error('loadMessages error:', e);
+    } finally {
+      if (isMountedRef.current) {
+        setMessagesLoading(false);
+      }
+    }
+  }, [roomId]);
+
+  const loadGame = useCallback(async (showLoader = false) => {
+    if (!roomId) return;
+
+    if (showLoader) {
+      setRefreshing(true);
+    }
+
+    try {
+      const {
+        data: userData,
+        error: authError,
+      } = await supabase.auth.getUser();
+
+      if (authError) throw authError;
+
+      const userId = userData.user?.id;
+
+      if (!userId) {
+        throw new Error('يجب تسجيل الدخول أولًا.');
+      }
+
+      if (isMountedRef.current) {
+        setCurrentUserId(userId);
+      }
+
+      const {
+        data: membership,
+        error: membershipError,
+      } = await supabase
+        .from('room_players')
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (membershipError) {
+        console.warn(
+          'membership check error:',
+          membershipError
+        );
+      }
+
+      if (!membership && membershipError == null) {
+        throw new Error('not a member');
+      }
+
+      const state = await getGameState(roomId);
+
+      if (!isMountedRef.current) return;
+
+      setGameState(state);
+      setErrorMessage(null);
+
+      if (state.room.status === 'waiting') {
+        setMyRole(null);
+        setMyAlive(true);
+      } else {
+        const role = await getMyRole(roomId);
+
+        if (!isMountedRef.current) return;
+
+        setMyRole(role.role);
+        setMyAlive(role.alive);
+      }
+
+      await loadProfiles(state.players);
+      await loadMessages();
+    } catch (e: any) {
+      console.error('loadGame error:', e);
+
+      if (!isMountedRef.current) return;
+
+      const message =
+        e?.message ||
+        'حدث خطأ أثناء تحميل حالة اللعبة.';
+
+      if (
+        message.includes('not a member') ||
+        message.includes('player not found')
+      ) {
+        setErrorMessage(
+          'لم تعد عضوًا في هذه الغرفة.'
+        );
+      } else {
+        setErrorMessage(message);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, [
+    roomId,
+    loadProfiles,
+    loadMessages,
+  ]);
+
+  const room =
+    (gameState?.room as ExtendedGameRoom) ||
+    null;
+
+  const players =
+    gameState?.players || [];
+
+  const alivePlayers = useMemo(
+    () => players.filter(p => p.alive),
+    [players]
+  );
+
+  const currentPlayer = useMemo(
+    () =>
+      players.find(
+        p =>
+          p.id ===
+          gameState?.my_player_id
+      ) || null,
+    [
+      players,
+      gameState?.my_player_id,
+    ]
+  );
+
+  const currentPlayerAlive =
+    currentPlayer
+      ? currentPlayer.alive
+      : myAlive;
+
+  const isHost = Boolean(
+    room?.host_id &&
+    currentUserId &&
+    room.host_id === currentUserId
+  );
+
+  const isWaiting =
+    room?.status === 'waiting';
+
+  const isNight =
+    room?.game_phase === 'night';
+
+  const isDay =
+    room?.game_phase === 'day';
+
+  const gameFinished =
+    room?.status === 'finished' ||
+    Boolean(room?.winner);
+
+  const canKick =
+    isHost && isWaiting;
+
+  const canStartGame =
+    isHost &&
+    isWaiting &&
+    players.length >= 4;
+
+  const canDayVote =
+    isDay &&
+    currentPlayerAlive &&
+    !gameFinished;
+
+  const canUseVoice =
+    Boolean(room && !gameFinished);
+
+  const canChat =
+    Boolean(
+      room &&
+      !gameFinished &&
+      (
+        isWaiting ||
+        (
+          isDay &&
+          currentPlayerAlive
+        )
+      )
+    );
+
+  const nightActions =
+    myRole
+      ? ROLE_ACTIONS[myRole] || []
+      : [];
+
+  const canNightAction =
+    Boolean(
+      isNight &&
+      currentPlayerAlive &&
+      !gameFinished &&
+      nightActions.length
+    );
+
+  const roleLabel =
+    myRole
+      ? ROLE_LABELS[myRole]
+      : 'لم يتم توزيع الدور بعد';
+
+  const roleDescription =
+    myRole
+      ? ROLE_DESCRIPTIONS[myRole]
+      : 'سيتم توزيع دورك تلقائيًا عند بدء اللعبة.';
+
+  const eventText =
+    getEventText(
+      room?.last_event || null
+    );
+
+  const disconnectVoice =
+    useCallback(async () => {
+      voiceShouldBeConnectedRef.current =
+        false;
+
+      const currentRoom =
+        voiceRoomRef.current;
+
+      voiceRoomRef.current = null;
+
+      if (isMountedRef.current) {
+        setVoiceConnected(false);
+        setMicEnabled(false);
+        setVoiceConnecting(false);
+        setVoiceError(null);
+      }
+
+      if (currentRoom) {
+        try {
+          await currentRoom.disconnect();
+        } catch (e) {
+          console.error(
+            'LiveKit disconnect error:',
+            e
+          );
+        }
+      }
+
+      try {
+        await AudioSession.stopAudioSession();
+      } catch (e) {
+        console.error(
+          'AudioSession stop error:',
+          e
+        );
+      }
+
+      if (isMountedRef.current) {
+        setVoiceParticipantsVersion(
+          v => v + 1
+        );
+      }
+    }, []);
+
+  const connectVoice =
+    useCallback(async () => {
+      if (
+        !roomId ||
+        !canUseVoice ||
+        isUnmountingRef.current ||
+        !isMountedRef.current
+      ) {
+        return;
+      }
+
+      if (
+        voiceConnectingRef.current ||
+        voiceRoomRef.current
+      ) {
+        return;
+      }
+
+      voiceConnectingRef.current =
+        true;
+
+      voiceShouldBeConnectedRef.current =
+        true;
+
+      setVoiceConnecting(true);
+      setVoiceError(null);
+
+      let liveKitRoom:
+        | Room
+        | null = null;
+
+      try {
+        try {
+          await AudioSession.startAudioSession();
+        } catch (e) {
+          console.warn(
+            'AudioSession start error:',
+            e
+          );
+        }
+
+        if (
+          !voiceShouldBeConnectedRef.current
+        ) {
+          return;
+        }
+
+        const {
+          token,
+          server_url,
+        } =
+          await getLiveKitToken(
+            roomId
+          );
+
+        if (
+          !token ||
+          !server_url
+        ) {
+          throw new Error(
+            'لم يتم الحصول على بيانات الاتصال الصوتي.'
+          );
+        }
+
+        liveKitRoom =
+          new Room();
+
+        voiceRoomRef.current =
+          liveKitRoom;
+
+        liveKitRoom.on(
+          RoomEvent.Connected,
+          () => {
+            if (
+              !isMountedRef.current
+            ) {
+              return;
+            }
+
+            setVoiceConnected(true);
+            setVoiceConnecting(false);
+            setVoiceError(null);
+
+            setVoiceParticipantsVersion(
+              v => v + 1
+            );
+          }
+        );
+
+        liveKitRoom.on(
+          RoomEvent.Disconnected,
+          () => {
+            if (
+              !isMountedRef.current
+            ) {
+              return;
+            }
+
+            setVoiceConnected(false);
+            setMicEnabled(false);
+            setVoiceConnecting(false);
+
+            setVoiceParticipantsVersion(
+              v => v + 1
+            );
+          }
+        );
+
+        liveKitRoom.on(
+          RoomEvent.Reconnecting,
+          () => {
+            if (
+              isMountedRef.current
+            ) {
+              setVoiceConnecting(true);
+            }
+          }
+        );
+
+        liveKitRoom.on(
+          RoomEvent.Reconnected,
+          async () => {
+            if (
+              !isMountedRef.current ||
+              !voiceShouldBeConnectedRef.current
+            ) {
+              return;
+            }
+
+            setVoiceConnected(true);
+            setVoiceConnecting(false);
+
+            try {
+              await liveKitRoom
+                ?.localParticipant
+                .setMicrophoneEnabled(
+                  true
+                );
+
+              setMicEnabled(true);
+              setVoiceError(null);
+            } catch (e: any) {
+              setMicEnabled(false);
+
+              setVoiceError(
+                e?.message ||
+                'تعذر إعادة تشغيل الميكروفون.'
+              );
+            }
+
+            setVoiceParticipantsVersion(
+              v => v + 1
+            );
+          }
+        );
+
+        liveKitRoom.on(
+          RoomEvent.ParticipantConnected,
+          () =>
+            setVoiceParticipantsVersion(
+              v => v + 1
+            )
+        );
+
+        liveKitRoom.on(
+          RoomEvent.ParticipantDisconnected,
+          () =>
+            setVoiceParticipantsVersion(
+              v => v + 1
+            )
+        );
+
+        liveKitRoom.on(
+          RoomEvent.TrackMuted,
+          () =>
+            setVoiceParticipantsVersion(
+              v => v + 1
+            )
+        );
+
+        liveKitRoom.on(
+          RoomEvent.TrackUnmuted,
+          () =>
+            setVoiceParticipantsVersion(
+              v => v + 1
+            )
+        );
+
+        await liveKitRoom.connect(
+          server_url,
+          token
+        );
+
+        if (
+          !voiceShouldBeConnectedRef.current ||
+          isUnmountingRef.current
+        ) {
+          try {
+            await liveKitRoom.disconnect();
+          } catch {}
+
+          return;
+        }
+
+        if (
+          isMountedRef.current
+        ) {
+          setVoiceConnected(true);
+          setVoiceConnecting(false);
+        }
+
+        try {
+          await liveKitRoom
+            .localParticipant
+            .setMicrophoneEnabled(
+              true
+            );
+
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(true);
+            setVoiceError(null);
+
+            setVoiceParticipantsVersion(
+              v => v + 1
+            );
+          }
+        } catch (e: any) {
+          if (
+            isMountedRef.current
+          ) {
+            setMicEnabled(false);
+
+            setVoiceError(
+              e?.message ||
+              'تعذر تشغيل الميكروفون. تأكد من السماح للتطبيق باستخدام الميكروفون.'
+            );
+          }
+        }
+      } catch (e: any) {
+        console.error(
+          'connectVoice error:',
+          e
+        );
+
+        if (liveKitRoom) {
+          try {
+            await liveKitRoom.disconnect();
+          } catch {}
+        }
+
+        if (
+          voiceRoomRef.current ===
+          liveKitRoom
+        ) {
+          voiceRoomRef.current =
+            null;
+        }
+
+        if (
+          isMountedRef.current &&
+          !isUnmountingRef.current
+        ) {
+          setVoiceConnected(false);
+          setMicEnabled(false);
+
+          setVoiceError(
+            e?.message ||
+            'تعذر الاتصال بالصوت. يمكنك البقاء داخل الغرفة.'
+          );
+        }
+      } finally {
+        voiceConnectingRef.current =
+          false;
+
+        if (
+          isMountedRef.current
+        ) {
+          setVoiceConnecting(false);
+        }
+      }
+    }, [
+      roomId,
+      canUseVoice,
+    ]);
+
+  const toggleMicrophone =
+    useCallback(async () => {
+      const currentRoom =
+        voiceRoomRef.current;
+
+      if (!currentRoom) {
+        await connectVoice();
+        return;
+      }
+
+      if (!voiceConnected) {
+        return;
+      }
+
+      const nextState =
+        !micEnabled;
+
+      try {
+        await currentRoom
+          .localParticipant
+          .setMicrophoneEnabled(
+            nextState
+          );
+
+        setMicEnabled(
+          nextState
+        );
+
+        setVoiceError(null);
+
+        setVoiceParticipantsVersion(
+          v => v + 1
+        );
+      } catch (e: any) {
+        console.error(
+          'toggleMicrophone error:',
+          e
+        );
+
+        setMicEnabled(false);
+
+        setVoiceError(
+          e?.message ||
+          'تعذر تشغيل الميكروفون.'
+        );
+      }
+    }, [
+      connectVoice,
+      voiceConnected,
+      micEnabled,
+    ]);
+
+  const isPlayerMicEnabled =
+    useCallback(
+      (userId: string) => {
+        void voiceParticipantsVersion;
+
+        const currentRoom =
+          voiceRoomRef.current;
+
+        if (!currentRoom) {
+          return false;
+        }
+
+        if (
+          currentRoom
+            .localParticipant
+            .identity === userId
+        ) {
+          return micEnabled;
+        }
+
+        const participant: any =
+          Array.from(
+            currentRoom
+              .remoteParticipants
+              .values()
+          ).find(
+            (p: any) =>
+              p.identity === userId
+          );
+
+        if (!participant) {
+          return false;
+        }
+
+        try {
+          if (
+            typeof participant
+              .isMicrophoneEnabled ===
+            'boolean'
+          ) {
+            return participant
+              .isMicrophoneEnabled;
+          }
+        } catch {}
+
+        try {
+          const pub =
+            participant
+              .getTrackPublication?.(
+                'microphone'
+              );
+
+          if (pub) {
+            return !Boolean(
+              pub.isMuted
+            );
+          }
+        } catch {}
+
+        return false;
+      },
+      [
+        micEnabled,
+        voiceParticipantsVersion,
+      ]
+    );
+
+  useEffect(() => {
+    if (
+      !roomId ||
+      !gameState?.room
+    ) {
+      return;
+    }
+
+    if (!canUseVoice) {
+      void disconnectVoice();
+      return;
+    }
+
+    void connectVoice();
+  }, [
+    roomId,
+    gameState?.room?.status,
+    gameState?.room?.winner,
+    canUseVoice,
+    connectVoice,
+    disconnectVoice,
+  ]);
+
+  useEffect(
+    () => () => {
+      void disconnectVoice();
+    },
+    [disconnectVoice]
+  );
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const heartbeat =
+      async () => {
+        if (cancelled) {
+          return;
+        }
+
+        try {
+          await heartbeatRoom(
+            roomId
+          );
+        } catch (e) {
+          console.error(
+            'heartbeat error:',
+            e
+          );
+        }
+      };
+
+    void heartbeat();
+
+    const id =
+      setInterval(
+        heartbeat,
+        10000
+      );
+
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [roomId]);
+
+  useEffect(() => {
+    if (roomId) {
+      void loadGame(true);
+    }
+  }, [
+    roomId,
+    loadGame,
+  ]);
+
+  useEffect(() => {
+    if (!roomId) {
+      return;
+    }
+
+    const channel =
+      supabase
+        .channel(
+          `room-screen-${roomId}`
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'rooms',
+            filter: `id=eq.${roomId}`,
+          },
+          () =>
+            void loadGame(false)
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'room_players',
+            filter: `room_id=eq.${roomId}`,
+          },
+          () =>
+            void loadGame(false)
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'room_messages',
+            filter: `room_id=eq.${roomId}`,
+          },
+          () =>
+            void loadMessages()
+        )
+        .subscribe();
+
+    return () => {
+      void supabase.removeChannel(
+        channel
+      );
+    };
+  }, [
+    roomId,
+    loadGame,
+    loadMessages,
+  ]);
+    useEffect(() => {
+    if (!gameState?.room?.phase_ends_at) {
+      setSecondsLeft(0);
+      return;
+    }
+
+    const update = () => {
+      const remaining = getSecondsLeft(
+        gameState.room.phase_ends_at
+      );
+
+      if (isMountedRef.current) {
+        setSecondsLeft(remaining);
+      }
+
+      if (
+        remaining <= 0 &&
+        gameState.room.status === 'playing' &&
+        roomId &&
+        !advancingRef.current &&
+        Date.now() - lastAdvanceRef.current > 2500
+      ) {
+        lastAdvanceRef.current = Date.now();
+        advancingRef.current = true;
+
+        void advanceMafiaPhase(roomId)
+          .then(() => loadGame(false))
+          .catch(e =>
+            console.error(
+              'advance phase error:',
+              e
+            )
+          )
+          .finally(() => {
+            advancingRef.current = false;
+          });
+      }
+    };
+
+    update();
+
+    const id = setInterval(
+      update,
+      1000
+    );
+
+    return () =>
+      clearInterval(id);
+  }, [
+    gameState?.room?.phase_ends_at,
+    gameState?.room?.status,
+    roomId,
+    loadGame,
+  ]);
+
+  const selectTarget = useCallback(
+    (targetId: string) => {
+      setSelectedTarget(prev =>
+        prev === targetId
+          ? null
+          : targetId
+      );
+    },
+    []
+  );
+
+  const handleLeaveRoom =
+    useCallback(async () => {
+      if (!roomId) return;
+
+      try {
+        await disconnectVoice();
+        await leaveRoom(roomId);
+        router.replace('/rooms');
+      } catch (e: any) {
+        Alert.alert(
+          'خطأ',
+          e?.message ||
+            'تعذر مغادرة الغرفة.'
+        );
+      }
+    }, [
+      roomId,
+      router,
+      disconnectVoice,
+    ]);
+
+  const handleKickPlayer =
+    useCallback(
+      async (player: GamePlayer) => {
+        if (
+          !roomId ||
+          player.user_id ===
+            currentUserId
+        ) {
+          return;
+        }
+
+        Alert.alert(
+          'طرد اللاعب',
+          `هل أنت متأكد من طرد ${
+            player.name ||
+            'هذا اللاعب'
+          }؟`,
+          [
+            {
+              text: 'إلغاء',
+              style: 'cancel',
+            },
+            {
+              text: 'طرد',
+              style: 'destructive',
+              onPress: async () => {
+                setKickingUserId(
+                  player.user_id
+                );
+
+                try {
+                  await kickRoomPlayer(
+                    roomId,
+                    player.user_id
+                  );
+
+                  await loadGame(
+                    false
+                  );
+                } catch (e: any) {
+                  Alert.alert(
+                    'خطأ',
+                    e?.message ||
+                      'تعذر طرد اللاعب.'
+                  );
+                } finally {
+                  setKickingUserId(
+                    null
+                  );
+                }
+              },
+            },
+          ]
+        );
+      },
+      [
+        roomId,
+        currentUserId,
+        loadGame,
+      ]
+    );
+
+  const handleDayVote =
+    useCallback(
+      async (
+        targetUserId: string
+      ) => {
+        if (
+          !roomId ||
+          !canDayVote ||
+          !currentPlayerAlive
+        ) {
+          return;
+        }
+
+        setBusy(true);
+
+        try {
+          await submitDayVote(
+            roomId,
+            targetUserId
+          );
+
+          setSelectedTarget(
+            null
+          );
+
+          await loadGame(false);
+        } catch (e: any) {
+          Alert.alert(
+            'خطأ',
+            e?.message ||
+              'تعذر تسجيل التصويت.'
+          );
+        } finally {
+          setBusy(false);
+        }
+      },
+      [
+        roomId,
+        canDayVote,
+        currentPlayerAlive,
+        loadGame,
+      ]
+    );
+
+  const handleNightAction =
+    useCallback(
+      async (
+        action: NightAction,
+        targetUserId: string | null
+      ) => {
+        if (
+          !roomId ||
+          !canNightAction ||
+          !targetUserId
+        ) {
+          return;
+        }
+
+        setBusy(true);
+
+        try {
+          await submitNightAction(
+            roomId,
+            action,
+            targetUserId
+          );
+
+          setSelectedTarget(
+            null
+          );
+
+          await loadGame(false);
+        } catch (e: any) {
+          Alert.alert(
+            'خطأ',
+            e?.message ||
+              'تعذر تنفيذ الإجراء.'
+          );
+        } finally {
+          setBusy(false);
+        }
+      },
+      [
+        roomId,
+        canNightAction,
+        loadGame,
+      ]
+    );
+
+  const handleStartGame =
+    useCallback(async () => {
+      if (
+        !roomId ||
+        !canStartGame
+      ) {
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        await startMafiaGame(
+          roomId
+        );
+
+        await loadGame(false);
+      } catch (e: any) {
+        Alert.alert(
+          'خطأ',
+          e?.message ||
+            'تعذر بدء اللعبة.'
+        );
+      } finally {
+        setBusy(false);
+      }
+    }, [
+      roomId,
+      canStartGame,
+      loadGame,
+    ]);
+
+  const handleSendMessage =
+    useCallback(async () => {
+      const text =
+        messageText.trim();
+
+      if (
+        !roomId ||
+        !canChat ||
+        !text ||
+        busy
+      ) {
+        return;
+      }
+
+      setBusy(true);
+
+      try {
+        const {
+          error,
+        } = await supabase.rpc(
+          'send_room_message',
+          {
+            p_room_id: roomId,
+            p_message: text,
+          }
+        );
+
+        if (error) {
+          throw error;
+        }
+
+        setMessageText('');
+
+        await loadMessages();
+      } catch (e: any) {
+        Alert.alert(
+          'خطأ',
+          e?.message ||
+            'تعذر إرسال الرسالة.'
+        );
+      } finally {
+        setBusy(false);
+      }
+    }, [
+      roomId,
+      canChat,
+      messageText,
+      busy,
+      loadMessages,
+    ]);
+
+  const getPlayerDisplayName =
+    useCallback(
+      (player: GamePlayer) =>
+        player.name ||
+        profiles[
+          player.user_id
+        ]?.username ||
+        'لاعب',
+      [profiles]
+    );
+
+  const getPlayerInitial =
+    useCallback(
+      (player: GamePlayer) =>
+        getPlayerDisplayName(
+          player
+        )
+          .trim()
+          .charAt(0)
+          .toUpperCase() || '?',
+      [getPlayerDisplayName]
+    );
+
+  const getPlayerRoleText =
+    useCallback(
+      (player: GamePlayer) =>
+        gameFinished &&
+        player.role
+          ? ROLE_LABELS[
+              player.role as GameRole
+            ] ||
+            player.role
+          : null,
+      [gameFinished]
+    );
+
+  if (loading) {
+    return (
+      <View
+        style={
+          styles.centered
+        }
+      >
+        <ActivityIndicator
+          size="large"
+        />
+
+        <Text
+          style={
+            styles.loadingText
+          }
+        >
+          جارٍ تحميل الغرفة...
+        </Text>
+      </View>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <View
+        style={
+          styles.centered
+        }
+      >
+        <Text
+          style={
+            styles.errorTitle
+          }
+        >
+          حدث خطأ
+        </Text>
+
+        <Text
+          style={
+            styles.errorText
+          }
+        >
+          {errorMessage}
+        </Text>
+
+        <Pressable
+          style={
+            styles.primaryButton
+          }
+          onPress={() =>
+            void loadGame(
+              true
+            )
+          }
+        >
+          <Text
+            style={
+              styles.primaryButtonText
+            }
+          >
+            إعادة المحاولة
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={
+            styles.secondaryButton
+          }
+          onPress={() =>
+            router.replace(
+              '/rooms'
+            )
+          }
+        >
+          <Text
+            style={
+              styles.secondaryButtonText
+            }
+          >
+            العودة للغرف
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (!gameState?.room) {
+    return (
+      <View
+        style={
+          styles.centered
+        }
+      >
+        <Text
+          style={
+            styles.errorTitle
+          }
+        >
+          الغرفة غير موجودة
+        </Text>
+
+        <Text
+          style={
+            styles.errorText
+          }
+        >
+          تعذر العثور على هذه
+          الغرفة.
+        </Text>
+
+        <Pressable
+          style={
+            styles.secondaryButton
+          }
+          onPress={() =>
+            router.replace(
+              '/rooms'
+            )
+          }
+        >
+          <Text
+            style={
+              styles.secondaryButtonText
+            }
+          >
+            العودة للغرف
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const roomStatusText =
+    isWaiting
+      ? 'في الانتظار'
+      : gameFinished
+      ? 'انتهت اللعبة'
+      : isNight
+      ? 'الليل'
+      : 'النهار';
+
+  const phaseDescription =
+    isWaiting
+      ? 'انتظر حتى يبدأ منشئ الغرفة اللعبة.'
+      : gameFinished
+      ? 'انتهت اللعبة.'
+      : isNight
+      ? 'نفّذ دورك الليلي.'
+      : 'وقت النقاش والتصويت.';
+
+  const voiceStatusText =
+    voiceConnecting
+      ? 'جارٍ الاتصال بالصوت...'
+      : voiceConnected
+      ? 'الصوت متصل'
+      : 'الصوت غير متصل';
+
+  const voiceButtonText =
+    voiceConnecting
+      ? 'جارٍ الاتصال...'
+      : voiceConnected
+      ? micEnabled
+        ? 'إيقاف الميكروفون'
+        : 'تشغيل الميكروفون'
+      : 'تشغيل الصوت';
+
+  return (
+    <View
+      style={
+        styles.container
+      }
+    >
+      <ScrollView
+        contentContainerStyle={
+          styles.scrollContent
+        }
+      >
+        <View
+          style={[
+            styles.phaseCard,
+            isNight
+              ? styles.nightCard
+              : styles.dayCard,
+          ]}
+        >
+          <Text
+            style={
+              styles.phaseTitle
+            }
+          >
+            {isNight
+              ? '🌙 الليل'
+              : '☀️ النهار'}
+          </Text>
+
+          <Text
+            style={
+              styles.phaseDescription
+            }
+          >
+            {phaseDescription}
+          </Text>
+
+          {secondsLeft > 0 && (
+            <Text
+              style={
+                styles.timerText
+              }
+            >
+              {formatTime(
+                secondsLeft
+              )}
+            </Text>
+          )}
+        </View>
+
+        {gameFinished && (
+          <View
+            style={
+              styles.winnerCard
+            }
+          >
+            <Text
+              style={
+                styles.winnerTitle
+              }
+            >
+              🏆 انتهت اللعبة
+            </Text>
+
+            <Text
+              style={
+                styles.winnerText
+              }
+            >
+              الفائز:{' '}
+              {room.winner ||
+                'غير محدد'}
+            </Text>
+          </View>
+        )}
+
+        <View
+          style={
+            styles.roleCard
+          }
+        >
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            دورك
+          </Text>
+
+          <Text
+            style={
+              styles.roleTitle
+            }
+          >
+            {roleLabel}
+          </Text>
+
+          <Text
+            style={
+              styles.roleDescription
+            }
+          >
+            {roleDescription}
+          </Text>
+
+          <View
+            style={
+              styles.statusRow
+            }
+          >
+            <View
+              style={[
+                styles.statusDot,
+                currentPlayerAlive
+                  ? styles.aliveDot
+                  : styles.deadDot,
+              ]}
+            />
+
+            <Text
+              style={
+                styles.statusText
+              }
+            >
+              {currentPlayerAlive
+                ? 'حي'
+                : 'ميت'}
+            </Text>
+          </View>
+        </View>
+
+        <View
+          style={
+            styles.voiceCard
+          }
+        >
+          <View
+            style={
+              styles.voiceHeader
+            }
+          >
+            <View>
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                🎙️ الصوت
+              </Text>
+
+              <Text
+                style={
+                  styles.voiceStatus
+                }
+              >
+                {voiceStatusText}
+              </Text>
+            </View>
+
+            <Pressable
+              style={[
+                styles.micButton,
+                micEnabled &&
+                  styles.micButtonActive,
+              ]}
+              disabled={
+                voiceConnecting
+              }
+              onPress={() =>
+                void toggleMicrophone()
+              }
+            >
+              <Text
+                style={
+                  styles.micButtonText
+                }
+              >
+                {voiceButtonText}
+              </Text>
+            </Pressable>
+          </View>
+
+          {voiceError && (
+            <Text
+              style={
+                styles.voiceError
+              }
+            >
+              {voiceError}
+            </Text>
+          )}
+
+          <View
+            style={
+              styles.voicePlayers
+            }
+          >
+            {players.map(
+              player => {
+                const micOn =
+                  isPlayerMicEnabled(
+                    player.user_id
+                  );
+
+                return (
+                  <View
+                    key={
+                      player.id
+                    }
+                    style={[
+                      styles.voicePlayer,
+                      !player.alive &&
+                        styles.deadPlayer,
+                    ]}
+                  >
+                    <View
+                      style={
+                        styles.voicePlayerAvatar
+                      }
+                    >
+                      <Text
+                        style={
+                          styles.voicePlayerInitial
+                        }
+                      >
+                        {getPlayerInitial(
+                          player
+                        )}
+                      </Text>
+                    </View>
+
+                    <Text
+                      numberOfLines={
+                        1
+                      }
+                      style={
+                        styles.voicePlayerName
+                      }
+                    >
+                      {getPlayerDisplayName(
+                        player
+                      )}
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.voiceIcon
+                      }
+                    >
+                      {micOn
+                        ? '🎤'
+                        : '🔇'}
+                    </Text>
+                  </View>
+                );
+              }
+            )}
+          </View>
+        </View>
+
+        {isWaiting &&
+          isHost && (
+            <View
+              style={
+                styles.startCard
+              }
+            >
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                إدارة اللعبة
+              </Text>
+
+              <Text
+                style={
+                  styles.helperText
+                }
+              >
+                {players.length < 4
+                  ? `تحتاج إلى ${
+                      4 -
+                      players.length
+                    } لاعب إضافي لبدء اللعبة.`
+                  : 'يمكنك بدء اللعبة الآن.'}
+              </Text>
+
+              <Pressable
+                style={[
+                  styles.startButton,
+                  !canStartGame &&
+                    styles.disabledButton,
+                ]}
+                disabled={
+                  !canStartGame ||
+                  busy
+                }
+                onPress={() =>
+                  void handleStartGame()
+                }
+              >
+                <Text
+                  style={
+                    styles.startButtonText
+                  }
+                >
+                  {busy
+                    ? 'جارٍ البدء...'
+                    : 'بدء اللعبة'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+        <View
+          style={
+            styles.playersCard
+          }
+        >
+          <View
+            style={
+              styles.sectionHeader
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              اللاعبون
+            </Text>
+
+            <Text
+              style={
+                styles.playerCount
+              }
+            >
+              {alivePlayers.length}/
+              {players.length} أحياء
+            </Text>
+          </View>
+
+          {players.map(
+            player => {
+              const isMe =
+                player.user_id ===
+                currentUserId;
+
+              const isSelected =
+                selectedTarget ===
+                player.user_id;
+
+              const roleText =
+                getPlayerRoleText(
+                  player
+                );
+
+              const selectable =
+                player.alive &&
+                !isMe &&
+                !busy &&
+                (
+                  canDayVote ||
+                  canNightAction
+                );
+
+              return (
+                <Pressable
+                  key={
+                    player.id
+                  }
+                  disabled={
+                    !selectable
+                  }
+                  onPress={() =>
+                    selectable &&
+                    selectTarget(
+                      player.user_id
+                    )
+                  }
+                  style={[
+                    styles.playerRow,
+                    !player.alive &&
+                      styles.deadPlayer,
+                    isSelected &&
+                      styles.selectedPlayer,
+                    !selectable &&
+                      styles.nonSelectablePlayer,
+                  ]}
+                >
+                  <View
+                    style={
+                      styles.playerAvatar
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.playerInitial
+                      }
+                    >
+                      {getPlayerInitial(
+                        player
+                      )}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={
+                      styles.playerInfo
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.playerName
+                      }
+                    >
+                      {getPlayerDisplayName(
+                        player
+                      )}
+                      {isMe
+                        ? ' (أنت)'
+                        : ''}
+                    </Text>
+
+                    <Text
+                      style={
+                        styles.playerStatus
+                      }
+                    >
+                      {player.alive
+                        ? 'حي'
+                        : 'ميت'}
+                      {roleText
+                        ? ` • ${roleText}`
+                        : ''}
+                    </Text>
+                  </View>
+
+                  {isHost &&
+                    canKick &&
+                    !isMe && (
+                      <Pressable
+                        style={
+                          styles.kickButton
+                        }
+                        disabled={
+                          kickingUserId ===
+                          player.user_id
+                        }
+                        onPress={() =>
+                          void handleKickPlayer(
+                            player
+                          )
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.kickButtonText
+                          }
+                        >
+                          {kickingUserId ===
+                          player.user_id
+                            ? '...'
+                            : 'طرد'}
+                        </Text>
+                      </Pressable>
+                    )}
+
+                  {isSelected && (
+                    <Text
+                      style={
+                        styles.selectedMark
+                      }
+                    >
+                      ✓
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            }
+          )}
+        </View>
+
+        {canDayVote && (
+          <View
+            style={
+              styles.actionCard
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              التصويت
+            </Text>
+
+            <Text
+              style={
+                styles.helperText
+              }
+            >
+              اختر اللاعب الذي تريد
+              التصويت عليه.
+            </Text>
+
+            <Pressable
+              style={[
+                styles.primaryButton,
+                !selectedTarget &&
+                  styles.disabledButton,
+              ]}
+              disabled={
+                !selectedTarget ||
+                busy
+              }
+              onPress={() => {
+                if (
+                  selectedTarget
+                ) {
+                  void handleDayVote(
+                    selectedTarget
+                  );
+                }
+              }}
+            >
+              <Text
+                style={
+                  styles.primaryButtonText
+                }
+              >
+                {busy
+                  ? 'جارٍ التصويت...'
+                  : 'تأكيد التصويت'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {canNightAction && (
+          <View
+            style={
+              styles.actionCard
+            }
+          >
+            <Text
+              style={
+                styles.sectionTitle
+              }
+            >
+              الإجراء الليلي
+            </Text>
+
+            <Text
+              style={
+                styles.helperText
+              }
+            >
+              اختر لاعبًا ثم اختر
+              الإجراء المناسب لدورك.
+            </Text>
+
+            <View
+              style={
+                styles.actionButtons
+              }
+            >
+              {nightActions.map(
+                action => (
+                  <Pressable
+                    key={
+                      action
+                    }
+                    style={[
+                      styles.actionButton,
+                      !selectedTarget &&
+                        styles.disabledButton,
+                    ]}
+                    disabled={
+                      !selectedTarget ||
+                      busy
+                    }
+                    onPress={() =>
+                      void handleNightAction(
+                        action,
+                        selectedTarget
+                      )
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.actionButtonText
+                      }
+                    >
+                      {ACTION_LABELS[
+                        action
+                      ] || action}
+                    </Text>
+                  </Pressable>
+                )
+              )}
+            </View>
+          </View>
+        )}
+
+        {canChat && (
+          <View
+            style={
+              styles.chatCard
+            }
+          >
+            <View
+              style={
+                styles.sectionHeader
+              }
+            >
+              <Text
+                style={
+                  styles.sectionTitle
+                }
+              >
+                💬 الدردشة
+              </Text>
+
+              {messagesLoading && (
+                <ActivityIndicator
+                  size="small"
+                />
+              )}
+            </View>
+
+            <View
+              style={
+                styles.messagesContainer
+              }
+            >
+              {messages.length ===
+              0 ? (
+                <Text
+                  style={
+                    styles.emptyMessages
+                  }
+                >
+                  لا توجد رسائل بعد.
+                </Text>
+              ) : (
+                messages.map(
+                  message => {
+                    const mine =
+                      message.user_id ===
+                      currentUserId;
+
+                    const sender =
+                      players.find(
+                        p =>
+                          p.user_id ===
+                          message.user_id
+                      );
+
+                    return (
+                      <View
+                        key={
+                          message.id
+                        }
+                        style={[
+                          styles.messageRow,
+                          mine &&
+                            styles.myMessageRow,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.messageBubble,
+                            mine &&
+                              styles.myMessageBubble,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.messageSender,
+                              mine &&
+                                styles.myMessageSender,
+                            ]}
+                          >
+                            {sender
+                              ? getPlayerDisplayName(
+                                  sender
+                                )
+                              : 'لاعب'}
+                          </Text>
+
+                          <Text
+                            style={[
+                              styles.messageText,
+                              mine &&
+                                styles.myMessageText,
+                            ]}
+                          >
+                            {message.message}
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  }
+                )
+              )}
+            </View>
+
+            <View
+              style={
+                styles.chatInputRow
+              }
+            >
+              <TextInput
+                value={
+                  messageText
+                }
+                onChangeText={
+                  setMessageText
+                }
+                placeholder="اكتب رسالة..."
+                placeholderTextColor="#666"
+                multiline
+                style={
+                  styles.chatInput
+                }
+                editable={
+                  !busy
+                }
+              />
+
+              <Pressable
+                style={[
+                  styles.sendButton,
+                  (
+                    !messageText.trim() ||
+                    busy
+                  ) &&
+                    styles.disabledButton,
+                ]}
+                disabled={
+                  !messageText.trim() ||
+                  busy
+                }
+                onPress={() =>
+                  void handleSendMessage()
+                }
+              >
+                <Text
+                  style={
+                    styles.sendButtonText
+                  }
+                >
+                  إرسال
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <View
+          style={
+            styles.statusCard
+          }
+        >
+          <Text
+            style={
+              styles.sectionTitle
+            }
+          >
+            حالة الغرفة
+          </Text>
+
+          <Text
+            style={
+              styles.statusText
+            }
+          >
+            {roomStatusText}
+          </Text>
+
+          {room.code && (
+            <Text
+              style={
+                styles.roomCodeText
+              }
+            >
+              كود الغرفة: {room.code}
+            </Text>
+          )}
+        </View>
+
+        <Pressable
+          style={
+            styles.leaveButton
+          }
+          onPress={() =>
+            void handleLeaveRoom()
+          }
+        >
+          <Text
+            style={
+              styles.leaveButtonText
+            }
+          >
+            مغادرة الغرفة
+          </Text>
+        </Pressable>
+
+        <View
+          style={
+            styles.bottomSpace
+          }
+        />
+      </ScrollView>
+    </View>
+  );
+}
