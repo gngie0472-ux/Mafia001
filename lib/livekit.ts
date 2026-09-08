@@ -1,3 +1,5 @@
+// lib/livekit.ts
+
 import { supabase } from './supabase';
 
 export type LiveKitTokenResponse = {
@@ -13,158 +15,108 @@ function isUuid(value: string): boolean {
   return UUID_REGEX.test(value.trim());
 }
 
-function getErrorMessage(
-  error: any,
-  fallback: string,
-): string {
-  if (
-    typeof error === 'string' &&
-    error.trim()
-  ) {
+function getErrorMessage(error: any, fallback: string): string {
+  if (typeof error === 'string' && error.trim()) {
     return error;
   }
 
-  if (
-    error?.message &&
-    typeof error.message === 'string'
-  ) {
+  if (error?.message && typeof error.message === 'string') {
     return error.message;
+  }
+
+  if (error?.details && typeof error.details === 'string') {
+    return error.details;
+  }
+
+  if (error?.hint && typeof error.hint === 'string') {
+    return error.hint;
   }
 
   return fallback;
 }
 
-/**
- * الحصول على LiveKit token.
- *
- * يقبل:
- * - UUID الحقيقي للغرفة
- * - أو كود الغرفة القصير مثل ABC123
- *
- * وفي حالة الكود يتم تحويله إلى UUID
- * قبل استدعاء Edge Function.
- */
 export async function getLiveKitToken(
   roomValue: string,
 ): Promise<LiveKitTokenResponse> {
-  const value = roomValue?.trim();
+  const value = String(roomValue ?? '').trim();
 
   if (!value) {
-    throw new Error(
-      'معرف الغرفة غير موجود.',
-    );
+    throw new Error('معرف الغرفة غير موجود.');
   }
 
   let roomId = value;
 
-  /*
-   * إذا لم تكن القيمة UUID،
-   * نعتبرها كود الغرفة ونبحث عن UUID الحقيقي.
-   */
+  // The game route may contain the 6-character room code.
+  // LiveKit must always receive the real UUID.
   if (!isUuid(value)) {
-    const {
-      data: room,
-      error: roomError,
-    } = await supabase
+    const { data, error } = await supabase
       .from('rooms')
       .select('id')
-      .eq(
-        'code',
-        value.toUpperCase(),
-      )
+      .eq('code', value.toUpperCase())
       .maybeSingle();
 
-    if (roomError) {
+    if (error) {
       throw new Error(
-        getErrorMessage(
-          roomError,
-          'تعذر العثور على الغرفة.',
-        ),
+        getErrorMessage(error, 'تعذر العثور على الغرفة.'),
       );
     }
 
-    if (!room?.id) {
-      throw new Error(
-        'الغرفة غير موجودة.',
-      );
+    if (!data?.id || !isUuid(String(data.id))) {
+      throw new Error('الغرفة غير موجودة.');
     }
 
-    roomId = room.id;
+    roomId = String(data.id);
   }
 
-  /*
-   * حماية إضافية:
-   * لا نسمح أبدًا بإرسال قيمة مثل
-   * ${room.id}
-   * إلى Supabase.
-   */
   if (
     !isUuid(roomId) ||
     roomId.includes('${') ||
     roomId.includes('}')
   ) {
-    throw new Error(
-      'معرف الغرفة غير صالح.',
-    );
+    throw new Error('معرف الغرفة غير صالح.');
   }
 
-  const {
-    data,
-    error,
-  } =
-    await supabase.functions.invoke(
-      'livekit-token',
-      {
-        body: {
-          room_id: roomId,
-        },
+  const { data, error } = await supabase.functions.invoke(
+    'livekit-token',
+    {
+      body: {
+        room_id: roomId,
       },
-    );
+    },
+  );
 
   if (error) {
-    console.error(
-      'LiveKit token error:',
-      error,
-    );
+    console.error('LiveKit token error:', error);
 
     throw new Error(
       getErrorMessage(
         error,
-        'تعذر الحصول على رمز الصوت.',
+        'تعذر الحصول على رمز الاتصال الصوتي.',
       ),
     );
   }
 
   if (
-    !data?.token ||
-    !data?.server_url
+    !data ||
+    typeof data.token !== 'string' ||
+    !data.token.trim() ||
+    typeof data.server_url !== 'string' ||
+    !data.server_url.trim()
   ) {
     throw new Error(
-      'خادم الصوت لم يرجع بيانات الاتصال المطلوبة.',
+      'خادم الصوت لم يرجع بيانات اتصال صحيحة.',
     );
   }
 
-  /*
-   * إذا أعاد الخادم room_id،
-   * نتحقق منه أيضًا.
-   */
-  if (
-    data.room_id &&
+  const returnedRoomId =
     typeof data.room_id === 'string' &&
-    !isUuid(data.room_id)
-  ) {
-    throw new Error(
-      'خادم الصوت أعاد معرف غرفة غير صالح.',
-    );
-  }
+    isUuid(data.room_id)
+      ? data.room_id
+      : roomId;
 
   return {
-    token: String(data.token),
-    server_url: String(data.server_url),
-    room_id:
-      typeof data.room_id === 'string' &&
-      isUuid(data.room_id)
-        ? data.room_id
-        : roomId,
+    token: data.token,
+    server_url: data.server_url,
+    room_id: returnedRoomId,
   };
 }
