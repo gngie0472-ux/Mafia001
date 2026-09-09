@@ -1,8 +1,6 @@
-import { supabase } from './supabase';
+// lib/game.ts
 
-/* ============================================================
-   TYPES
-============================================================ */
+import { supabase } from './supabase';
 
 export type GamePhase =
   | 'waiting'
@@ -20,6 +18,10 @@ export type GameRole =
   | 'DOCTOR'
   | 'DETECTIVE'
   | 'GHOUL'
+  | 'SPY'
+  | 'BODYGUARD'
+  | 'SHERIFF'
+  | 'WITCH'
   | 'MAFIA'
   | 'GODFATHER'
   | 'CONSIGLIERE'
@@ -30,31 +32,13 @@ export type NightAction =
   | 'kill'
   | 'protect'
   | 'investigate'
+  | 'spy'
+  | 'guard'
+  | 'sheriff_check'
+  | 'witch_save'
+  | 'witch_kill'
+  | 'ghoul'
   | 'cult_convert';
-
-export type GamePlayer = {
-  id: string;
-  user_id: string;
-  name: string;
-  avatar_url?: string | null;
-  alive: boolean;
-  role?: GameRole | string | null;
-  ready?: boolean;
-  created_at?: string | null;
-};
-
-export type CurrentGamePlayer = {
-  id?: string | null;
-  user_id?: string | null;
-  name?: string | null;
-  alive: boolean;
-  role?: GameRole | string | null;
-  team?: GameTeam | string | null;
-  avatar_url?: string | null;
-  ghoul_ability_stolen?: boolean;
-  stolen_role?: GameRole | null;
-  stolen_ability?: NightAction | null;
-};
 
 export type GameEventType =
   | 'game_started'
@@ -69,175 +53,113 @@ export type GameEventType =
   | 'ghoul_ability_stolen'
   | 'cult_convert'
   | 'game_finished'
-  | 'winner'
-  | string;
+  | 'winner';
 
-export type GameEvent = {
-  type?: GameEventType | null;
-  player_id?: string | null;
-  target_id?: string | null;
-  round?: number | null;
-  winner?: GameTeam | string | null;
-  phase?: GamePhase | string | null;
-  phase_ends_at?: string | null;
-  previous_phase?: GamePhase | string | null;
-  ghoul_target?: string | null;
-  cult_converted?: string | null;
-  stolen_role?: GameRole | string | null;
-  stolen_ability?: NightAction | null;
-  message?: string | null;
-  [key: string]: unknown;
-};
+export interface GamePlayer {
+  id: string;
+  user_id: string;
+  name: string;
+  avatar_url: string | null;
+  alive: boolean;
+  role: GameRole;
+  ready: boolean;
+  created_at?: string;
+}
 
-export type GameRoom = {
+export interface CurrentGamePlayer {
+  id: string;
+  user_id: string;
+  name: string;
+  alive: boolean;
+  role: GameRole;
+  team: GameTeam;
+  avatar_url: string | null;
+  ghoul_ability_stolen: boolean;
+  stolen_role: GameRole | null;
+  stolen_ability: NightAction | null;
+}
+
+export interface GameRoom {
   id: string;
   code: string;
-  name?: string | null;
+  name: string | null;
   status: string;
-  host_id?: string | null;
-  max_players?: number | null;
+  host_id: string | null;
+  max_players: number;
   game_round: number;
-  game_phase: GamePhase | string;
-  winner?: GameTeam | string | null;
-  phase_ends_at?: string | null;
-  last_event?: GameEvent | string | null;
-  [key: string]: unknown;
-};
+  game_phase: GamePhase;
+  winner: string | null;
+  phase_ends_at: string | null;
+  last_event: unknown;
+}
 
-export type GameState = {
+export interface GameState {
   room: GameRoom;
-  players: GamePlayer[];
-  me?: CurrentGamePlayer | null;
-  my_player_id?: string | null;
-  [key: string]: unknown;
-};
+  players: CurrentGamePlayer[];
+  me: CurrentGamePlayer | null;
+  my_player_id: string | null;
+}
 
-export type MyRole = {
+export interface MyRole {
   role: GameRole;
   alive: boolean;
-  team?: GameTeam;
-  ghoul_ability_stolen?: boolean;
-  stolen_role?: GameRole | null;
-  stolen_ability?: NightAction | null;
-};
-
-/* ============================================================
-   ERROR HELPERS
-============================================================ */
-
-function errorMessage(
-  error: any,
-  fallback: string,
-): string {
-  if (!error) return fallback;
-
-  if (
-    typeof error === 'string' &&
-    error.trim()
-  ) {
-    return error;
-  }
-
-  const parts = [
-    error.message,
-    error.details,
-    error.hint,
-    error.code
-      ? `code=${error.code}`
-      : null,
-  ]
-    .filter(Boolean)
-    .map(String);
-
-  return parts.join(' | ') || fallback;
+  team: GameTeam;
+  ghoul_ability_stolen: boolean;
+  stolen_role: GameRole | null;
+  stolen_ability: NightAction | null;
 }
 
-function isUuid(value: unknown): value is string {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value.trim(),
-  );
+export interface RoleDefinition {
+  role: GameRole;
+  label: string;
+  englishLabel: string;
+  team: GameTeam;
+  description: string;
+  ability: string;
+  objective: string;
+  phase: 'night' | 'day' | 'passive' | 'both';
+  action: NightAction | null;
 }
 
-function requireTargetId(
-  targetId: string,
-): string {
-  const value =
-    String(targetId ?? '').trim();
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-  if (!value) {
-    throw new Error(
-      'يجب اختيار لاعب أولاً.',
-    );
-  }
-
-  return value;
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
 }
 
-/* ============================================================
-   ROLE NORMALIZATION
-============================================================ */
+/**
+ * يحوّل أي قيمة قادمة من Supabase إلى GameRole صالح.
+ * الأدوار غير المدعومة حاليًا تتحول إلى CITIZEN بدل كسر اللعبة.
+ */
+export function normalizeGameRole(value: unknown): GameRole {
+  const role = String(value ?? '').trim().toUpperCase();
 
-export function normalizeGameRole(
-  value: unknown,
-): GameRole | null {
-  if (typeof value !== 'string') {
-    return null;
-  }
-
-  switch (
-    value.trim().toUpperCase()
-  ) {
+  switch (role) {
     case 'CITIZEN':
-      return 'CITIZEN';
-
     case 'DOCTOR':
-      return 'DOCTOR';
-
     case 'DETECTIVE':
-      return 'DETECTIVE';
-
     case 'GHOUL':
-      return 'GHOUL';
-
+    case 'SPY':
+    case 'BODYGUARD':
+    case 'SHERIFF':
+    case 'WITCH':
     case 'MAFIA':
-      return 'MAFIA';
-
     case 'GODFATHER':
-      return 'GODFATHER';
-
     case 'CONSIGLIERE':
-      return 'CONSIGLIERE';
-
     case 'CULT_LEADER':
-      return 'CULT_LEADER';
-
     case 'CULTIST':
-      return 'CULTIST';
+      return role;
 
     default:
-      return null;
+      return 'CITIZEN';
   }
 }
 
-/* ============================================================
-   TEAM
-============================================================ */
+export function getRoleTeam(roleValue: unknown): GameTeam {
+  const role = normalizeGameRole(roleValue);
 
-export function getRoleTeam(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): GameTeam | null {
-  const normalized =
-    normalizeGameRole(role);
-
-  switch (normalized) {
+  switch (role) {
     case 'MAFIA':
     case 'GODFATHER':
     case 'CONSIGLIERE':
@@ -251,984 +173,928 @@ export function getRoleTeam(
     case 'DOCTOR':
     case 'DETECTIVE':
     case 'GHOUL':
-      return 'CITIZENS';
-
+    case 'SPY':
+    case 'BODYGUARD':
+    case 'SHERIFF':
+    case 'WITCH':
     default:
-      return null;
+      return 'CITIZENS';
   }
 }
 
-export function isCitizenTeam(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'CITIZENS'
-  );
-}
-
-export function isMafiaTeam(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'MAFIA'
-  );
-}
-
-export function isCultTeam(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'CULT'
-  );
-}
-
-/* ============================================================
-   ROLE ACTION
-============================================================ */
-
 export function getRoleNightAction(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
+  roleValue: unknown,
 ): NightAction | null {
-  const normalized =
-    normalizeGameRole(role);
+  const role = normalizeGameRole(roleValue);
 
-  switch (normalized) {
+  switch (role) {
     case 'MAFIA':
+    case 'GODFATHER':
       return 'kill';
 
     case 'DOCTOR':
       return 'protect';
 
     case 'DETECTIVE':
-      return 'investigate';
-
     case 'CONSIGLIERE':
       return 'investigate';
+
+    case 'SPY':
+      return 'spy';
+
+    case 'BODYGUARD':
+      return 'guard';
+
+    case 'SHERIFF':
+      return 'sheriff_check';
+
+    case 'WITCH':
+      return 'witch_save';
 
     case 'CULT_LEADER':
       return 'cult_convert';
 
-    case 'GODFATHER':
-    case 'CITIZEN':
     case 'GHOUL':
+      return 'ghoul';
+
+    case 'CITIZEN':
     case 'CULTIST':
     default:
       return null;
   }
 }
 
-/* ============================================================
-   ROLE DESCRIPTION
-============================================================ */
-
-export function getRoleDescription(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): string {
-  switch (
-    normalizeGameRole(role)
-  ) {
-    case 'CITIZEN':
-      return 'مواطن عادي. لا تملك قدرة ليلية. مهمتك اكتشاف الأعداء عن طريق النقاش والتصويت.';
-
-    case 'DOCTOR':
-      return 'الطبيب. يمكنك حماية لاعب واحد كل ليلة من محاولة القتل.';
-
-    case 'DETECTIVE':
-      return 'المحقق. يمكنك فحص لاعب واحد كل ليلة لمعرفة الفريق الذي ينتمي إليه.';
-
-    case 'GHOUL':
-      return 'الغول. أنت من فريق المواطنين. عند موت أول لاعب في اللعبة، تحصل تلقائيًا على قدرته مرة واحدة فقط إذا كانت قابلة للسرقة.';
-
-    case 'MAFIA':
-      return 'عضو المافيا. تشارك في اختيار هدف القتل خلال الليل.';
-
-    case 'GODFATHER':
-      return 'عرّاب المافيا. قائد فريق المافيا وتحدد قدراته قواعد الخادم.';
-
-    case 'CONSIGLIERE':
-      return 'المستشار. يمكنك التحقيق مع لاعب لمعرفة دوره الدقيق.';
-
-    case 'CULT_LEADER':
-      return 'زعيم الطائفة. يمكنك تحويل لاعب مناسب إلى فريق الطائفة.';
-
-    case 'CULTIST':
-      return 'عضو في الطائفة. تنتمي إلى فريق الطائفة ولا تملك قدرة ليلية مستقلة.';
-
-    default:
-      return 'دور غير معروف.';
-  }
-}
-
-/* ============================================================
-   ROLE LABEL
-============================================================ */
-
-export function getRoleLabel(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): string {
-  switch (
-    normalizeGameRole(role)
-  ) {
-    case 'CITIZEN':
-      return 'المواطن';
-
-    case 'DOCTOR':
-      return 'الطبيب';
-
-    case 'DETECTIVE':
-      return 'المحقق';
-
-    case 'GHOUL':
-      return 'الغول';
-
-    case 'MAFIA':
-      return 'المافيا';
-
-    case 'GODFATHER':
-      return 'عرّاب المافيا';
-
-    case 'CONSIGLIERE':
-      return 'المستشار';
-
-    case 'CULT_LEADER':
-      return 'زعيم الطائفة';
-
-    case 'CULTIST':
-      return 'عضو الطائفة';
-
-    default:
-      return 'غير معروف';
-  }
-}
-
-/* ============================================================
-   ROOM RESOLUTION
-============================================================ */
-
-export async function resolveRoomId(
-  roomValue: string,
-): Promise<string> {
-  const value =
-    String(roomValue ?? '').trim();
-
-  if (!value) {
-    throw new Error(
-      'رمز الغرفة غير موجود.',
-    );
-  }
-
-  if (isUuid(value)) {
-    return value;
-  }
-
-  const code =
-    value.toUpperCase();
-
-  const {
-    data,
-    error,
-  } = await supabase
-    .from('rooms')
-    .select('id,code')
-    .eq('code', code)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر العثور على الغرفة.',
-      ),
-    );
-  }
-
-  if (
-    !data?.id ||
-    !isUuid(data.id)
-  ) {
-    throw new Error(
-      'الغرفة غير موجودة أو لم تعد متاحة.',
-    );
-  }
-
-  return data.id;
-}
-
-/* ============================================================
-   TARGET RESOLUTION
-============================================================ */
-
-/**
- * يقبل:
- *
- * room_players.id
- * أو
- * room_players.user_id
- *
- * ويعيد الاثنين بعد التحقق
- * من أن اللاعب موجود داخل الغرفة.
- */
-async function resolveTarget(
-  roomId: string,
-  targetId: string,
-): Promise<{
-  id: string;
-  user_id: string;
-}> {
-  const room =
-    await resolveRoomId(roomId);
-
-  const target =
-    requireTargetId(targetId);
-
-  if (!isUuid(target)) {
-    throw new Error(
-      'معرف اللاعب المستهدف غير صالح.',
-    );
-  }
-
-  const byId =
-    await supabase
-      .from('room_players')
-      .select('id,user_id')
-      .eq('room_id', room)
-      .eq('id', target)
-      .maybeSingle();
-
-  if (
-    !byId.error &&
-    byId.data &&
-    isUuid(byId.data.id) &&
-    isUuid(byId.data.user_id)
-  ) {
-    return {
-      id: byId.data.id,
-      user_id: byId.data.user_id,
-    };
-  }
-
-  const byUser =
-    await supabase
-      .from('room_players')
-      .select('id,user_id')
-      .eq('room_id', room)
-      .eq('user_id', target)
-      .maybeSingle();
-
-  if (
-    !byUser.error &&
-    byUser.data &&
-    isUuid(byUser.data.id) &&
-    isUuid(byUser.data.user_id)
-  ) {
-    return {
-      id: byUser.data.id,
-      user_id: byUser.data.user_id,
-    };
-  }
-
-  throw new Error(
-    'اللاعب المستهدف غير موجود في هذه الغرفة.',
-  );
-}
-
-/* ============================================================
-   TARGET RPC
-============================================================ */
-
-type TargetRpcName =
-  | 'mafia_submit_vote'
-  | 'mafia_submit_action';
-
-/**
- * ينفذ RPC مع player id أولاً،
- * ثم user_id عند الحاجة.
- *
- * مهم:
- * لا يتم إرسال room code
- * أو target code إلى RPC.
- */
-async function callTargetRpc(
-  rpcName: TargetRpcName,
-  roomId: string,
-  targetId: string,
-  extra: Record<string, unknown> = {},
-) {
-  const room =
-    await resolveRoomId(roomId);
-
-  const target =
-    await resolveTarget(
-      room,
-      targetId,
-    );
-
-  const first =
-    await supabase.rpc(
-      rpcName,
-      {
-        p_room_id: room,
-        p_target_id: target.id,
-        ...extra,
-      },
-    );
-
-  if (!first.error) {
-    return first.data;
-  }
-
-  /*
-   * إذا كان الـRPC يتوقع user_id
-   * بدلاً من room_players.id.
-   */
-  if (
-    target.user_id !== target.id
-  ) {
-    const second =
-      await supabase.rpc(
-        rpcName,
-        {
-          p_room_id: room,
-          p_target_id:
-            target.user_id,
-          ...extra,
-        },
-      );
-
-    if (!second.error) {
-      return second.data;
-    }
-
-    throw new Error(
-      errorMessage(
-        second.error,
-        errorMessage(
-          first.error,
-          'تعذر تنفيذ العملية.',
-        ),
-      ),
-    );
-  }
-
-  throw new Error(
-    errorMessage(
-      first.error,
-      'تعذر تنفيذ العملية.',
-    ),
-  );
-}
-
-/* ============================================================
-   GET GAME STATE
-============================================================ */
-
-export async function getGameState(
-  roomId: string,
-): Promise<GameState> {
-  const id =
-    await resolveRoomId(roomId);
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'get_mafia_game_state',
-    {
-      p_room_id: id,
-    },
-  );
-
-  if (error) {
-    console.error(
-      'getGameState:',
-      error,
-    );
-
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر تحميل حالة اللعبة.',
-      ),
-    );
-  }
-
-  const raw: any =
-    data ?? {};
-
-  const players =
-    Array.isArray(raw.players)
-      ? raw.players
-      : [];
-
-  let me =
-    raw.me ??
-    raw.current_player ??
-    null;
-
-  let myPlayerId =
-    raw.my_player_id ??
-    me?.id ??
-    null;
-
-  /*
-   * إذا أعاد RPC user_id فقط،
-   * نحاول العثور على room_players.id.
-   */
-  if (
-    !myPlayerId &&
-    me?.user_id
-  ) {
-    const found =
-      players.find(
-        (player: GamePlayer) =>
-          player.user_id ===
-          me.user_id,
-      );
-
-    if (found) {
-      myPlayerId =
-        found.id;
-    }
-  }
-
-  /*
-   * إذا كان لدينا id فقط
-   * ولم يوجد me، نبحث عنه.
-   */
-  if (
-    !me &&
-    myPlayerId
-  ) {
-    const found =
-      players.find(
-        (player: GamePlayer) =>
-          player.id ===
-          myPlayerId ||
-          player.user_id ===
-          myPlayerId,
-      );
-
-    if (found) {
-      me = found;
-    }
-  }
-
-  return {
-    ...raw,
-    room: raw.room,
-    players,
-    me,
-    my_player_id:
-      myPlayerId,
-  } as GameState;
-}
-
-/* ============================================================
-   GET MY ROLE
-============================================================ */
-
-export async function getMyRole(
-  roomId: string,
-): Promise<MyRole> {
-  const id =
-    await resolveRoomId(roomId);
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'get_my_mafia_role',
-    {
-      p_room_id: id,
-    },
-  );
-
-  if (error) {
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر تحميل دورك.',
-      ),
-    );
-  }
-
-  const raw: any =
-    data ?? {};
-
-  const role =
-    normalizeGameRole(
-      raw.role ??
-        raw.my_role ??
-        raw.player_role,
-    );
-
-  if (!role) {
-    throw new Error(
-      'لم يتم توزيع دورك بعد.',
-    );
-  }
-
-  return {
-    role,
-    alive:
-      raw.alive !== false,
-    team:
-      getRoleTeam(role) ??
-      raw.team ??
-      undefined,
-    ghoul_ability_stolen:
-      Boolean(
-        raw.ghoul_ability_stolen ??
-          raw.ability_stolen ??
-          false,
-      ),
-    stolen_role:
-      normalizeGameRole(
-        raw.stolen_role,
-      ),
-    stolen_ability:
-      raw.stolen_ability ??
-      null,
-  };
-}
-
-/* ============================================================
-   START GAME
-============================================================ */
-
-export async function startMafiaGame(
-  roomId: string,
-) {
-  const id =
-    await resolveRoomId(roomId);
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'start_mafia_game',
-    {
-      p_room_id: id,
-    },
-  );
-
-  if (error) {
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر بدء اللعبة.',
-      ),
-    );
-  }
-
-  return data;
-}
-
-/* ============================================================
-   ADVANCE PHASE
-============================================================ */
-
-export async function advanceMafiaPhase(
-  roomId: string,
-) {
-  const id =
-    await resolveRoomId(roomId);
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'advance_mafia_phase',
-    {
-      p_room_id: id,
-    },
-  );
-
-  if (error) {
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر الانتقال إلى المرحلة التالية.',
-      ),
-    );
-  }
-
-  return data;
-}
-
-/* ============================================================
-   NIGHT ACTION
-============================================================ */
-
-export async function submitNightAction(
-  roomId: string,
-  action: NightAction,
-  targetId: string,
-) {
-  if (!action) {
-    throw new Error(
-      'القدرة غير محددة.',
-    );
-  }
-
-  return callTargetRpc(
-    'mafia_submit_action',
-    roomId,
-    targetId,
-    {
-      p_action: action,
-    },
-  );
-}
-
-/* ============================================================
-   DAY VOTE
-============================================================ */
-
-export async function submitDayVote(
-  roomId: string,
-  targetId: string,
-) {
-  return callTargetRpc(
-    'mafia_submit_vote',
-    roomId,
-    targetId,
-  );
-}
-
-/* ============================================================
-   GHOUL
-============================================================ */
-
-export function canGhoulStealAbility(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): boolean {
-  const normalized =
-    normalizeGameRole(role);
-
-  return (
-    normalized === 'DOCTOR' ||
-    normalized === 'DETECTIVE' ||
-    normalized === 'MAFIA' ||
-    normalized === 'CONSIGLIERE' ||
-    normalized === 'CULT_LEADER'
-  );
-}
-
-export function getStealableAbility(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): NightAction | null {
-  if (
-    !canGhoulStealAbility(role)
-  ) {
-    return null;
-  }
-
-  return getRoleNightAction(role);
-}
-
-export function getGhoulStealResult(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): {
-  role: GameRole | null;
-  ability: NightAction | null;
-} {
-  const normalized =
-    normalizeGameRole(role);
-
-  return {
-    role: normalized,
+const ROLE_DEFINITIONS: Record<GameRole, RoleDefinition> = {
+  CITIZEN: {
+    role: 'CITIZEN',
+    label: 'مواطن',
+    englishLabel: 'Citizen',
+    team: 'CITIZENS',
+    description:
+      'عضو أساسي في فريق المواطنين. لا يمتلك قدرة ليلية خاصة.',
+    ability: 'لا توجد قدرة ليلية.',
+    objective: 'اكتشف المافيا والطائفة وصوّت لإقصائهم.',
+    phase: 'day',
+    action: null,
+  },
+
+  DOCTOR: {
+    role: 'DOCTOR',
+    label: 'الطبيب',
+    englishLabel: 'Doctor',
+    team: 'CITIZENS',
+    description:
+      'يستطيع حماية لاعب واحد أثناء الليل.',
     ability:
-      getStealableAbility(
-        normalized,
-      ),
-  };
+      'اختر لاعبًا واحدًا لحمايته من قتل المافيا خلال هذه الليلة.',
+    objective:
+      'حماية المواطنين المهمين والمساعدة في بقاء فريق المواطنين.',
+    phase: 'night',
+    action: 'protect',
+  },
+
+  DETECTIVE: {
+    role: 'DETECTIVE',
+    label: 'المحقق',
+    englishLabel: 'Detective',
+    team: 'CITIZENS',
+    description:
+      'يحقق في لاعب واحد كل ليلة لمعرفة ما إذا كان من المافيا.',
+    ability:
+      'اختر لاعبًا واحدًا للتحقيق فيه مرة واحدة في الليلة.',
+    objective:
+      'كشف المافيا ومساعدة المواطنين في التصويت الصحيح.',
+    phase: 'night',
+    action: 'investigate',
+  },
+
+  GHOUL: {
+    role: 'GHOUL',
+    label: 'الغول',
+    englishLabel: 'Ghoul',
+    team: 'CITIZENS',
+    description:
+      'غول من فريق المواطنين. يسرق قدرة أول لاعب يموت في اللعبة مرة واحدة.',
+    ability:
+      'عند أول وفاة مناسبة، ينسخ الغول قدرة اللاعب الميت ويستطيع استخدامها مرة واحدة.',
+    objective:
+      'ساعد المواطنين ثم استغل القدرة المسروقة في اللحظة المناسبة.',
+    phase: 'both',
+    action: 'ghoul',
+  },
+
+  SPY: {
+    role: 'SPY',
+    label: 'الجاسوس',
+    englishLabel: 'Spy',
+    team: 'CITIZENS',
+    description:
+      'يجمع معلومات سرية عن أحد اللاعبين أثناء الليل.',
+    ability:
+      'استخدم قدرة التجسس للحصول على معلومات عن هدفك.',
+    objective:
+      'كشف أعضاء المافيا والطائفة ومساعدة المواطنين.',
+    phase: 'night',
+    action: 'spy',
+  },
+
+  BODYGUARD: {
+    role: 'BODYGUARD',
+    label: 'الحارس الشخصي',
+    englishLabel: 'Bodyguard',
+    team: 'CITIZENS',
+    description:
+      'يحمي لاعبًا من هجوم ليلي.',
+    ability:
+      'اختر لاعبًا لحمايته أثناء الليل.',
+    objective:
+      'حماية اللاعبين الأساسيين ومنع عمليات القتل.',
+    phase: 'night',
+    action: 'guard',
+  },
+
+  SHERIFF: {
+    role: 'SHERIFF',
+    label: 'الشريف',
+    englishLabel: 'Sheriff',
+    team: 'CITIZENS',
+    description:
+      'يبحث عن أعضاء المافيا أثناء الليل.',
+    ability:
+      'تحقق من لاعب واحد كل ليلة لمعرفة ما إذا كان من المافيا.',
+    objective:
+      'كشف المافيا ومساعدة المواطنين على التخلص منها.',
+    phase: 'night',
+    action: 'sheriff_check',
+  },
+
+  WITCH: {
+    role: 'WITCH',
+    label: 'الساحرة',
+    englishLabel: 'Witch',
+    team: 'CITIZENS',
+    description:
+      'تمتلك قدرات خاصة للتأثير في أحداث الليل.',
+    ability:
+      'يمكنها استخدام قدرة إنقاذ أو قتل وفق قواعد اللعبة.',
+    objective:
+      'استخدم قدراتك في اللحظة المناسبة لمصلحة المواطنين.',
+    phase: 'night',
+    action: 'witch_save',
+  },
+
+  MAFIA: {
+    role: 'MAFIA',
+    label: 'مافيا',
+    englishLabel: 'Mafia',
+    team: 'MAFIA',
+    description:
+      'عضو في المافيا ويشارك في اختيار ضحية الليل.',
+    ability:
+      'شارك فريق المافيا في اختيار لاعب لقتله أثناء الليل.',
+    objective:
+      'القضاء على المواطنين والطائفة والوصول إلى السيطرة.',
+    phase: 'night',
+    action: 'kill',
+  },
+
+  GODFATHER: {
+    role: 'GODFATHER',
+    label: 'العرّاب',
+    englishLabel: 'Godfather',
+    team: 'MAFIA',
+    description:
+      'قائد المافيا وأحد أهم أدوار الفريق.',
+    ability:
+      'يقود المافيا في عملية اختيار ضحية الليل.',
+    objective:
+      'قيادة المافيا للقضاء على خصومها.',
+    phase: 'night',
+    action: 'kill',
+  },
+
+  CONSIGLIERE: {
+    role: 'CONSIGLIERE',
+    label: 'المستشار',
+    englishLabel: 'Consigliere',
+    team: 'MAFIA',
+    description:
+      'محقق المافيا. يجمع المعلومات لمساعدة فريقه.',
+    ability:
+      'يستطيع التحقيق في لاعب أثناء الليل لمساعدة المافيا.',
+    objective:
+      'كشف الأدوار الخطيرة ومساعدة العرّاب والمافيا.',
+    phase: 'night',
+    action: 'investigate',
+  },
+
+  CULT_LEADER: {
+    role: 'CULT_LEADER',
+    label: 'قائد الطائفة',
+    englishLabel: 'Cult Leader',
+    team: 'CULT',
+    description:
+      'قائد الطائفة الذي يستطيع تحويل بعض اللاعبين إلى الطائفة.',
+    ability:
+      'اختر لاعبًا مؤهلًا لمحاولة تحويله إلى فريق الطائفة.',
+    objective:
+      'زيادة أعضاء الطائفة والسيطرة على المباراة.',
+    phase: 'night',
+    action: 'cult_convert',
+  },
+
+  CULTIST: {
+    role: 'CULTIST',
+    label: 'عضو الطائفة',
+    englishLabel: 'Cultist',
+    team: 'CULT',
+    description:
+      'عضو في فريق الطائفة.',
+    ability:
+      'لا يمتلك قدرة ليلية مستقلة حاليًا.',
+    objective:
+      'ساعد الطائفة على البقاء والسيطرة على المباراة.',
+    phase: 'both',
+    action: null,
+  },
+};
+
+export function getRoleDefinition(
+  roleValue: unknown,
+): RoleDefinition {
+  return ROLE_DEFINITIONS[normalizeGameRole(roleValue)];
 }
 
-/* ============================================================
-   DISPLAY HELPERS
-============================================================ */
+export function getRoleLabel(roleValue: unknown): string {
+  return getRoleDefinition(roleValue).label;
+}
 
-export function getTeamLabel(
-  team:
-    | GameTeam
-    | string
-    | null
-    | undefined,
-): string {
-  switch (team) {
-    case 'CITIZENS':
-      return 'المواطنون';
+export function getRoleEnglishLabel(roleValue: unknown): string {
+  return getRoleDefinition(roleValue).englishLabel;
+}
 
+export function getRoleDescription(roleValue: unknown): string {
+  return getRoleDefinition(roleValue).description;
+}
+
+export function getRoleAbility(roleValue: unknown): string {
+  return getRoleDefinition(roleValue).ability;
+}
+
+export function getRoleObjective(roleValue: unknown): string {
+  return getRoleDefinition(roleValue).objective;
+}
+
+export function getRolePhase(
+  roleValue: unknown,
+): RoleDefinition['phase'] {
+  return getRoleDefinition(roleValue).phase;
+}
+
+export function getTeamLabel(teamValue: unknown): string {
+  switch (String(teamValue ?? '').toUpperCase()) {
     case 'MAFIA':
       return 'المافيا';
 
     case 'CULT':
       return 'الطائفة';
 
+    case 'CITIZENS':
     default:
-      return 'غير معروف';
+      return 'المواطنون';
   }
 }
 
 export function getActionLabel(
-  action:
-    | NightAction
-    | null
-    | undefined,
+  actionValue: unknown,
 ): string {
-  switch (action) {
+  switch (String(actionValue ?? '').toLowerCase()) {
     case 'kill':
-      return 'القتل';
+      return 'قتل';
 
     case 'protect':
-      return 'الحماية';
+      return 'حماية';
 
     case 'investigate':
-      return 'التحقيق';
+      return 'تحقيق';
+
+    case 'spy':
+      return 'تجسس';
+
+    case 'guard':
+      return 'حراسة';
+
+    case 'sheriff_check':
+      return 'فحص';
+
+    case 'witch_save':
+      return 'إنقاذ';
+
+    case 'witch_kill':
+      return 'قتل بالسحر';
+
+    case 'ghoul':
+      return 'قدرة الغول';
 
     case 'cult_convert':
-      return 'التحويل';
+      return 'تحويل للطائفة';
 
     default:
       return 'لا توجد قدرة';
   }
 }
 
-export function getRoleAbilityLabel(
-  role:
-    | GameRole
-    | string
-    | null
-    | undefined,
-): string {
-  return getActionLabel(
-    getRoleNightAction(role),
-  );
+/**
+ * يحوّل player القادم من Supabase إلى النموذج الموحد للتطبيق.
+ */
+export function normalizeGamePlayer(
+  player: any,
+): CurrentGamePlayer {
+  const role = normalizeGameRole(player?.role);
+
+  return {
+    id: String(player?.id ?? ''),
+    user_id: String(player?.user_id ?? ''),
+    name: String(player?.name ?? 'Player'),
+    alive: Boolean(player?.alive),
+    role,
+    team: getRoleTeam(role),
+    avatar_url:
+      typeof player?.avatar_url === 'string'
+        ? player.avatar_url
+        : null,
+    ghoul_ability_stolen: Boolean(
+      player?.ghoul_ability_stolen ??
+        player?.ghoul_has_copied ??
+        player?.ghoul_ability_stolen === true,
+    ),
+    stolen_role: player?.stolen_role
+      ? normalizeGameRole(player.stolen_role)
+      : player?.ghoul_copied_role
+        ? normalizeGameRole(player.ghoul_copied_role)
+        : null,
+    stolen_ability: normalizeNightAction(
+      player?.stolen_ability,
+    ),
+  };
 }
 
-/* ============================================================
-   PLAYER ID HELPERS
-============================================================ */
+export function normalizeNightAction(
+  value: unknown,
+): NightAction | null {
+  const action = String(value ?? '').toLowerCase();
+
+  switch (action) {
+    case 'kill':
+    case 'protect':
+    case 'investigate':
+    case 'spy':
+    case 'guard':
+    case 'sheriff_check':
+    case 'witch_save':
+    case 'witch_kill':
+    case 'ghoul':
+    case 'cult_convert':
+      return action;
+
+    default:
+      return null;
+  }
+}
+
+function normalizeRoom(
+  room: any,
+): GameRoom {
+  const phase = String(
+    room?.game_phase ?? 'waiting',
+  ).toLowerCase();
+
+  const validPhase: GamePhase =
+    phase === 'night' ||
+    phase === 'day' ||
+    phase === 'finished' ||
+    phase === 'waiting'
+      ? phase
+      : 'waiting';
+
+  return {
+    id: String(room?.id ?? ''),
+    code: String(room?.code ?? ''),
+    name:
+      typeof room?.name === 'string'
+        ? room.name
+        : null,
+    status: String(room?.status ?? 'waiting'),
+    host_id:
+      typeof room?.host_id === 'string'
+        ? room.host_id
+        : null,
+    max_players: Number(room?.max_players ?? 8),
+    game_round: Number(room?.game_round ?? 0),
+    game_phase: validPhase,
+    winner:
+      typeof room?.winner === 'string'
+        ? room.winner
+        : null,
+    phase_ends_at:
+      typeof room?.phase_ends_at === 'string'
+        ? room.phase_ends_at
+        : null,
+    last_event: room?.last_event ?? null,
+  };
+}
 
 /**
- * معرف آمن لاستخدامه في واجهة اللعبة.
+ * يحل room code أو room UUID إلى UUID الحقيقي.
  *
- * الأولوية لـ user_id لأنه معرف
- * حساب اللاعب، مع fallback إلى id.
+ * هذا مهم جدًا لمنع خطأ:
+ * invalid input syntax for type uuid: "T2GZ6M"
  */
-export function getPlayerTargetId(
-  player:
-    | GamePlayer
-    | CurrentGamePlayer
-    | null
-    | undefined,
-): string | null {
-  if (!player) {
-    return null;
+export async function resolveRoomId(
+  roomValue: string,
+): Promise<string> {
+  const value = String(roomValue ?? '').trim();
+
+  if (!value) {
+    throw new Error('معرّف الغرفة فارغ.');
   }
 
-  if (
-    player.user_id &&
-    isUuid(player.user_id)
-  ) {
-    return player.user_id;
+  if (isUuid(value)) {
+    return value;
   }
 
-  if (
-    player.id &&
-    isUuid(player.id)
-  ) {
-    return player.id;
+  const { data, error } = await supabase
+    .from('rooms')
+    .select('id')
+    .eq('code', value.toUpperCase())
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر البحث عن الغرفة.',
+    );
   }
 
-  return null;
+  if (!data?.id) {
+    throw new Error(
+      'الغرفة غير موجودة أو لم تعد متاحة.',
+    );
+  }
+
+  return String(data.id);
 }
 
 /**
- * التحقق من أن اللاعب يملك معرفًا
- * صالحًا للإرسال إلى RPC.
+ * يقبل room_players.id أو user_id ويعيد room_players.id.
  */
+export async function resolveTarget(
+  roomId: string,
+  targetValue: string,
+): Promise<string> {
+  const value = String(targetValue ?? '').trim();
+
+  if (!value) {
+    throw new Error('الهدف غير صالح.');
+  }
+
+  const { data, error } = await supabase
+    .from('room_players')
+    .select('id,user_id')
+    .eq('room_id', roomId)
+    .or(`id.eq.${value},user_id.eq.${value}`)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر تحديد اللاعب المستهدف.',
+    );
+  }
+
+  if (!data?.id) {
+    throw new Error(
+      'اللاعب المستهدف غير موجود في هذه الغرفة.',
+    );
+  }
+
+  return String(data.id);
+}
+
+export function getPlayerTargetId(
+  player: Pick<GamePlayer, 'id' | 'user_id'>,
+): string {
+  return player.id || player.user_id;
+}
+
 export function hasValidPlayerId(
-  player:
-    | GamePlayer
-    | CurrentGamePlayer
-    | null
-    | undefined,
+  value: unknown,
 ): boolean {
-  return Boolean(
-    getPlayerTargetId(player),
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0
   );
 }
 
-/* ============================================================
-   TARGET RULES
-============================================================ */
-
-export function canTargetPlayer(
-  actor:
-    | GamePlayer
-    | CurrentGamePlayer
-    | null
-    | undefined,
-  target:
-    | GamePlayer
-    | null
-    | undefined,
-): boolean {
-  if (!actor || !target) {
-    return false;
-  }
-
-  if (!target.alive) {
-    return false;
-  }
-
-  const action =
-    getRoleNightAction(
-      actor.role,
+async function callTargetRpc(
+  rpcName: string,
+  params: Record<string, unknown>,
+  roomId: string,
+  targetValue?: string | null,
+) {
+  if (!targetValue) {
+    const { data, error } = await supabase.rpc(
+      rpcName,
+      params,
     );
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data;
+  }
+
+  const targetId = await resolveTarget(
+    roomId,
+    targetValue,
+  );
+
+  const firstParams = {
+    ...params,
+    p_target_id: targetId,
+  };
+
+  let result = await supabase.rpc(
+    rpcName,
+    firstParams,
+  );
+
+  if (
+    result.error &&
+    /p_target_id|target_id/i.test(
+      result.error.message,
+    )
+  ) {
+    result = await supabase.rpc(rpcName, {
+      ...params,
+      p_target_user_id: targetValue,
+    });
+  }
+
+  if (result.error) {
+    throw new Error(result.error.message);
+  }
+
+  return result.data;
+}
+
+/**
+ * جلب حالة اللعبة.
+ */
+export async function getGameState(
+  roomValue: string,
+): Promise<GameState> {
+  const roomId = await resolveRoomId(roomValue);
+
+  const { data, error } = await supabase.rpc(
+    'get_mafia_game_state',
+    {
+      p_room_id: roomId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر تحميل حالة اللعبة.',
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      'تعذر تحميل حالة اللعبة.',
+    );
+  }
+
+  const rawPlayers = Array.isArray(data?.players)
+    ? data.players
+    : [];
+
+  const players = rawPlayers.map(
+    normalizeGamePlayer,
+  );
+
+  const me = data?.me
+    ? normalizeGamePlayer(data.me)
+    : null;
+
+  return {
+    room: normalizeRoom(data?.room ?? data),
+    players,
+    me,
+    my_player_id:
+      data?.my_player_id
+        ? String(data.my_player_id)
+        : me?.id ?? null,
+  };
+}
+
+/**
+ * جلب الدور الحقيقي للاعب الحالي.
+ */
+export async function getMyRole(
+  roomValue: string,
+): Promise<MyRole> {
+  const roomId = await resolveRoomId(roomValue);
+
+  const { data, error } = await supabase.rpc(
+    'get_my_mafia_role',
+    {
+      p_room_id: roomId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر تحميل دورك.',
+    );
+  }
+
+  const role = normalizeGameRole(data?.role);
+
+  return {
+    role,
+    alive: Boolean(data?.alive),
+    team: getRoleTeam(data?.team ?? role),
+    ghoul_ability_stolen: Boolean(
+      data?.ghoul_ability_stolen ??
+        data?.ghoul_has_copied,
+    ),
+    stolen_role: data?.stolen_role
+      ? normalizeGameRole(data.stolen_role)
+      : data?.ghoul_copied_role
+        ? normalizeGameRole(data.ghoul_copied_role)
+        : null,
+    stolen_ability: normalizeNightAction(
+      data?.stolen_ability,
+    ),
+  };
+}
+
+/**
+ * بدء اللعبة.
+ */
+export async function startGame(
+  roomValue: string,
+) {
+  const roomId = await resolveRoomId(roomValue);
+
+  const { data, error } = await supabase.rpc(
+    'start_mafia_game',
+    {
+      p_room_id: roomId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر بدء اللعبة.',
+    );
+  }
+
+  return data;
+}
+
+/**
+ * إرسال قدرة ليلية.
+ *
+ * targetValue يمكن أن يكون:
+ * - room_players.id
+ * - user_id
+ */
+export async function submitNightAction(
+  roomValue: string,
+  action: NightAction,
+  targetValue?: string | null,
+) {
+  const roomId = await resolveRoomId(roomValue);
 
   if (!action) {
-    return false;
+    throw new Error('القدرة غير صالحة.');
   }
 
-  if (
-    actor.id &&
-    target.id &&
-    actor.id === target.id
-  ) {
-    return false;
-  }
-
-  if (
-    actor.user_id &&
-    target.user_id &&
-    actor.user_id ===
-      target.user_id
-  ) {
-    return false;
-  }
-
-  return true;
+  return callTargetRpc(
+    'mafia_submit_action',
+    {
+      p_room_id: roomId,
+      p_action: action,
+    },
+    roomId,
+    targetValue,
+  );
 }
 
-/* ============================================================
-   WIN CONDITION
-============================================================ */
+/**
+ * إرسال تصويت نهاري.
+ */
+export async function submitDayVote(
+  roomValue: string,
+  targetValue: string,
+) {
+  const roomId = await resolveRoomId(roomValue);
 
-export function calculateWinner(
-  players: GamePlayer[],
-): GameTeam | null {
-  const alive =
-    players.filter(
-      player => player.alive,
+  if (!targetValue) {
+    throw new Error(
+      'يجب اختيار لاعب للتصويت.',
     );
-
-  const mafia =
-    alive.filter(
-      player =>
-        getRoleTeam(
-          player.role,
-        ) === 'MAFIA',
-    ).length;
-
-  const cult =
-    alive.filter(
-      player =>
-        getRoleTeam(
-          player.role,
-        ) === 'CULT',
-    ).length;
-
-  const citizens =
-    alive.filter(
-      player =>
-        getRoleTeam(
-          player.role,
-        ) === 'CITIZENS',
-    ).length;
-
-  if (alive.length === 0) {
-    return null;
   }
 
-  if (
-    mafia === 0 &&
-    cult === 0
+  const targetId = await resolveTarget(
+    roomId,
+    targetValue,
+  );
+
+  const { data, error } = await supabase.rpc(
+    'mafia_submit_vote',
+    {
+      p_room_id: roomId,
+      p_target_id: targetId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر إرسال التصويت.',
+    );
+  }
+
+  return data;
+}
+
+/**
+ * محاولة نقل المرحلة عند انتهاء المؤقت.
+ */
+export async function advanceMafiaPhase(
+  roomValue: string,
+) {
+  const roomId = await resolveRoomId(roomValue);
+
+  const { data, error } = await supabase.rpc(
+    'advance_mafia_phase',
+    {
+      p_room_id: roomId,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || 'تعذر الانتقال للمرحلة التالية.',
+    );
+  }
+
+  return data;
+}
+
+/**
+ * أسماء الأدوار المتاحة فعليًا حاليًا في النظام.
+ */
+export function getAvailableRoles(): GameRole[] {
+  return [
+    'CITIZEN',
+    'DOCTOR',
+    'DETECTIVE',
+    'GHOUL',
+    'SPY',
+    'BODYGUARD',
+    'SHERIFF',
+    'WITCH',
+    'MAFIA',
+    'GODFATHER',
+    'CONSIGLIERE',
+    'CULT_LEADER',
+    'CULTIST',
+  ];
+}
+
+/**
+ * إرجاع كل معلومات البطاقة دفعة واحدة.
+ * ستستخدمها واجهة Anime Role Card.
+ */
+export function getRoleCardData(
+  roleValue: unknown,
+) {
+  const definition = getRoleDefinition(roleValue);
+
+  return {
+    role: definition.role,
+    label: definition.label,
+    englishLabel: definition.englishLabel,
+    team: definition.team,
+    teamLabel: getTeamLabel(definition.team),
+    description: definition.description,
+    ability: definition.ability,
+    objective: definition.objective,
+    phase: definition.phase,
+    action: definition.action,
+    actionLabel: getActionLabel(
+      definition.action,
+    ),
+  };
+}
+
+/**
+ * إذا مات لاعب وأصبحت قدرته قابلة للسرقة،
+ * يحول الاسم القادم من Supabase إلى NightAction.
+ */
+export function getStealableAbility(
+  roleValue: unknown,
+): NightAction | null {
+  const role = normalizeGameRole(roleValue);
+
+  switch (role) {
+    case 'DOCTOR':
+      return 'protect';
+
+    case 'DETECTIVE':
+      return 'investigate';
+
+    case 'MAFIA':
+    case 'GODFATHER':
+      return 'kill';
+
+    case 'CONSIGLIERE':
+      return 'investigate';
+
+    case 'SPY':
+      return 'spy';
+
+    case 'BODYGUARD':
+      return 'guard';
+
+    case 'SHERIFF':
+      return 'sheriff_check';
+
+    case 'WITCH':
+      return 'witch_save';
+
+    case 'CULT_LEADER':
+      return 'cult_convert';
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * اسم القدرة التي يملكها الغول حاليًا.
+ */
+export function getGhoulAbilityLabel(
+  stolenRole: unknown,
+  stolenAbility?: unknown,
+): string {
+  const action =
+    normalizeNightAction(stolenAbility) ??
+    getStealableAbility(stolenRole);
+
+  if (!action) {
+    return 'لم يسرق الغول قدرة بعد';
+  }
+
+  return getActionLabel(action);
+}
+
+/**
+ * هل يستطيع اللاعب استخدام قدرة ليلية؟
+ */
+export function canUseNightAction(
+  roleValue: unknown,
+  alive: boolean,
+): boolean {
+  if (!alive) {
+    return false;
+  }
+
+  return getRoleNightAction(roleValue) !== null;
+}
+
+/**
+ * تحويل المرحلة إلى عنوان عربي.
+ */
+export function getPhaseLabel(
+  phaseValue: unknown,
+): string {
+  switch (
+    String(phaseValue ?? '').toLowerCase()
   ) {
-    return 'CITIZENS';
-  }
+    case 'night':
+      return 'الليل';
 
-  if (
-    citizens === 0 &&
-    cult === 0
-  ) {
-    return 'MAFIA';
-  }
+    case 'day':
+      return 'النهار';
 
-  if (
-    cult > 0 &&
-    mafia === 0 &&
-    citizens === 0
-  ) {
-    return 'CULT';
-  }
+    case 'finished':
+      return 'انتهت اللعبة';
 
-  if (
-    cult > 0 &&
-    mafia === 0 &&
-    cult >= citizens
-  ) {
-    return 'CULT';
+    case 'waiting':
+    default:
+      return 'انتظار اللاعبين';
   }
-
-  if (
-    mafia > 0 &&
-    cult === 0 &&
-    mafia >= citizens
-  ) {
-    return 'MAFIA';
-  }
-
-  return null;
 }
