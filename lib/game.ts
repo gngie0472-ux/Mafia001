@@ -1,42 +1,7 @@
 import { supabase } from './supabase';
 
-/**
- * ============================================================
- * MAFIA NIGHT - GAME API
- * ============================================================
- *
- * الفرق:
- *   CITIZENS
- *   MAFIA
- *   CULT
- *
- * الأدوار:
- *   CITIZEN
- *   DOCTOR
- *   DETECTIVE
- *   GHOUL
- *   MAFIA
- *   GODFATHER
- *   CONSIGLIERE
- *   CULT_LEADER
- *   CULTIST
- *
- * ملاحظة:
- * هذا الملف مسؤول عن:
- * - Types
- * - قراءة حالة اللعبة
- * - إرسال الأفعال
- * - قراءة الدور
- * - مساعدات قواعد اللعبة
- *
- * التنفيذ الحقيقي للقواعد الحساسة يجب أن يكون
- * داخل Supabase RPC في المرحلة التالية.
- * ============================================================
- */
-
-
 /* ============================================================
-   PHASE
+   TYPES
 ============================================================ */
 
 export type GamePhase =
@@ -45,20 +10,10 @@ export type GamePhase =
   | 'day'
   | 'finished';
 
-
-/* ============================================================
-   TEAM
-============================================================ */
-
 export type GameTeam =
   | 'CITIZENS'
   | 'MAFIA'
   | 'CULT';
-
-
-/* ============================================================
-   ROLE
-============================================================ */
 
 export type GameRole =
   | 'CITIZEN'
@@ -71,88 +26,35 @@ export type GameRole =
   | 'CULT_LEADER'
   | 'CULTIST';
 
-
-/* ============================================================
-   NIGHT ACTION
-============================================================ */
-
 export type NightAction =
   | 'kill'
   | 'protect'
   | 'investigate'
   | 'cult_convert';
 
-
-/* ============================================================
-   INVESTIGATION
-============================================================ */
-
-export type InvestigationResult =
-  | {
-      type: 'team';
-      team: GameTeam;
-    }
-  | {
-      type: 'role';
-      role: GameRole;
-    };
-
-
-/* ============================================================
-   PLAYER
-============================================================ */
-
 export type GamePlayer = {
   id: string;
   user_id: string;
-
   name: string;
-
   avatar_url?: string | null;
-
   alive: boolean;
-
-  /**
-   * الدور قد لا يكون مرسلًا للاعبين الآخرين.
-   * لذلك يبقى اختياريًا.
-   */
   role?: GameRole | string | null;
-
   ready?: boolean;
-
   created_at?: string | null;
 };
-
-
-/* ============================================================
-   CURRENT PLAYER
-============================================================ */
 
 export type CurrentGamePlayer = {
   id?: string | null;
   user_id?: string | null;
-
   name?: string | null;
-
   alive: boolean;
-
   role?: GameRole | string | null;
-
   team?: GameTeam | string | null;
-
   avatar_url?: string | null;
-
   ghoul_ability_stolen?: boolean;
-
   stolen_role?: GameRole | null;
-
   stolen_ability?: NightAction | null;
 };
-
-
-/* ============================================================
-   GAME EVENT
-============================================================ */
 
 export type GameEventType =
   | 'game_started'
@@ -170,125 +72,64 @@ export type GameEventType =
   | 'winner'
   | string;
 
-
 export type GameEvent = {
   type?: GameEventType | null;
-
   player_id?: string | null;
-
   target_id?: string | null;
-
   round?: number | null;
-
   winner?: GameTeam | string | null;
-
   phase?: GamePhase | string | null;
-
   phase_ends_at?: string | null;
-
   previous_phase?: GamePhase | string | null;
-
   ghoul_target?: string | null;
-
   cult_converted?: string | null;
-
   stolen_role?: GameRole | string | null;
-
   stolen_ability?: NightAction | null;
-
   message?: string | null;
-
   [key: string]: unknown;
 };
-
-
-/* ============================================================
-   ROOM
-============================================================ */
 
 export type GameRoom = {
   id: string;
-
   code: string;
-
   name?: string | null;
-
   status: string;
-
   host_id?: string | null;
-
   max_players?: number | null;
-
   game_round: number;
-
   game_phase: GamePhase | string;
-
   winner?: GameTeam | string | null;
-
   phase_ends_at?: string | null;
-
   last_event?: GameEvent | string | null;
-
   [key: string]: unknown;
 };
 
-
-/* ============================================================
-   GAME STATE
-============================================================ */
-
-/**
- * نحافظ على BOTH:
- *
- *   me
- *   my_player_id
- *
- * لأن الشاشات الحالية في المشروع تستخدم الصيغتين
- * في إصدارات مختلفة.
- */
 export type GameState = {
   room: GameRoom;
-
   players: GamePlayer[];
-
   me?: CurrentGamePlayer | null;
-
   my_player_id?: string | null;
-
   [key: string]: unknown;
 };
-
-
-/* ============================================================
-   MY ROLE
-============================================================ */
 
 export type MyRole = {
   role: GameRole;
-
   alive: boolean;
-
   team?: GameTeam;
-
   ghoul_ability_stolen?: boolean;
-
   stolen_role?: GameRole | null;
-
   stolen_ability?: NightAction | null;
 };
 
-
 /* ============================================================
-   ERROR HELPER
+   HELPERS
 ============================================================ */
 
 function errorMessage(
   error: any,
   fallback: string,
 ): string {
-  if (!error) {
-    return fallback;
-  }
+  if (!error) return fallback;
 
   if (
     typeof error === 'string' &&
@@ -311,6 +152,33 @@ function errorMessage(
   return parts.join(' | ') || fallback;
 }
 
+function requireRoomId(roomId: string): string {
+  const value = String(roomId ?? '').trim();
+
+  if (!value) {
+    throw new Error('Missing room ID');
+  }
+
+  return value;
+}
+
+function requireTargetId(targetId: string): string {
+  const value = String(targetId ?? '').trim();
+
+  if (!value) {
+    throw new Error('Missing target');
+  }
+
+  return value;
+}
+
+function isUuid(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
 
 /* ============================================================
    ROLE NORMALIZATION
@@ -319,16 +187,13 @@ function errorMessage(
 export function normalizeGameRole(
   value: unknown,
 ): GameRole | null {
-  if (
-    typeof value !== 'string'
-  ) {
+  if (typeof value !== 'string') {
     return null;
   }
 
-  const normalized =
-    value.trim().toUpperCase();
-
-  switch (normalized) {
+  switch (
+    value.trim().toUpperCase()
+  ) {
     case 'CITIZEN':
       return 'CITIZEN';
 
@@ -361,7 +226,6 @@ export function normalizeGameRole(
   }
 }
 
-
 /* ============================================================
    TEAM
 ============================================================ */
@@ -371,10 +235,6 @@ export function getRoleTeam(
 ): GameTeam | null {
   const normalized =
     normalizeGameRole(role);
-
-  if (!normalized) {
-    return null;
-  }
 
   switch (normalized) {
     case 'MAFIA':
@@ -397,25 +257,33 @@ export function getRoleTeam(
   }
 }
 
+export function isCitizenTeam(
+  role: GameRole | string | null | undefined,
+): boolean {
+  return getRoleTeam(role) === 'CITIZENS';
+}
+
+export function isMafiaTeam(
+  role: GameRole | string | null | undefined,
+): boolean {
+  return getRoleTeam(role) === 'MAFIA';
+}
+
+export function isCultTeam(
+  role: GameRole | string | null | undefined,
+): boolean {
+  return getRoleTeam(role) === 'CULT';
+}
 
 /* ============================================================
-   ROLE NIGHT ACTION
+   ROLE ACTION
 ============================================================ */
 
-/**
- * الغول ليس لديه زر ghoul.
- *
- * قدرته تحدث تلقائيًا عند أول وفاة.
- */
 export function getRoleNightAction(
   role: GameRole | string | null | undefined,
 ): NightAction | null {
   const normalized =
     normalizeGameRole(role);
-
-  if (!normalized) {
-    return null;
-  }
 
   switch (normalized) {
     case 'MAFIA':
@@ -442,7 +310,6 @@ export function getRoleNightAction(
   }
 }
 
-
 /* ============================================================
    ROLE DESCRIPTION
 ============================================================ */
@@ -450,66 +317,40 @@ export function getRoleNightAction(
 export function getRoleDescription(
   role: GameRole | string | null | undefined,
 ): string {
-  const normalized =
-    normalizeGameRole(role);
-
-  switch (normalized) {
+  switch (
+    normalizeGameRole(role)
+  ) {
     case 'CITIZEN':
-      return (
-        'مواطن عادي. لا يملك قدرة ليلية. ' +
-        'هدفه اكتشاف الأعداء عن طريق النقاش والتصويت.'
-      );
+      return 'مواطن عادي. لا تملك قدرة ليلية. مهمتك اكتشاف الأعداء عن طريق النقاش والتصويت.';
 
     case 'DOCTOR':
-      return (
-        'الطبيب. يستطيع حماية لاعب واحد كل ليلة ' +
-        'من محاولة القتل.'
-      );
+      return 'الطبيب. يمكنك حماية لاعب واحد كل ليلة من محاولة القتل.';
 
     case 'DETECTIVE':
-      return (
-        'المحقق. يستطيع فحص لاعب واحد كل ليلة ' +
-        'لمعرفة الفريق الذي ينتمي إليه.'
-      );
+      return 'المحقق. يمكنك فحص لاعب واحد كل ليلة لمعرفة الفريق الذي ينتمي إليه.';
 
     case 'GHOUL':
-      return (
-        'الغول. ينتمي إلى المواطنين. ' +
-        'عند موت أول لاعب في اللعبة، يستطيع تلقائيًا ' +
-        'الحصول على قدرته مرة واحدة فقط إذا كانت قابلة للسرقة.'
-      );
+      return 'الغول. أنت من فريق المواطنين. عند موت أول لاعب في اللعبة، تحصل تلقائيًا على قدرته مرة واحدة فقط إذا كانت قابلة للسرقة.';
 
     case 'MAFIA':
-      return (
-        'عضو المافيا. يشارك في اختيار هدف القتل الليلي.'
-      );
+      return 'عضو المافيا. تشارك في اختيار هدف القتل خلال الليل.';
 
     case 'GODFATHER':
-      return (
-        'عرّاب المافيا. قائد المافيا وله خصائص خاصة ' +
-        'تحددها قواعد اللعبة في الخادم.'
-      );
+      return 'عرّاب المافيا. قائد فريق المافيا وتحدد قدراته قواعد الخادم.';
 
     case 'CONSIGLIERE':
-      return (
-        'المستشار. يستطيع فحص لاعب لمعرفة دوره الدقيق.'
-      );
+      return 'المستشار. يمكنك التحقيق مع لاعب لمعرفة دوره الدقيق.';
 
     case 'CULT_LEADER':
-      return (
-        'زعيم الطائفة. يستطيع تحويل لاعب مناسب إلى الطائفة.'
-      );
+      return 'زعيم الطائفة. يمكنك تحويل لاعب مناسب إلى فريق الطائفة.';
 
     case 'CULTIST':
-      return (
-        'عضو في الطائفة. لا يملك قدرة ليلية مستقلة.'
-      );
+      return 'عضو في الطائفة. تنتمي إلى فريق الطائفة ولا تملك قدرة ليلية مستقلة.';
 
     default:
       return 'دور غير معروف.';
   }
 }
-
 
 /* ============================================================
    ROLE LABEL
@@ -518,10 +359,9 @@ export function getRoleDescription(
 export function getRoleLabel(
   role: GameRole | string | null | undefined,
 ): string {
-  const normalized =
-    normalizeGameRole(role);
-
-  switch (normalized) {
+  switch (
+    normalizeGameRole(role)
+  ) {
     case 'CITIZEN':
       return 'المواطن';
 
@@ -554,76 +394,234 @@ export function getRoleLabel(
   }
 }
 
-
 /* ============================================================
-   TEAM HELPERS
+   ROOM RESOLUTION
 ============================================================ */
 
-export function isCitizenTeam(
-  role: GameRole | string | null | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'CITIZENS'
-  );
+/**
+ * يحول:
+ *
+ * room UUID
+ * أو room code
+ *
+ * إلى UUID الحقيقي للغرفة.
+ *
+ * هذا يمنع إرسال T2GZ6M إلى RPC
+ * ينتظر UUID.
+ */
+export async function resolveRoomId(
+  roomValue: string,
+): Promise<string> {
+  const value =
+    String(roomValue ?? '').trim();
+
+  if (!value) {
+    throw new Error('رمز الغرفة غير موجود.');
+  }
+
+  if (isUuid(value)) {
+    return value;
+  }
+
+  const code = value.toUpperCase();
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from('rooms')
+    .select('id,code')
+    .eq('code', code)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      errorMessage(
+        error,
+        'تعذر العثور على الغرفة.',
+      ),
+    );
+  }
+
+  if (!data?.id || !isUuid(data.id)) {
+    throw new Error(
+      'الغرفة غير موجودة أو لم تعد متاحة.',
+    );
+  }
+
+  return data.id;
 }
-
-
-export function isMafiaTeam(
-  role: GameRole | string | null | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'MAFIA'
-  );
-}
-
-
-export function isCultTeam(
-  role: GameRole | string | null | undefined,
-): boolean {
-  return (
-    getRoleTeam(role) ===
-    'CULT'
-  );
-}
-
 
 /* ============================================================
-   VALIDATION
+   TARGET RESOLUTION
 ============================================================ */
 
-function requireRoomId(
+/**
+ * يعالج أهم مشكلة حالية:
+ *
+ * أحيانًا الواجهة ترسل:
+ *   room_players.id
+ *
+ * وأحيانًا:
+ *   room_players.user_id
+ *
+ * بينما RPC قد يتوقع أحدهما فقط.
+ *
+ * لذلك نبحث عن اللاعب ونحتفظ بالمعرفين.
+ */
+async function resolveTarget(
   roomId: string,
-): string {
-  const value =
-    roomId?.trim();
-
-  if (!value) {
-    throw new Error(
-      'Missing room ID',
-    );
-  }
-
-  return value;
-}
-
-
-function requireTargetId(
   targetId: string,
-): string {
-  const value =
-    targetId?.trim();
+): Promise<{
+  id: string;
+  user_id: string;
+}> {
+  const room =
+    await resolveRoomId(roomId);
 
-  if (!value) {
+  const target =
+    requireTargetId(targetId);
+
+  let row:
+    | {
+        id: string;
+        user_id: string;
+      }
+    | null = null;
+
+  if (isUuid(target)) {
+    const byId =
+      await supabase
+        .from('room_players')
+        .select('id,user_id')
+        .eq('room_id', room)
+        .eq('id', target)
+        .maybeSingle();
+
+    if (!byId.error && byId.data) {
+      row = byId.data as {
+        id: string;
+        user_id: string;
+      };
+    }
+
+    if (!row) {
+      const byUser =
+        await supabase
+          .from('room_players')
+          .select('id,user_id')
+          .eq('room_id', room)
+          .eq('user_id', target)
+          .maybeSingle();
+
+      if (!byUser.error && byUser.data) {
+        row = byUser.data as {
+          id: string;
+          user_id: string;
+        };
+      }
+    }
+  }
+
+  if (!row) {
     throw new Error(
-      'Missing target',
+      'اللاعب المستهدف غير موجود في هذه الغرفة.',
     );
   }
 
-  return value;
+  if (
+    !isUuid(row.id) ||
+    !isUuid(row.user_id)
+  ) {
+    throw new Error(
+      'معرف اللاعب غير صالح.',
+    );
+  }
+
+  return row;
 }
 
+/* ============================================================
+   RPC TARGET FALLBACK
+============================================================ */
+
+async function callTargetRpc(
+  rpcName:
+    | 'mafia_submit_vote'
+    | 'mafia_submit_action',
+  roomId: string,
+  targetId: string,
+  extra: Record<string, unknown> = {},
+) {
+  const room =
+    await resolveRoomId(roomId);
+
+  const target =
+    await resolveTarget(
+      room,
+      targetId,
+    );
+
+  /**
+   * المحاولة الأولى:
+   * player id
+   */
+  const first =
+    await supabase.rpc(
+      rpcName,
+      {
+        p_room_id: room,
+        p_target_id: target.id,
+        ...extra,
+      },
+    );
+
+  if (!first.error) {
+    return first.data;
+  }
+
+  /**
+   * المحاولة الثانية:
+   * user id
+   *
+   * هذا يحل اختلاف الـ RPC
+   * بين player id و auth user id.
+   */
+  if (
+    target.user_id !== target.id
+  ) {
+    const second =
+      await supabase.rpc(
+        rpcName,
+        {
+          p_room_id: room,
+          p_target_id: target.user_id,
+          ...extra,
+        },
+      );
+
+    if (!second.error) {
+      return second.data;
+    }
+
+    throw new Error(
+      errorMessage(
+        second.error,
+        errorMessage(
+          first.error,
+          'تعذر تنفيذ العملية.',
+        ),
+      ),
+    );
+  }
+
+  throw new Error(
+    errorMessage(
+      first.error,
+      'تعذر تنفيذ العملية.',
+    ),
+  );
+}
 
 /* ============================================================
    GET GAME STATE
@@ -633,7 +631,7 @@ export async function getGameState(
   roomId: string,
 ): Promise<GameState> {
   const id =
-    requireRoomId(roomId);
+    await resolveRoomId(roomId);
 
   const {
     data,
@@ -659,59 +657,57 @@ export async function getGameState(
     );
   }
 
-  if (!data) {
-    throw new Error(
-      'لم يتم إرجاع حالة اللعبة.',
-    );
-  }
+  const raw: any =
+    data ?? {};
 
-  const state =
-    data as GameState;
+  const players =
+    Array.isArray(raw.players)
+      ? raw.players
+      : [];
 
-  if (!state.room) {
-    throw new Error(
-      'بيانات الغرفة غير موجودة في حالة اللعبة.',
-    );
-  }
+  let me =
+    raw.me ??
+    raw.current_player ??
+    null;
 
-  if (!Array.isArray(state.players)) {
-    state.players = [];
-  }
+  let myPlayerId =
+    raw.my_player_id ??
+    me?.id ??
+    null;
 
-  /**
-   * توافق مع الإصدارات القديمة:
-   *
-   * إذا كان me موجودًا ولكن my_player_id غير موجود
-   * نستخرجه من me.
-   */
-  if (
-    !state.my_player_id &&
-    state.me?.id
-  ) {
-    state.my_player_id =
-      state.me.id;
-  }
-
-  if (
-    !state.my_player_id &&
-    state.me?.user_id
-  ) {
-    const player =
-      state.players.find(
-        item =>
-          item.user_id ===
-          state.me?.user_id,
+  if (!myPlayerId && me?.user_id) {
+    const found =
+      players.find(
+        (player: GamePlayer) =>
+          player.user_id === me.user_id,
       );
 
-    if (player) {
-      state.my_player_id =
-        player.id;
+    if (found) {
+      myPlayerId =
+        found.id;
     }
   }
 
-  return state;
-}
+  if (!me && myPlayerId) {
+    const found =
+      players.find(
+        (player: GamePlayer) =>
+          player.id === myPlayerId,
+      );
 
+    if (found) {
+      me = found;
+    }
+  }
+
+  return {
+    ...raw,
+    room: raw.room,
+    players,
+    me,
+    my_player_id: myPlayerId,
+  } as GameState;
+}
 
 /* ============================================================
    GET MY ROLE
@@ -721,7 +717,7 @@ export async function getMyRole(
   roomId: string,
 ): Promise<MyRole> {
   const id =
-    requireRoomId(roomId);
+    await resolveRoomId(roomId);
 
   const {
     data,
@@ -734,184 +730,53 @@ export async function getMyRole(
   );
 
   if (error) {
-    console.error(
-      'getMyRole:',
-      error,
-    );
-
     throw new Error(
       errorMessage(
         error,
-        'تعذر تحميل دور اللاعب.',
+        'تعذر تحميل دورك.',
       ),
     );
   }
 
-  if (!data) {
-    throw new Error(
-      'لم يتم إرجاع دور اللاعب.',
-    );
-  }
-
-  const raw =
-    data as any;
+  const raw: any =
+    data ?? {};
 
   const role =
     normalizeGameRole(
-      raw.role,
+      raw.role ??
+      raw.my_role ??
+      raw.player_role,
     );
 
   if (!role) {
     throw new Error(
-      'الدور الذي أرسلته قاعدة البيانات غير معروف.',
+      'لم يتم توزيع دورك بعد.',
     );
   }
-
-  const team =
-    getRoleTeam(role);
 
   return {
     role,
-
     alive:
       raw.alive !== false,
-
     team:
-      raw.team ||
-      team ||
+      getRoleTeam(role) ??
+      raw.team ??
       undefined,
-
     ghoul_ability_stolen:
-      role === 'GHOUL'
-        ? Boolean(
-            raw.ghoul_ability_stolen,
-          )
-        : undefined,
-
+      Boolean(
+        raw.ghoul_ability_stolen ??
+        raw.ability_stolen ??
+        false,
+      ),
     stolen_role:
-      role === 'GHOUL'
-        ? normalizeGameRole(
-            raw.stolen_role,
-          )
-        : undefined,
-
+      normalizeGameRole(
+        raw.stolen_role,
+      ),
     stolen_ability:
-      role === 'GHOUL'
-        ? (
-            raw.stolen_ability ===
-            'kill' ||
-            raw.stolen_ability ===
-            'protect' ||
-            raw.stolen_ability ===
-            'investigate' ||
-            raw.stolen_ability ===
-            'cult_convert'
-              ? raw.stolen_ability
-              : null
-          )
-        : undefined,
+      raw.stolen_ability ??
+      null,
   };
 }
-
-
-/* ============================================================
-   SUBMIT NIGHT ACTION
-============================================================ */
-
-export async function submitNightAction(
-  roomId: string,
-  action: NightAction,
-  targetId: string,
-): Promise<any> {
-  const id =
-    requireRoomId(roomId);
-
-  const target =
-    requireTargetId(targetId);
-
-  if (
-    action !== 'kill' &&
-    action !== 'protect' &&
-    action !== 'investigate' &&
-    action !== 'cult_convert'
-  ) {
-    throw new Error(
-      `Unsupported night action: ${action}`,
-    );
-  }
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'mafia_submit_action',
-    {
-      p_room_id: id,
-      p_action: action,
-      p_target_id: target,
-    },
-  );
-
-  if (error) {
-    console.error(
-      'submitNightAction:',
-      error,
-    );
-
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر تنفيذ القدرة الليلية.',
-      ),
-    );
-  }
-
-  return data;
-}
-
-
-/* ============================================================
-   SUBMIT DAY VOTE
-============================================================ */
-
-export async function submitDayVote(
-  roomId: string,
-  targetId: string,
-): Promise<any> {
-  const id =
-    requireRoomId(roomId);
-
-  const target =
-    requireTargetId(targetId);
-
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    'mafia_submit_vote',
-    {
-      p_room_id: id,
-      p_target_id: target,
-    },
-  );
-
-  if (error) {
-    console.error(
-      'submitDayVote:',
-      error,
-    );
-
-    throw new Error(
-      errorMessage(
-        error,
-        'تعذر تسجيل التصويت.',
-      ),
-    );
-  }
-
-  return data;
-}
-
 
 /* ============================================================
    START GAME
@@ -919,9 +784,9 @@ export async function submitDayVote(
 
 export async function startMafiaGame(
   roomId: string,
-): Promise<any> {
+) {
   const id =
-    requireRoomId(roomId);
+    await resolveRoomId(roomId);
 
   const {
     data,
@@ -934,11 +799,6 @@ export async function startMafiaGame(
   );
 
   if (error) {
-    console.error(
-      'startMafiaGame:',
-      error,
-    );
-
     throw new Error(
       errorMessage(
         error,
@@ -950,16 +810,15 @@ export async function startMafiaGame(
   return data;
 }
 
-
 /* ============================================================
    ADVANCE PHASE
 ============================================================ */
 
 export async function advanceMafiaPhase(
   roomId: string,
-): Promise<any> {
+) {
   const id =
-    requireRoomId(roomId);
+    await resolveRoomId(roomId);
 
   const {
     data,
@@ -972,11 +831,6 @@ export async function advanceMafiaPhase(
   );
 
   if (error) {
-    console.error(
-      'advanceMafiaPhase:',
-      error,
-    );
-
     throw new Error(
       errorMessage(
         error,
@@ -988,275 +842,109 @@ export async function advanceMafiaPhase(
   return data;
 }
 
+/* ============================================================
+   NIGHT ACTION
+============================================================ */
+
+export async function submitNightAction(
+  roomId: string,
+  action: NightAction,
+  targetId: string,
+) {
+  if (!action) {
+    throw new Error(
+      'القدرة غير محددة.',
+    );
+  }
+
+  return callTargetRpc(
+    'mafia_submit_action',
+    roomId,
+    targetId,
+    {
+      p_action: action,
+    },
+  );
+}
+
+/* ============================================================
+   DAY VOTE
+============================================================ */
+
+export async function submitDayVote(
+  roomId: string,
+  targetId: string,
+) {
+  /**
+   * لا نرسل targetId مباشرة.
+   *
+   * نحل اللاعب أولًا ثم نجرب
+   * player.id ثم user_id.
+   */
+  return callTargetRpc(
+    'mafia_submit_vote',
+    roomId,
+    targetId,
+  );
+}
 
 /* ============================================================
    GHOUL
 ============================================================ */
 
-/**
- * الغول لا ينفذ Action مستقل.
- *
- * السرقة تحدث مرة واحدة فقط.
- */
 export function canGhoulStealAbility(
   role: GameRole | string | null | undefined,
-  alreadyStolen: boolean,
 ): boolean {
-  return (
-    normalizeGameRole(role) ===
-      'GHOUL' &&
-    !alreadyStolen
-  );
-}
-
-
-/**
- * القدرات التي يمكن للغول سرقتها.
- *
- * Citizen / Godfather / Cultist / Ghoul
- * لا تمنح قدرة قابلة للسرقة.
- */
-export function getStealableAbility(
-  role: GameRole | string | null | undefined,
-): NightAction | null {
   const normalized =
     normalizeGameRole(role);
 
-  switch (normalized) {
-    case 'DOCTOR':
-      return 'protect';
-
-    case 'DETECTIVE':
-      return 'investigate';
-
-    case 'MAFIA':
-      return 'kill';
-
-    case 'CONSIGLIERE':
-      return 'investigate';
-
-    case 'CULT_LEADER':
-      return 'cult_convert';
-
-    case 'CITIZEN':
-    case 'GHOUL':
-    case 'GODFATHER':
-    case 'CULTIST':
-    default:
-      return null;
-  }
+  return (
+    normalized === 'DOCTOR' ||
+    normalized === 'DETECTIVE' ||
+    normalized === 'MAFIA' ||
+    normalized === 'CONSIGLIERE' ||
+    normalized === 'CULT_LEADER'
+  );
 }
 
-
-/**
- * حساب نتيجة سرقة الغول.
- *
- * ملاحظة مهمة:
- * هذه الدالة لا تقوم بتغيير قاعدة البيانات.
- * هي فقط تحسب النتيجة.
- *
- * Supabase هو الذي يجب أن ينفذ السرقة فعليًا.
- */
-export function getGhoulStealResult(
-  ghoulRole: GameRole | string | null | undefined,
-  alreadyStolen: boolean,
-  firstDeadRole: GameRole | string | null | undefined,
-): {
-  stolen: boolean;
-  role: GameRole | null;
-  ability: NightAction | null;
-} {
+export function getStealableAbility(
+  role: GameRole | string | null | undefined,
+): NightAction | null {
   if (
-    !canGhoulStealAbility(
-      ghoulRole,
-      alreadyStolen,
-    )
-  ) {
-    return {
-      stolen: false,
-      role: null,
-      ability: null,
-    };
-  }
-
-  const normalizedRole =
-    normalizeGameRole(
-      firstDeadRole,
-    );
-
-  if (!normalizedRole) {
-    return {
-      stolen: false,
-      role: null,
-      ability: null,
-    };
-  }
-
-  const ability =
-    getStealableAbility(
-      normalizedRole,
-    );
-
-  if (!ability) {
-    return {
-      stolen: false,
-      role: null,
-      ability: null,
-    };
-  }
-
-  return {
-    stolen: true,
-    role: normalizedRole,
-    ability,
-  };
-}
-
-
-/* ============================================================
-   PLAYER HELPERS
-============================================================ */
-
-export function findPlayer(
-  state: GameState | null,
-  userId: string | null | undefined,
-): GamePlayer | null {
-  if (
-    !state ||
-    !userId
+    !canGhoulStealAbility(role)
   ) {
     return null;
   }
 
-  return (
-    state.players.find(
-      player =>
-        player.user_id ===
-        userId,
-    ) || null
-  );
+  return getRoleNightAction(role);
 }
 
-
-export function getAlivePlayers(
-  state: GameState | null,
-): GamePlayer[] {
-  if (!state) {
-    return [];
-  }
-
-  return state.players.filter(
-    player =>
-      player.alive === true,
-  );
-}
-
-
-/* ============================================================
-   TARGET VALIDATION
-============================================================ */
-
-export function canTargetPlayer(
-  state: GameState | null,
-  targetId: string | null | undefined,
-  allowSelf = false,
-): boolean {
-  if (
-    !state ||
-    !targetId
-  ) {
-    return false;
-  }
-
-  const target =
-    state.players.find(
-      player =>
-        player.user_id ===
-        targetId,
-    );
-
-  if (!target) {
-    return false;
-  }
-
-  if (!target.alive) {
-    return false;
-  }
-
-  const myUserId =
-    state.me?.user_id;
-
-  if (
-    !allowSelf &&
-    myUserId &&
-    target.user_id ===
-      myUserId
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
-
-/* ============================================================
-   ROLE ABILITY VALIDATION
-============================================================ */
-
-export function canUseNightAction(
+export function getGhoulStealResult(
   role: GameRole | string | null | undefined,
-  action: NightAction,
-): boolean {
-  const expected =
-    getRoleNightAction(role);
+): {
+  role: GameRole | null;
+  ability: NightAction | null;
+} {
+  const normalized =
+    normalizeGameRole(role);
 
-  return expected === action;
+  return {
+    role: normalized,
+    ability:
+      getStealableAbility(
+        normalized,
+      ),
+  };
 }
-
 
 /* ============================================================
-   PHASE HELPERS
+   DISPLAY HELPERS
 ============================================================ */
 
-export function isNightPhase(
-  phase: string | null | undefined,
-): boolean {
-  return (
-    phase === 'night'
-  );
-}
-
-
-export function isDayPhase(
-  phase: string | null | undefined,
-): boolean {
-  return (
-    phase === 'day'
-  );
-}
-
-
-export function isFinishedPhase(
-  phase: string | null | undefined,
-): boolean {
-  return (
-    phase === 'finished'
-  );
-}
-
-
-/* ============================================================
-   GAME WINNER
-============================================================ */
-
-export function getWinnerLabel(
-  winner:
-    | GameTeam
-    | string
-    | null
-    | undefined,
+export function getTeamLabel(
+  team: GameTeam | string | null | undefined,
 ): string {
-  switch (winner) {
+  switch (team) {
     case 'CITIZENS':
       return 'المواطنون';
 
@@ -1267,154 +955,161 @@ export function getWinnerLabel(
       return 'الطائفة';
 
     default:
-      return winner || 'غير معروف';
+      return 'غير معروف';
   }
 }
 
+export function getActionLabel(
+  action:
+    | NightAction
+    | null
+    | undefined,
+): string {
+  switch (action) {
+    case 'kill':
+      return 'القتل';
+
+    case 'protect':
+      return 'الحماية';
+
+    case 'investigate':
+      return 'التحقيق';
+
+    case 'cult_convert':
+      return 'التحويل';
+
+    default:
+      return 'لا توجد قدرة';
+  }
+}
+
+export function getRoleAbilityLabel(
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
+): string {
+  return getActionLabel(
+    getRoleNightAction(role),
+  );
+}
 
 /* ============================================================
-   NORMALIZE GAME STATE
+   TARGET RULES
 ============================================================ */
 
-export function normalizeGameState(
-  input: any,
-): GameState {
-  const state =
-    (input || {}) as any;
+export function canTargetPlayer(
+  actor: GamePlayer | CurrentGamePlayer | null | undefined,
+  target: GamePlayer | null | undefined,
+): boolean {
+  if (!actor || !target) {
+    return false;
+  }
 
-  const room =
-    (state.room || {}) as any;
+  if (!target.alive) {
+    return false;
+  }
 
-  const players =
-    Array.isArray(
-      state.players,
-    )
-      ? state.players
-      : [];
-
-  const normalizedPlayers =
-    players.map(
-      (player: any) => ({
-        ...player,
-
-        id:
-          String(
-            player.id ||
-              player.user_id ||
-              '',
-          ),
-
-        user_id:
-          String(
-            player.user_id ||
-              player.id ||
-              '',
-          ),
-
-        name:
-          String(
-            player.name ||
-              'Player',
-          ),
-
-        alive:
-          player.alive !== false,
-
-        avatar_url:
-          player.avatar_url ||
-          null,
-
-        role:
-          player.role ||
-          null,
-      }),
+  const action =
+    getRoleNightAction(
+      actor.role,
     );
 
-  let me =
-    state.me ||
-    null;
-
-  let myPlayerId =
-    state.my_player_id ||
-    null;
-
-  if (
-    !myPlayerId &&
-    me?.id
-  ) {
-    myPlayerId =
-      me.id;
+  if (!action) {
+    return false;
   }
 
   if (
-    !me &&
-    myPlayerId
+    actor.id &&
+    target.id &&
+    actor.id === target.id
   ) {
-    const player =
-      normalizedPlayers.find(
-        (item: GamePlayer) =>
-          item.id ===
-          myPlayerId,
-      );
-
-    if (player) {
-      me = {
-        ...player,
-      };
-    }
+    return false;
   }
 
-  return {
-    ...state,
+  if (
+    actor.user_id &&
+    target.user_id &&
+    actor.user_id === target.user_id
+  ) {
+    return false;
+  }
 
-    room: {
-      ...room,
+  return true;
+}
 
-      id:
-        String(
-          room.id || '',
-        ),
+/* ============================================================
+   WIN CONDITION
+============================================================ */
 
-      code:
-        String(
-          room.code || '',
-        ),
+export function calculateWinner(
+  players: GamePlayer[],
+): GameTeam | null {
+  const alive =
+    players.filter(
+      player => player.alive,
+    );
 
-      status:
-        String(
-          room.status ||
-            'waiting',
-        ),
+  const mafia =
+    alive.filter(
+      player =>
+        getRoleTeam(
+          player.role,
+        ) === 'MAFIA',
+    ).length;
 
-      game_round:
-        Number(
-          room.game_round ||
-            0,
-        ),
+  const cult =
+    alive.filter(
+      player =>
+        getRoleTeam(
+          player.role,
+        ) === 'CULT',
+    ).length;
 
-      game_phase:
-        room.game_phase ||
-        'waiting',
+  const citizens =
+    alive.filter(
+      player =>
+        getRoleTeam(
+          player.role,
+        ) === 'CITIZENS',
+    ).length;
 
-      winner:
-        room.winner ||
-        null,
+  if (alive.length === 0) {
+    return null;
+  }
 
-      phase_ends_at:
-        room.phase_ends_at ||
-        null,
+  if (mafia === 0 && cult === 0) {
+    return 'CITIZENS';
+  }
 
-      last_event:
-        room.last_event ||
-        null,
-    },
+  if (citizens === 0 && cult === 0) {
+    return 'MAFIA';
+  }
 
-    players:
-      normalizedPlayers,
+  if (
+    cult > 0 &&
+    mafia === 0 &&
+    citizens === 0
+  ) {
+    return 'CULT';
+  }
 
-    me,
+  if (
+    cult > 0 &&
+    mafia === 0 &&
+    cult >= citizens
+  ) {
+    return 'CULT';
+  }
 
-    my_player_id:
-      myPlayerId,
-  };
+  if (
+    mafia > 0 &&
+    cult === 0 &&
+    mafia >= citizens
+  ) {
+    return 'MAFIA';
+  }
+
+  return null;
 }
