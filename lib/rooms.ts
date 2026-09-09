@@ -466,18 +466,6 @@ export async function getPublicRooms(): Promise<
 
 /**
  * الانضمام إلى غرفة بواسطة UUID.
- *
- * الدالة الجديدة تعتمد على RPC فقط.
- *
- * مهم:
- * لا نقوم بعملية UPDATE ثانية على
- * room_players بعد نجاح RPC.
- *
- * هذا يمنع الحالة التي:
- * - ينضم اللاعب فعليًا
- * - يظهر عند المضيف
- * - ثم يفشل UPDATE
- * - فيرى اللاعب رسالة رفض.
  */
 export async function joinPublicRoom(
   roomId: string,
@@ -489,13 +477,6 @@ export async function joinPublicRoom(
     );
   }
 
-  /*
-   * نحتاج المستخدم للتأكد من الجلسة،
-   * ونحاول تحميل الملف الشخصي فقط.
-   *
-   * لن نستخدم playerName لتغيير
-   * الملف الشخصي الموجود.
-   */
   await ensureProfile(
     playerName
   );
@@ -519,9 +500,6 @@ export async function joinPublicRoom(
         'تعذر الانضمام إلى الغرفة'
       );
 
-    /*
-     * تحويل أخطاء RPC إلى رسائل واضحة.
-     */
     if (
       message.includes(
         'room_not_available'
@@ -557,25 +535,11 @@ export async function joinPublicRoom(
     );
   }
 
-  /*
-   * الـ RPC أصبح مسؤولًا بالكامل عن:
-   * - إضافة اللاعب
-   * - الاسم
-   * - الصورة
-   * - last_seen_at
-   *
-   * لذلك لا ننفذ UPDATE هنا.
-   */
   return data;
 }
 
 /**
  * الانضمام باستخدام كود الغرفة.
- *
- * مهم:
- * الكود مثل ABC123 يستخدم فقط للبحث.
- * بعد العثور على الغرفة نستخدم room.id
- * وهو UUID الحقيقي في جميع العمليات التالية.
  */
 export async function joinRoom(
   code: string,
@@ -596,12 +560,6 @@ export async function joinRoom(
     );
   }
 
-  /*
-   * اسم اللاعب يستخدم فقط إذا كان
-   * هذا الحساب لا يملك Profile أصلًا.
-   *
-   * إذا كان لديه Profile، لن نعيد تسميته.
-   */
   const {
     user,
     profile,
@@ -611,7 +569,7 @@ export async function joinRoom(
     );
 
   /*
-   * البحث عن الغرفة بالكود فقط.
+   * البحث عن الغرفة بالكود مع دعم تجاهل حالة الأحرف.
    */
   const {
     data: room,
@@ -620,7 +578,7 @@ export async function joinRoom(
     await supabase
       .from('rooms')
       .select('*')
-      .eq(
+      .ilike(
         'code',
         normalized
       )
@@ -647,9 +605,6 @@ export async function joinRoom(
     );
   }
 
-  /*
-   * لا يمكن الانضمام بعد بدء اللعبة.
-   */
   if (
     room.status !==
     'waiting'
@@ -659,9 +614,6 @@ export async function joinRoom(
     );
   }
 
-  /*
-   * الانضمام يتم باستخدام UUID الحقيقي.
-   */
   const {
     data: joinData,
     error: joinError,
@@ -716,26 +668,10 @@ export async function joinRoom(
     );
   }
 
-  /*
-   * مهم جدًا:
-   *
-   * لا يوجد UPDATE هنا.
-   *
-   * join_public_room أصبح هو المسؤول
-   * عن الاسم والصورة.
-   *
-   * profile يتم تحميله هنا فقط حتى نحافظ
-   * على المتغير والاتساق مع بقية المنطق.
-   */
   void user;
   void profile;
+  void joinData;
 
-  /*
-   * نعيد بيانات الغرفة الأصلية.
-   *
-   * room.id = UUID
-   * room.code = الكود القصير
-   */
   return {
     ...(room as Room),
     id: room.id,
