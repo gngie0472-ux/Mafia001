@@ -23,7 +23,7 @@ import {
   useRouter,
 } from 'expo-router';
 
-import { Room } from '@livekit/react-native';
+import { Room } from 'livekit-client';
 
 import { supabase } from '../../lib/supabase';
 import { getMyProfile } from '../../lib/profile';
