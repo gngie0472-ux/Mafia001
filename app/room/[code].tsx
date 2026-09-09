@@ -9,8 +9,6 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  PermissionsAndroid,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,12 +23,8 @@ import {
   useRouter,
 } from 'expo-router';
 
-// LiveKit & WebRTC Imports (Static Imports لمنع مشاكل Dynamic Imports مع Native Modules)
-import {
-  Room,
-  registerGlobals,
-  AudioSession,
-} from '@livekit/react-native';
+// LiveKit Imports (Native Modules)
+import { Room } from '@livekit/react-native';
 
 import { supabase } from '../../lib/supabase';
 import { getMyProfile } from '../../lib/profile';
@@ -47,9 +41,7 @@ import type {
 } from '../../lib/game';
 
 import { getLiveKitToken } from '../../lib/livekit';
-
-// تهيئة مكونات LiveKit الأصلية فور تحميل الملف
-registerGlobals();
+import { prepareMicrophone, stopMicrophoneSession } from '../../lib/voice';
 
 type GameRoom = GameState['room'] & {
   host_id?: string | null;
@@ -205,7 +197,6 @@ export default function MafiaGameScreen() {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [currentUserId, setCurrentUserId] = useState('');
 
-  // إسناد كائن الـ Room مباشرة بفضل الـ Static Import
   const voiceRoomRef = useRef<Room | null>(null);
   const voiceConnectingRef = useRef(false);
 
@@ -539,7 +530,7 @@ export default function MafiaGameScreen() {
       if (voiceRoom) {
         await voiceRoom.disconnect();
       }
-      await AudioSession.stopAudioSession();
+      await stopMicrophoneSession();
     } catch (error) {
       console.error('LiveKit disconnect error:', error);
     } finally {
@@ -548,29 +539,6 @@ export default function MafiaGameScreen() {
         setMicEnabled(false);
         setVoiceLoading(false);
       }
-    }
-  }, []);
-
-  const requestMicrophonePermission = useCallback(async (): Promise<boolean> => {
-    if (Platform.OS !== 'android') return true;
-
-    try {
-      const permission = PermissionsAndroid.PERMISSIONS.RECORD_AUDIO;
-      const alreadyGranted = await PermissionsAndroid.check(permission);
-
-      if (alreadyGranted) return true;
-
-      const result = await PermissionsAndroid.request(permission, {
-        title: 'صلاحية الميكروفون',
-        message: 'تحتاج Mafia Night إلى استخدام الميكروفون للمحادثة الصوتية داخل الغرفة.',
-        buttonPositive: 'السماح',
-        buttonNegative: 'رفض',
-      });
-
-      return result === PermissionsAndroid.RESULTS.GRANTED;
-    } catch (error) {
-      console.error('microphone permission error:', error);
-      return false;
     }
   }, []);
 
@@ -585,13 +553,8 @@ export default function MafiaGameScreen() {
     let createdRoom: Room | null = null;
 
     try {
-      const permission = await requestMicrophonePermission();
-      if (!permission) {
-        throw new Error('لم يتم السماح باستخدام الميكروفون.');
-      }
-
-      // تشغيل جلسة الصوت عبر LiveKit
-      await AudioSession.startAudioSession();
+      // التحقق من الإذن وتهيئة جلسة الصوت عبر الخدمة الموحدة
+      await prepareMicrophone();
 
       const token = await getLiveKitToken(roomId);
       if (!token || !token.token || !token.server_url) {
@@ -648,7 +611,7 @@ export default function MafiaGameScreen() {
       voiceConnectingRef.current = false;
       if (mountedRef.current) setVoiceLoading(false);
     }
-  }, [roomId, requestMicrophonePermission]);
+  }, [roomId]);
 
   const toggleMicrophone = useCallback(async () => {
     if (voiceLoading || voiceConnectingRef.current) return;
