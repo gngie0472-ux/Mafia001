@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "scheme": "mafianight",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
 
     "plugins": [
       "expo-router",
@@ -23,7 +23,15 @@
           "photosPermission": "Allow Mafia Night to access your profile photo."
         }
       ],
-      "@livekit/react-native-expo-plugin"
+      [
+        "@livekit/react-native-expo-plugin",
+        {
+          "android": {
+            "audioType": "communication"
+          }
+        }
+      ],
+      "@config-plugins/react-native-webrtc"
     ],
 
     "android": {
