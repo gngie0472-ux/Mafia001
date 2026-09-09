@@ -5,10 +5,14 @@ import {
   View,
 } from 'react-native';
 
+import { registerGlobals } from '@livekit/react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { supabase } from '../lib/supabase';
+
+// تسجيل WebRTC Globals مبكراً جداً في الجذر لمنع استدعاء prototype قبل التهيئة
+registerGlobals();
 
 const GOLD = '#D7A94B';
 const BACKGROUND = '#090A0D';
