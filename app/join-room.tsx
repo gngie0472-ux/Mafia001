@@ -1,4 +1,7 @@
-import React, { useState } from "react";
+import React, {
+  useState,
+} from 'react';
+
 import {
   View,
   Text,
@@ -7,54 +10,95 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
-} from "react-native";
-import { router } from "expo-router";
-import { joinRoom } from "../lib/rooms";
+} from 'react-native';
+
+import {
+  router,
+} from 'expo-router';
+
+import {
+  joinRoom,
+} from '../lib/rooms';
 
 export default function JoinRoomScreen() {
-  const [playerName, setPlayerName] = useState("");
-  const [roomCode, setRoomCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [
+    playerName,
+    setPlayerName,
+  ] = useState('');
+
+  const [
+    roomCode,
+    setRoomCode,
+  ] = useState('');
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(false);
 
   async function handleJoinRoom() {
-    if (!playerName.trim()) {
-      Alert.alert("تنبيه", "اكتب اسمك أولاً");
+    const name =
+      playerName.trim();
+
+    const code =
+      roomCode.trim().toUpperCase();
+
+    if (!name) {
+      Alert.alert(
+        'تنبيه',
+        'اكتب اسمك أولاً'
+      );
       return;
     }
 
-    if (roomCode.trim().length !== 6) {
+    if (code.length !== 6) {
       Alert.alert(
-        "تنبيه",
-        "أدخل كود الغرفة المكون من 6 أحرف"
+        'تنبيه',
+        'أدخل كود الغرفة المكون من 6 أحرف'
       );
+      return;
+    }
+
+    if (loading) {
       return;
     }
 
     try {
       setLoading(true);
 
-      const room = await joinRoom(
-        roomCode.trim(),
-        playerName.trim()
-      );
+      const room =
+        await joinRoom(
+          code,
+          name
+        );
 
-      // مهم:
-      // room.code هو الكود القصير مثل ABC123
-      // room.id هو UUID الذي تحتاجه RPCs وقاعدة البيانات.
-      if (!room?.id) {
+      if (
+        !room ||
+        !room.id
+      ) {
         throw new Error(
-          "تم الانضمام إلى الغرفة لكن لم يتم العثور على معرف الغرفة."
+          'تم الانضمام لكن معرف الغرفة غير موجود.'
         );
       }
 
-      router.replace(`/room/${room.id}`);
+      /*
+       * مهم:
+       * نستخدم UUID الحقيقي للغرفة،
+       * وليس كود ABC123.
+       */
+      router.replace(
+        `/room/${room.id}`
+      );
     } catch (error: any) {
-      console.error("joinRoom navigation error:", error);
+      console.error(
+        'joinRoom navigation error:',
+        error
+      );
 
       Alert.alert(
-        "تعذر الانضمام",
+        'تعذر الانضمام',
         error?.message ||
-          "حدث خطأ أثناء الانضمام إلى الغرفة"
+          'حدث خطأ أثناء الانضمام إلى الغرفة'
       );
     } finally {
       setLoading(false);
@@ -63,9 +107,13 @@ export default function JoinRoomScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>JOIN ROOM</Text>
+      <Text style={styles.title}>
+        JOIN ROOM
+      </Text>
 
-      <Text style={styles.label}>Your name</Text>
+      <Text style={styles.label}>
+        Your name
+      </Text>
 
       <TextInput
         style={styles.input}
@@ -77,7 +125,9 @@ export default function JoinRoomScreen() {
         editable={!loading}
       />
 
-      <Text style={styles.label}>Room code</Text>
+      <Text style={styles.label}>
+        Room code
+      </Text>
 
       <TextInput
         style={styles.input}
@@ -85,9 +135,15 @@ export default function JoinRoomScreen() {
         placeholderTextColor="#777"
         value={roomCode}
         onChangeText={(text) =>
-          setRoomCode(text.toUpperCase())
+          setRoomCode(
+            text
+              .toUpperCase()
+              .replace(/[^A-Z0-9]/g, '')
+              .slice(0, 6)
+          )
         }
         autoCapitalize="characters"
+        autoCorrect={false}
         maxLength={6}
         editable={!loading}
       />
@@ -95,13 +151,16 @@ export default function JoinRoomScreen() {
       <TouchableOpacity
         style={[
           styles.button,
-          loading && styles.buttonDisabled,
+          loading &&
+            styles.buttonDisabled,
         ]}
         onPress={handleJoinRoom}
         disabled={loading}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator
+            color="#fff"
+          />
         ) : (
           <Text style={styles.buttonText}>
             JOIN GAME
@@ -114,68 +173,71 @@ export default function JoinRoomScreen() {
         onPress={() => router.back()}
         disabled={loading}
       >
-        <Text style={styles.backText}>BACK</Text>
+        <Text style={styles.backText}>
+          BACK
+        </Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#101010",
-    padding: 25,
-    paddingTop: 70,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#101010',
+      padding: 25,
+      paddingTop: 70,
+    },
 
-  title: {
-    color: "#fff",
-    fontSize: 30,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 40,
-  },
+    title: {
+      color: '#fff',
+      fontSize: 30,
+      fontWeight: 'bold',
+      textAlign: 'center',
+      marginBottom: 40,
+    },
 
-  label: {
-    color: "#fff",
-    fontSize: 15,
-    marginBottom: 8,
-  },
+    label: {
+      color: '#fff',
+      fontSize: 15,
+      marginBottom: 8,
+    },
 
-  input: {
-    backgroundColor: "#1d1d1d",
-    color: "#fff",
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-    fontSize: 16,
-  },
+    input: {
+      backgroundColor: '#1d1d1d',
+      color: '#fff',
+      borderRadius: 12,
+      padding: 15,
+      marginBottom: 20,
+      fontSize: 16,
+    },
 
-  button: {
-    backgroundColor: "#8b0000",
-    padding: 17,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-  },
+    button: {
+      backgroundColor: '#8b0000',
+      padding: 17,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginTop: 10,
+    },
 
-  buttonDisabled: {
-    opacity: 0.6,
-  },
+    buttonDisabled: {
+      opacity: 0.6,
+    },
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "bold",
-  },
+    buttonText: {
+      color: '#fff',
+      fontSize: 17,
+      fontWeight: 'bold',
+    },
 
-  backButton: {
-    alignItems: "center",
-    padding: 18,
-  },
+    backButton: {
+      alignItems: 'center',
+      padding: 18,
+    },
 
-  backText: {
-    color: "#aaa",
-    fontWeight: "bold",
-  },
-});
+    backText: {
+      color: '#aaa',
+      fontWeight: 'bold',
+    },
+  });
