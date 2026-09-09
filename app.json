@@ -10,6 +10,7 @@
 
     "plugins": [
       "expo-router",
+
       [
         "expo-audio",
         {
@@ -17,12 +18,14 @@
           "recordAudioAndroid": true
         }
       ],
+
       [
         "expo-image-picker",
         {
           "photosPermission": "Allow Mafia Night to access your profile photo."
         }
       ],
+
       [
         "@livekit/react-native-expo-plugin",
         {
@@ -33,6 +36,7 @@
           }
         }
       ],
+
       [
         "@config-plugins/react-native-webrtc",
         {
