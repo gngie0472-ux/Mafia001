@@ -36,8 +36,25 @@ export async function prepareMicrophone(): Promise<boolean> {
     throw new Error('لم يتم السماح باستخدام الميكروفون.');
   }
 
-  // تهيئة الصوت مباشرة من خلال LiveKit لتجنب التعارض
-  await AudioSession.startAudioSession();
+  // التأكد من توفر محرك WebRTC لمنع أخطاء prototype
+  if (typeof global.RTCPeerConnection === 'undefined') {
+    throw new Error('محرك WebRTC غير متهيّأ في التطبيق.');
+  }
+
+  // بدء AudioSession آمن
+  try {
+    await AudioSession.startAudioSession();
+  } catch (error) {
+    console.warn('AudioSession initialized or skipped:', error);
+  }
 
   return true;
+}
+
+export async function stopMicrophoneSession(): Promise<void> {
+  try {
+    await AudioSession.stopAudioSession();
+  } catch (error) {
+    console.warn('AudioSession stop skipped:', error);
+  }
 }
