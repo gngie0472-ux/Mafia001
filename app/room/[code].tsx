@@ -215,10 +215,6 @@ export default function MafiaGameScreen() {
   const [currentUserId, setCurrentUserId] =
     useState('');
 
-  /*
-   * LiveKit is loaded only when the user explicitly
-   * starts voice chat.
-   */
   const livekitModuleRef =
     useRef<LiveKitModule | null>(null);
 
@@ -226,9 +222,6 @@ export default function MafiaGameScreen() {
     useRef<VoiceRoom | null>(null);
 
   const voiceConnectingRef =
-    useRef(false);
-
-  const audioSessionStartedRef =
     useRef(false);
 
   const [voiceConnected, setVoiceConnected] =
@@ -1028,39 +1021,14 @@ export default function MafiaGameScreen() {
 
         try {
           if (voiceRoom) {
-            try {
-              await voiceRoom.disconnect();
-            } catch (error) {
-              console.error(
-                'LiveKit disconnect error:',
-                error,
-              );
-            }
+            await voiceRoom.disconnect();
           }
+        } catch (error) {
+          console.error(
+            'LiveKit disconnect error:',
+            error,
+          );
         } finally {
-          const livekit =
-            livekitModuleRef.current;
-
-          if (
-            audioSessionStartedRef.current &&
-            livekit?.AudioSession &&
-            typeof livekit.AudioSession
-              .stopAudioSession ===
-              'function'
-          ) {
-            try {
-              await livekit.AudioSession.stopAudioSession();
-            } catch (error) {
-              console.error(
-                'AudioSession stop error:',
-                error,
-              );
-            }
-          }
-
-          audioSessionStartedRef.current =
-            false;
-
           if (mountedRef.current) {
             setVoiceConnected(false);
             setMicEnabled(false);
@@ -1159,9 +1127,6 @@ export default function MafiaGameScreen() {
             );
           }
 
-          /*
-           * Load LiveKit only after permission has been granted.
-           */
           let livekit =
             livekitModuleRef.current;
 
@@ -1184,9 +1149,6 @@ export default function MafiaGameScreen() {
             );
           }
 
-          /*
-           * registerGlobals is required by LiveKit React Native.
-           */
           if (
             typeof livekit.registerGlobals ===
             'function'
@@ -1194,26 +1156,6 @@ export default function MafiaGameScreen() {
             livekit.registerGlobals();
           }
 
-          /*
-           * Start AudioSession only if available.
-           */
-          if (
-            livekit.AudioSession &&
-            typeof livekit.AudioSession
-              .startAudioSession ===
-              'function' &&
-            !audioSessionStartedRef.current
-          ) {
-            await livekit.AudioSession.startAudioSession();
-
-            audioSessionStartedRef.current =
-              true;
-          }
-
-          /*
-           * getLiveKitToken accepts the room code or UUID
-           * and resolves the actual room UUID internally.
-           */
           const token =
             await getLiveKitToken(
               roomId,
@@ -1252,9 +1194,6 @@ export default function MafiaGameScreen() {
 
           setVoiceConnected(true);
 
-          /*
-           * Enable microphone only after successful connection.
-           */
           if (
             createdRoom.localParticipant &&
             typeof createdRoom.localParticipant
@@ -1287,24 +1226,6 @@ export default function MafiaGameScreen() {
               await createdRoom.disconnect();
             } catch {}
           }
-
-          const livekit =
-            livekitModuleRef.current;
-
-          if (
-            audioSessionStartedRef.current &&
-            livekit?.AudioSession &&
-            typeof livekit.AudioSession
-              .stopAudioSession ===
-              'function'
-          ) {
-            try {
-              await livekit.AudioSession.stopAudioSession();
-            } catch {}
-          }
-
-          audioSessionStartedRef.current =
-            false;
 
           if (mountedRef.current) {
             setVoiceConnected(false);
@@ -1343,10 +1264,6 @@ export default function MafiaGameScreen() {
           return;
         }
 
-        /*
-         * First press:
-         * permission -> LiveKit -> connection -> microphone.
-         */
         if (
           !voiceRoomRef.current
         ) {
