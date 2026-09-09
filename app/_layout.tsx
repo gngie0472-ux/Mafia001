@@ -1,18 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 
-import {
-  ActivityIndicator,
-  View,
-} from 'react-native';
-
+// LiveKit Import
 import { registerGlobals } from '@livekit/react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { supabase } from '../lib/supabase';
 
-// تسجيل WebRTC Globals مبكراً جداً في الجذر لمنع استدعاء prototype قبل التهيئة
-registerGlobals();
+// تسجيل WebRTC Globals فورياً في الجذر لمنع خطأ prototype undefined
+try {
+  registerGlobals();
+} catch (error) {
+  console.error('Failed to register LiveKit globals:', error);
+}
 
 const GOLD = '#D7A94B';
 const BACKGROUND = '#090A0D';
@@ -26,9 +27,7 @@ export default function RootLayout() {
     const initializeAuth = async () => {
       try {
         /*
-         * أولاً نحاول استعادة الجلسة المحفوظة.
-         * إذا كان اللاعب قد استخدم التطبيق من قبل،
-         * فلن ننشئ مستخدمًا جديدًا.
+         * محاولة استعادة الجلسة المحفوظة أولاً.
          */
         const {
           data: { session },
@@ -36,102 +35,61 @@ export default function RootLayout() {
         } = await supabase.auth.getSession();
 
         if (sessionError) {
-          console.error(
-            'Supabase session error:',
-            sessionError
-          );
+          console.error('Supabase session error:', sessionError);
         }
 
-        /*
-         * توجد جلسة بالفعل.
-         */
         if (session) {
           if (mounted) {
             setReady(true);
           }
-
           return;
         }
 
         /*
-         * لا توجد جلسة.
-         *
-         * بما أن Anonymous Sign-In مفعّل في Supabase،
-         * ننشئ حسابًا مجهولًا تلقائيًا.
+         * إنشاء حساب مجهول تلقائياً في حال عدم وجود جلسة.
          */
-        const {
-          data,
-          error,
-        } = await supabase.auth.signInAnonymously();
+        const { data, error } = await supabase.auth.signInAnonymously();
 
         if (error) {
-          console.error(
-            'Anonymous sign-in error:',
-            error
-          );
-
+          console.error('Anonymous sign-in error:', error);
           throw error;
         }
 
         if (!data.session) {
-          throw new Error(
-            'تم إنشاء المستخدم ولكن لم يتم إنشاء جلسة تسجيل الدخول.'
-          );
+          throw new Error('تم إنشاء المستخدم ولكن لم يتم إنشاء جلسة تسجيل الدخول.');
         }
 
-        console.log(
-          'Anonymous user created:',
-          data.user?.id
-        );
+        console.log('Anonymous user created:', data.user?.id);
 
         if (mounted) {
           setReady(true);
         }
       } catch (error: any) {
-        console.error(
-          'Auth initialization failed:',
-          error
-        );
+        console.error('Auth initialization failed:', error);
 
-        /*
-         * نسمح للتطبيق بالاستمرار بدل بقائه في شاشة تحميل
-         * لا نهائية. إذا كان هناك خطأ سنراه في الصفحة التي
-         * تحتاج إلى Auth.
-         */
         if (mounted) {
           setReady(true);
         }
       }
     };
 
-    initializeAuth();
+    void initializeAuth();
 
     /*
-     * متابعة تغييرات حالة تسجيل الدخول.
+     * الاستماع لتغيرات حالة المصادقة.
      */
-    const {
-      data: authListener,
-    } = supabase.auth.onAuthStateChange(
+    const { data: authListener } = supabase.auth.onAuthStateChange(
       (event, session) => {
-        console.log(
-          'Auth state changed:',
-          event,
-          session?.user?.id ?? 'no-user'
-        );
+        console.log('Auth state changed:', event, session?.user?.id ?? 'no-user');
       }
     );
 
     return () => {
       mounted = false;
-
       authListener.subscription.unsubscribe();
     };
   }, []);
 
-  /*
-   * لا نعرض صفحات التطبيق قبل الانتهاء من محاولة
-   * استعادة/إنشاء جلسة Supabase.
-   */
   if (!ready) {
     return (
       <View
@@ -142,10 +100,7 @@ export default function RootLayout() {
           justifyContent: 'center',
         }}
       >
-        <ActivityIndicator
-          size="large"
-          color={GOLD}
-        />
+        <ActivityIndicator size="large" color={GOLD} />
       </View>
     );
   }
