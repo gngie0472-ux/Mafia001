@@ -3,9 +3,8 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      // دعم الـ Inline Environment Variables لـ Expo
-      'transform-inline-environment-variables',
-      // إضافة Reanimated plugin في النهاية دائماً إذا كنت تستخدمه في المشروع
+      // تم حذف إضافة transform-inline-environment-variables لتجنب خطأ البناء
+      // يجب أن يظل plugin الخاص بـ reanimated في نهاية القائمة دائماً
       'react-native-reanimated/plugin',
     ],
   };
