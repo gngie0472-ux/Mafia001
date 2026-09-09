@@ -241,13 +241,20 @@ export default function MafiaGameScreen() {
       return roomId;
     }
 
-    const { data, error } = await supabase
+    const cleanedInput = roomCode.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanedInput);
+
+    let query = supabase
       .from('rooms')
-      .select(
-        'id,code,name,max_players,status,host_id,game_round,game_phase,winner,phase_ends_at,last_event',
-      )
-      .eq('code', roomCode)
-      .maybeSingle();
+      .select('id,code,name,max_players,status,host_id,game_round,game_phase,winner,phase_ends_at,last_event');
+
+    if (isUuid) {
+      query = query.eq('id', cleanedInput);
+    } else {
+      query = query.ilike('code', cleanedInput);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       throw new Error(getErrorMessage(error, 'تعذر العثور على الغرفة.'));
@@ -642,7 +649,7 @@ export default function MafiaGameScreen() {
 
   const performVote = useCallback(async () => {
     if (!roomId || !selectedTarget) {
-      Alert.alert('اختر لاعبًا', 'اختر لاعبًا حيًا للتصويت ضده.');
+      Alert.alert('اختر لاعبًا', 'اختر لاعبًا حيًا للتصويت ضدّه.');
       return;
     }
 
