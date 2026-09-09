@@ -26,20 +26,37 @@
       [
         "@livekit/react-native-expo-plugin",
         {
+          "cameraPermission": "Allow Mafia Night to access your camera.",
+          "microphonePermission": "Allow Mafia Night to access your microphone.",
           "android": {
             "audioType": "communication"
           }
         }
       ],
-      "@config-plugins/react-native-webrtc"
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allow Mafia Night to access your camera.",
+          "microphonePermission": "Allow Mafia Night to access your microphone."
+        }
+      ]
     ],
 
     "android": {
-      "package": "com.mafianight.app"
+      "package": "com.mafianight.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.CAMERA"
+      ]
     },
 
     "ios": {
-      "bundleIdentifier": "com.mafianight.app"
+      "bundleIdentifier": "com.mafianight.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow Mafia Night to access your microphone for in-game voice chat.",
+        "NSCameraUsageDescription": "Allow Mafia Night to access your camera."
+      }
     }
   }
 }
