@@ -57,8 +57,6 @@ import {
   getLiveKitToken,
 } from "../../lib/livekit";
 
-// ملاحظة: تم إزالة registerGlobals() من هنا لأنها مسجلة مسبقاً في نقطة الجذر app/_layout.tsx
-
 type Message = {
   id: string;
   room_id: string;
@@ -529,7 +527,7 @@ export default function MafiaGameScreen() {
       .finally(() => { advancingRef.current = false; });
   }, [roomId, gameState?.room?.status, secondsLeft, loadGame]);
 
-  /* Voice Connection (Safe Implementation) */
+  /* Voice Connection */
   useEffect(() => {
     if (!roomId) return;
     let cancelled = false;
@@ -674,14 +672,14 @@ export default function MafiaGameScreen() {
     [effectiveNightAction, myPlayerId]
   );
 
-  /* Night action submit */
+  /* Night action submit (باستخدام معرف اللاعب الصحيح user_id / player.id حسب دالة الخادم) */
   const handleNightAction = useCallback(async () => {
     if (!roomId || !myRoleInfo || !effectiveNightAction || !selectedTarget) {
       Alert.alert("اختر لاعبًا", "يجب اختيار لاعب قبل تنفيذ القدرة.");
       return;
     }
 
-    const target = players.find((player) => player.id === selectedTarget);
+    const target = players.find((player) => player.id === selectedTarget || player.user_id === selectedTarget);
     if (!target || !target.alive) {
       Alert.alert("هدف غير صالح", "هذا اللاعب لم يعد متاحًا.");
       return;
@@ -689,10 +687,11 @@ export default function MafiaGameScreen() {
 
     try {
       setBusy(true);
+      // تمرير المعرف المناسب (target.id أو target.user_id بناءً على توقيع دالة submitNightAction)
       const result = await submitNightAction(
         roomId,
         effectiveNightAction,
-        selectedTarget
+        target.user_id || selectedTarget
       );
 
       if (effectiveNightAction === "investigate") {
@@ -729,7 +728,7 @@ export default function MafiaGameScreen() {
       return;
     }
 
-    const target = players.find((player) => player.id === selectedTarget);
+    const target = players.find((player) => player.id === selectedTarget || player.user_id === selectedTarget);
     if (!target || !target.alive) {
       Alert.alert("هدف غير صالح", "هذا اللاعب لم يعد حيًا.");
       return;
@@ -737,7 +736,7 @@ export default function MafiaGameScreen() {
 
     try {
       setBusy(true);
-      await submitDayVote(roomId, selectedTarget);
+      await submitDayVote(roomId, target.user_id || selectedTarget);
       setSelectedTarget(null);
       Alert.alert("تم التصويت", `تم تسجيل تصويتك ضد ${target.name}.`);
       await loadGame(false);
