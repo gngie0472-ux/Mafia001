@@ -36,9 +36,13 @@ export async function prepareMicrophone(): Promise<boolean> {
     throw new Error('لم يتم السماح باستخدام الميكروفون.');
   }
 
-  // بدء AudioSession لـ LiveKit
+  // بدء AudioSession لـ LiveKit بأمان مع التحقق من توفر الوحدة
   try {
-    await AudioSession.startAudioSession();
+    if (AudioSession && typeof AudioSession.startAudioSession === 'function') {
+      await AudioSession.startAudioSession();
+    } else {
+      console.warn('AudioSession is not available or startAudioSession is not a function.');
+    }
   } catch (error) {
     console.warn('AudioSession initialized or skipped:', error);
   }
@@ -48,7 +52,9 @@ export async function prepareMicrophone(): Promise<boolean> {
 
 export async function stopMicrophoneSession(): Promise<void> {
   try {
-    await AudioSession.stopAudioSession();
+    if (AudioSession && typeof AudioSession.stopAudioSession === 'function') {
+      await AudioSession.stopAudioSession();
+    }
   } catch (error) {
     console.warn('AudioSession stop skipped:', error);
   }
