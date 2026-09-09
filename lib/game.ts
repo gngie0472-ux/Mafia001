@@ -122,7 +122,7 @@ export type MyRole = {
 };
 
 /* ============================================================
-   HELPERS
+   ERROR HELPERS
 ============================================================ */
 
 function errorMessage(
@@ -152,32 +152,29 @@ function errorMessage(
   return parts.join(' | ') || fallback;
 }
 
-function requireRoomId(roomId: string): string {
-  const value = String(roomId ?? '').trim();
-
-  if (!value) {
-    throw new Error('Missing room ID');
-  }
-
-  return value;
-}
-
-function requireTargetId(targetId: string): string {
-  const value = String(targetId ?? '').trim();
-
-  if (!value) {
-    throw new Error('Missing target');
-  }
-
-  return value;
-}
-
 function isUuid(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
+  if (typeof value !== 'string') {
+    return false;
+  }
 
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value,
+    value.trim(),
   );
+}
+
+function requireTargetId(
+  targetId: string,
+): string {
+  const value =
+    String(targetId ?? '').trim();
+
+  if (!value) {
+    throw new Error(
+      'يجب اختيار لاعب أولاً.',
+    );
+  }
+
+  return value;
 }
 
 /* ============================================================
@@ -231,7 +228,11 @@ export function normalizeGameRole(
 ============================================================ */
 
 export function getRoleTeam(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): GameTeam | null {
   const normalized =
     normalizeGameRole(role);
@@ -258,21 +259,42 @@ export function getRoleTeam(
 }
 
 export function isCitizenTeam(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): boolean {
-  return getRoleTeam(role) === 'CITIZENS';
+  return (
+    getRoleTeam(role) ===
+    'CITIZENS'
+  );
 }
 
 export function isMafiaTeam(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): boolean {
-  return getRoleTeam(role) === 'MAFIA';
+  return (
+    getRoleTeam(role) ===
+    'MAFIA'
+  );
 }
 
 export function isCultTeam(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): boolean {
-  return getRoleTeam(role) === 'CULT';
+  return (
+    getRoleTeam(role) ===
+    'CULT'
+  );
 }
 
 /* ============================================================
@@ -280,7 +302,11 @@ export function isCultTeam(
 ============================================================ */
 
 export function getRoleNightAction(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): NightAction | null {
   const normalized =
     normalizeGameRole(role);
@@ -301,9 +327,9 @@ export function getRoleNightAction(
     case 'CULT_LEADER':
       return 'cult_convert';
 
+    case 'GODFATHER':
     case 'CITIZEN':
     case 'GHOUL':
-    case 'GODFATHER':
     case 'CULTIST':
     default:
       return null;
@@ -315,7 +341,11 @@ export function getRoleNightAction(
 ============================================================ */
 
 export function getRoleDescription(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): string {
   switch (
     normalizeGameRole(role)
@@ -357,7 +387,11 @@ export function getRoleDescription(
 ============================================================ */
 
 export function getRoleLabel(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): string {
   switch (
     normalizeGameRole(role)
@@ -398,17 +432,6 @@ export function getRoleLabel(
    ROOM RESOLUTION
 ============================================================ */
 
-/**
- * يحول:
- *
- * room UUID
- * أو room code
- *
- * إلى UUID الحقيقي للغرفة.
- *
- * هذا يمنع إرسال T2GZ6M إلى RPC
- * ينتظر UUID.
- */
 export async function resolveRoomId(
   roomValue: string,
 ): Promise<string> {
@@ -416,14 +439,17 @@ export async function resolveRoomId(
     String(roomValue ?? '').trim();
 
   if (!value) {
-    throw new Error('رمز الغرفة غير موجود.');
+    throw new Error(
+      'رمز الغرفة غير موجود.',
+    );
   }
 
   if (isUuid(value)) {
     return value;
   }
 
-  const code = value.toUpperCase();
+  const code =
+    value.toUpperCase();
 
   const {
     data,
@@ -443,7 +469,10 @@ export async function resolveRoomId(
     );
   }
 
-  if (!data?.id || !isUuid(data.id)) {
+  if (
+    !data?.id ||
+    !isUuid(data.id)
+  ) {
     throw new Error(
       'الغرفة غير موجودة أو لم تعد متاحة.',
     );
@@ -457,17 +486,14 @@ export async function resolveRoomId(
 ============================================================ */
 
 /**
- * يعالج أهم مشكلة حالية:
+ * يقبل:
  *
- * أحيانًا الواجهة ترسل:
- *   room_players.id
+ * room_players.id
+ * أو
+ * room_players.user_id
  *
- * وأحيانًا:
- *   room_players.user_id
- *
- * بينما RPC قد يتوقع أحدهما فقط.
- *
- * لذلك نبحث عن اللاعب ونحتفظ بالمعرفين.
+ * ويعيد الاثنين بعد التحقق
+ * من أن اللاعب موجود داخل الغرفة.
  */
 async function resolveTarget(
   roomId: string,
@@ -482,73 +508,75 @@ async function resolveTarget(
   const target =
     requireTargetId(targetId);
 
-  let row:
-    | {
-        id: string;
-        user_id: string;
-      }
-    | null = null;
-
-  if (isUuid(target)) {
-    const byId =
-      await supabase
-        .from('room_players')
-        .select('id,user_id')
-        .eq('room_id', room)
-        .eq('id', target)
-        .maybeSingle();
-
-    if (!byId.error && byId.data) {
-      row = byId.data as {
-        id: string;
-        user_id: string;
-      };
-    }
-
-    if (!row) {
-      const byUser =
-        await supabase
-          .from('room_players')
-          .select('id,user_id')
-          .eq('room_id', room)
-          .eq('user_id', target)
-          .maybeSingle();
-
-      if (!byUser.error && byUser.data) {
-        row = byUser.data as {
-          id: string;
-          user_id: string;
-        };
-      }
-    }
-  }
-
-  if (!row) {
+  if (!isUuid(target)) {
     throw new Error(
-      'اللاعب المستهدف غير موجود في هذه الغرفة.',
+      'معرف اللاعب المستهدف غير صالح.',
     );
   }
+
+  const byId =
+    await supabase
+      .from('room_players')
+      .select('id,user_id')
+      .eq('room_id', room)
+      .eq('id', target)
+      .maybeSingle();
 
   if (
-    !isUuid(row.id) ||
-    !isUuid(row.user_id)
+    !byId.error &&
+    byId.data &&
+    isUuid(byId.data.id) &&
+    isUuid(byId.data.user_id)
   ) {
-    throw new Error(
-      'معرف اللاعب غير صالح.',
-    );
+    return {
+      id: byId.data.id,
+      user_id: byId.data.user_id,
+    };
   }
 
-  return row;
+  const byUser =
+    await supabase
+      .from('room_players')
+      .select('id,user_id')
+      .eq('room_id', room)
+      .eq('user_id', target)
+      .maybeSingle();
+
+  if (
+    !byUser.error &&
+    byUser.data &&
+    isUuid(byUser.data.id) &&
+    isUuid(byUser.data.user_id)
+  ) {
+    return {
+      id: byUser.data.id,
+      user_id: byUser.data.user_id,
+    };
+  }
+
+  throw new Error(
+    'اللاعب المستهدف غير موجود في هذه الغرفة.',
+  );
 }
 
 /* ============================================================
-   RPC TARGET FALLBACK
+   TARGET RPC
 ============================================================ */
 
+type TargetRpcName =
+  | 'mafia_submit_vote'
+  | 'mafia_submit_action';
+
+/**
+ * ينفذ RPC مع player id أولاً،
+ * ثم user_id عند الحاجة.
+ *
+ * مهم:
+ * لا يتم إرسال room code
+ * أو target code إلى RPC.
+ */
 async function callTargetRpc(
-  rpcName:
-    | 'mafia_submit_vote'
-    | 'mafia_submit_action',
+  rpcName: TargetRpcName,
   roomId: string,
   targetId: string,
   extra: Record<string, unknown> = {},
@@ -562,10 +590,6 @@ async function callTargetRpc(
       targetId,
     );
 
-  /**
-   * المحاولة الأولى:
-   * player id
-   */
   const first =
     await supabase.rpc(
       rpcName,
@@ -580,12 +604,9 @@ async function callTargetRpc(
     return first.data;
   }
 
-  /**
-   * المحاولة الثانية:
-   * user id
-   *
-   * هذا يحل اختلاف الـ RPC
-   * بين player id و auth user id.
+  /*
+   * إذا كان الـRPC يتوقع user_id
+   * بدلاً من room_players.id.
    */
   if (
     target.user_id !== target.id
@@ -595,7 +616,8 @@ async function callTargetRpc(
         rpcName,
         {
           p_room_id: room,
-          p_target_id: target.user_id,
+          p_target_id:
+            target.user_id,
           ...extra,
         },
       );
@@ -675,11 +697,19 @@ export async function getGameState(
     me?.id ??
     null;
 
-  if (!myPlayerId && me?.user_id) {
+  /*
+   * إذا أعاد RPC user_id فقط،
+   * نحاول العثور على room_players.id.
+   */
+  if (
+    !myPlayerId &&
+    me?.user_id
+  ) {
     const found =
       players.find(
         (player: GamePlayer) =>
-          player.user_id === me.user_id,
+          player.user_id ===
+          me.user_id,
       );
 
     if (found) {
@@ -688,11 +718,21 @@ export async function getGameState(
     }
   }
 
-  if (!me && myPlayerId) {
+  /*
+   * إذا كان لدينا id فقط
+   * ولم يوجد me، نبحث عنه.
+   */
+  if (
+    !me &&
+    myPlayerId
+  ) {
     const found =
       players.find(
         (player: GamePlayer) =>
-          player.id === myPlayerId,
+          player.id ===
+          myPlayerId ||
+          player.user_id ===
+          myPlayerId,
       );
 
     if (found) {
@@ -705,7 +745,8 @@ export async function getGameState(
     room: raw.room,
     players,
     me,
-    my_player_id: myPlayerId,
+    my_player_id:
+      myPlayerId,
   } as GameState;
 }
 
@@ -744,8 +785,8 @@ export async function getMyRole(
   const role =
     normalizeGameRole(
       raw.role ??
-      raw.my_role ??
-      raw.player_role,
+        raw.my_role ??
+        raw.player_role,
     );
 
   if (!role) {
@@ -765,8 +806,8 @@ export async function getMyRole(
     ghoul_ability_stolen:
       Boolean(
         raw.ghoul_ability_stolen ??
-        raw.ability_stolen ??
-        false,
+          raw.ability_stolen ??
+          false,
       ),
     stolen_role:
       normalizeGameRole(
@@ -875,12 +916,6 @@ export async function submitDayVote(
   roomId: string,
   targetId: string,
 ) {
-  /**
-   * لا نرسل targetId مباشرة.
-   *
-   * نحل اللاعب أولًا ثم نجرب
-   * player.id ثم user_id.
-   */
   return callTargetRpc(
     'mafia_submit_vote',
     roomId,
@@ -893,7 +928,11 @@ export async function submitDayVote(
 ============================================================ */
 
 export function canGhoulStealAbility(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): boolean {
   const normalized =
     normalizeGameRole(role);
@@ -908,7 +947,11 @@ export function canGhoulStealAbility(
 }
 
 export function getStealableAbility(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): NightAction | null {
   if (
     !canGhoulStealAbility(role)
@@ -920,7 +963,11 @@ export function getStealableAbility(
 }
 
 export function getGhoulStealResult(
-  role: GameRole | string | null | undefined,
+  role:
+    | GameRole
+    | string
+    | null
+    | undefined,
 ): {
   role: GameRole | null;
   ability: NightAction | null;
@@ -942,7 +989,11 @@ export function getGhoulStealResult(
 ============================================================ */
 
 export function getTeamLabel(
-  team: GameTeam | string | null | undefined,
+  team:
+    | GameTeam
+    | string
+    | null
+    | undefined,
 ): string {
   switch (team) {
     case 'CITIZENS':
@@ -996,12 +1047,73 @@ export function getRoleAbilityLabel(
 }
 
 /* ============================================================
+   PLAYER ID HELPERS
+============================================================ */
+
+/**
+ * معرف آمن لاستخدامه في واجهة اللعبة.
+ *
+ * الأولوية لـ user_id لأنه معرف
+ * حساب اللاعب، مع fallback إلى id.
+ */
+export function getPlayerTargetId(
+  player:
+    | GamePlayer
+    | CurrentGamePlayer
+    | null
+    | undefined,
+): string | null {
+  if (!player) {
+    return null;
+  }
+
+  if (
+    player.user_id &&
+    isUuid(player.user_id)
+  ) {
+    return player.user_id;
+  }
+
+  if (
+    player.id &&
+    isUuid(player.id)
+  ) {
+    return player.id;
+  }
+
+  return null;
+}
+
+/**
+ * التحقق من أن اللاعب يملك معرفًا
+ * صالحًا للإرسال إلى RPC.
+ */
+export function hasValidPlayerId(
+  player:
+    | GamePlayer
+    | CurrentGamePlayer
+    | null
+    | undefined,
+): boolean {
+  return Boolean(
+    getPlayerTargetId(player),
+  );
+}
+
+/* ============================================================
    TARGET RULES
 ============================================================ */
 
 export function canTargetPlayer(
-  actor: GamePlayer | CurrentGamePlayer | null | undefined,
-  target: GamePlayer | null | undefined,
+  actor:
+    | GamePlayer
+    | CurrentGamePlayer
+    | null
+    | undefined,
+  target:
+    | GamePlayer
+    | null
+    | undefined,
 ): boolean {
   if (!actor || !target) {
     return false;
@@ -1031,7 +1143,8 @@ export function canTargetPlayer(
   if (
     actor.user_id &&
     target.user_id &&
-    actor.user_id === target.user_id
+    actor.user_id ===
+      target.user_id
   ) {
     return false;
   }
@@ -1079,11 +1192,17 @@ export function calculateWinner(
     return null;
   }
 
-  if (mafia === 0 && cult === 0) {
+  if (
+    mafia === 0 &&
+    cult === 0
+  ) {
     return 'CITIZENS';
   }
 
-  if (citizens === 0 && cult === 0) {
+  if (
+    citizens === 0 &&
+    cult === 0
+  ) {
     return 'MAFIA';
   }
 
