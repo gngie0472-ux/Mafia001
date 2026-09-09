@@ -1,4 +1,4 @@
-import React, {
+Import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -553,7 +553,6 @@ export default function MafiaGameScreen() {
     let createdRoom: Room | null = null;
 
     try {
-      // التحقق من الإذن وتهيئة جلسة الصوت عبر الخدمة الموحدة
       await prepareMicrophone();
 
       const token = await getLiveKitToken(roomId);
@@ -793,6 +792,37 @@ export default function MafiaGameScreen() {
             <Text style={styles.winnerText}>الفائز: {String(room.winner)}</Text>
           )}
         </View>
+
+        {/* زر بدء اللعبة يظهر للمنظم فقط في وضع الانتظار */}
+        {isHost && (phase === 'waiting' || phase === 'lobby') && (
+          <View style={styles.actionCard}>
+            <Text style={styles.sectionTitle}>إدارة الغرفة</Text>
+            <Text style={styles.actionHint}>يمكنك بدء اللعبة عندما يكتمل عدد اللاعبين.</Text>
+            
+            <Pressable
+              style={[styles.primaryButton, busy && styles.disabledButton]}
+              disabled={busy}
+              onPress={async () => {
+                try {
+                  setBusy(true);
+                  const { error } = await supabase
+                    .from('rooms')
+                    .update({ status: 'playing', game_phase: 'day' })
+                    .eq('id', roomId);
+                  
+                  if (error) throw error;
+                  await loadGame(false);
+                } catch (error) {
+                  Alert.alert('خطأ', getErrorMessage(error, 'تعذر بدء اللعبة.'));
+                } finally {
+                  if (mountedRef.current) setBusy(false);
+                }
+              }}
+            >
+              <Text style={styles.primaryButtonText}>🚀 بدء اللعبة</Text>
+            </Pressable>
+          </View>
+        )}
 
         <View style={styles.voiceCard}>
           <View style={styles.voiceInfo}>
