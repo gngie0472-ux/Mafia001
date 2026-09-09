@@ -1,5 +1,5 @@
-import { Platform, PermissionsAndroid } from 'react-native';
 import { AudioSession } from '@livekit/react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 export async function requestMicrophonePermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
@@ -36,12 +36,7 @@ export async function prepareMicrophone(): Promise<boolean> {
     throw new Error('لم يتم السماح باستخدام الميكروفون.');
   }
 
-  // التأكد من توفر محرك WebRTC لمنع أخطاء prototype
-  if (typeof global.RTCPeerConnection === 'undefined') {
-    throw new Error('محرك WebRTC غير متهيّأ في التطبيق.');
-  }
-
-  // بدء AudioSession آمن
+  // بدء AudioSession لـ LiveKit
   try {
     await AudioSession.startAudioSession();
   } catch (error) {
