@@ -29,7 +29,6 @@ import { Ionicons } from "@expo/vector-icons";
 
 import {
   AudioSession,
-  registerGlobals,
 } from "@livekit/react-native";
 
 import {
@@ -58,7 +57,7 @@ import {
   getLiveKitToken,
 } from "../../lib/livekit";
 
-registerGlobals();
+// ملاحظة: تم إزالة registerGlobals() من هنا لأنها مسجلة مسبقاً في نقطة الجذر app/_layout.tsx
 
 type Message = {
   id: string;
@@ -530,19 +529,26 @@ export default function MafiaGameScreen() {
       .finally(() => { advancingRef.current = false; });
   }, [roomId, gameState?.room?.status, secondsLeft, loadGame]);
 
-  /* Voice Connection */
+  /* Voice Connection (Safe Implementation) */
   useEffect(() => {
     if (!roomId) return;
     let cancelled = false;
 
     async function connectVoice() {
       try {
-        await AudioSession.startAudioSession();
-        const token = await getLiveKitToken(roomId);
+        if (AudioSession?.startAudioSession) {
+          await AudioSession.startAudioSession();
+        }
 
+        const token = await getLiveKitToken(roomId);
         if (cancelled || !token?.token || !token?.server_url) return;
 
-        const room = new Room();
+        const RoomClass = Room;
+        if (!RoomClass) {
+          throw new Error("LiveKit Room class is undefined");
+        }
+
+        const room = new RoomClass();
         voiceRoomRef.current = room;
 
         room.on(RoomEvent.Disconnected, () => {
@@ -555,7 +561,9 @@ export default function MafiaGameScreen() {
         room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
           const active: Record<string, boolean> = {};
           for (const participant of speakers) {
-            active[participant.identity] = true;
+            if (participant?.identity) {
+              active[participant.identity] = true;
+            }
           }
           if (mountedRef.current) setSpeakingUsers(active);
         });
@@ -566,7 +574,7 @@ export default function MafiaGameScreen() {
           setVoiceConnected(true);
         }
       } catch (error) {
-        console.error("LiveKit connection:", error);
+        console.error("LiveKit connection error:", error);
         if (mountedRef.current) setVoiceConnected(false);
       }
     }
@@ -580,7 +588,9 @@ export default function MafiaGameScreen() {
       if (room) {
         try { room.disconnect(); } catch {}
       }
-      AudioSession.stopAudioSession().catch(() => {});
+      if (AudioSession?.stopAudioSession) {
+        AudioSession.stopAudioSession().catch(() => {});
+      }
     };
   }, [roomId]);
 
