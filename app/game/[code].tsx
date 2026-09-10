@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  ImageSourcePropType,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -143,30 +142,6 @@ const ROLE_EMOJIS: Partial<Record<GameRole, string>> = {
   CONSIGLIERE: "🎭",
   CULT_LEADER: "🔥",
   CULTIST: "☠️",
-};
-
-/*
- * صور بطاقات الأدوار.
- *
- * يجب وضع الملفات داخل:
- * assets/roles/
- */
-const ROLE_IMAGES: Partial<
-  Record<GameRole, ImageSourcePropType>
-> = {
-  CITIZEN: require("../../assets/roles/citizen.png"),
-  DOCTOR: require("../../assets/roles/doctor.png"),
-  DETECTIVE: require("../../assets/roles/detective.png"),
-  GHOUL: require("../../assets/roles/ghoul.png"),
-  SPY: require("../../assets/roles/spy.png"),
-  BODYGUARD: require("../../assets/roles/bodyguard.png"),
-  SHERIFF: require("../../assets/roles/sheriff.png"),
-  WITCH: require("../../assets/roles/witch.png"),
-  MAFIA: require("../../assets/roles/mafia.png"),
-  GODFATHER: require("../../assets/roles/godfather.png"),
-  CONSIGLIERE: require("../../assets/roles/consigliere.png"),
-  CULT_LEADER: require("../../assets/roles/cult_leader.png"),
-  CULTIST: require("../../assets/roles/cultist.png"),
 };
 
 /* ============================================================
@@ -1365,16 +1340,6 @@ export default function MafiaGameScreen() {
       : "🎴";
 
   /*
-   * الصورة الحقيقية لبطاقة الدور.
-   */
-  const roleImage =
-    currentRole
-      ? ROLE_IMAGES[
-          currentRole
-        ] || null
-      : null;
-
-  /*
    * القدرة المسروقة للغول.
    */
   const stolenAction =
@@ -2121,85 +2086,73 @@ export default function MafiaGameScreen() {
                 },
               ]}
             >
-              {roleImage ? (
-                <Image
-                  source={roleImage}
-                  style={
-                    styles.roleCardImage
+              <View
+                style={[
+                  styles.artGlow,
+                  {
+                    backgroundColor:
+                      `${roleColor}18`,
+                  },
+                ]}
+              />
+
+              <Text
+                style={
+                  styles.roleEmoji
+                }
+              >
+                {roleEmoji}
+              </Text>
+
+              <View
+                style={[
+                  styles.artIconCircle,
+                  {
+                    borderColor:
+                      roleColor,
+                    backgroundColor:
+                      `${roleColor}20`,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    roleIcon
                   }
-                  resizeMode="contain"
+                  size={30}
+                  color={
+                    roleColor
+                  }
                 />
-              ) : (
-                <>
-                  <View
-                    style={[
-                      styles.artGlow,
-                      {
-                        backgroundColor:
-                          `${roleColor}18`,
-                      },
-                    ]}
-                  />
+              </View>
 
-                  <Text
-                    style={
-                      styles.roleEmoji
-                    }
-                  >
-                    {roleEmoji}
-                  </Text>
+              <View
+                style={
+                  styles.artLines
+                }
+              >
+                <View
+                  style={[
+                    styles.artLine,
+                    {
+                      backgroundColor:
+                        roleColor,
+                      opacity: 0.25,
+                    },
+                  ]}
+                />
 
-                  <View
-                    style={[
-                      styles.artIconCircle,
-                      {
-                        borderColor:
-                          roleColor,
-                        backgroundColor:
-                          `${roleColor}20`,
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name={
-                        roleIcon
-                      }
-                      size={30}
-                      color={
-                        roleColor
-                      }
-                    />
-                  </View>
-
-                  <View
-                    style={
-                      styles.artLines
-                    }
-                  >
-                    <View
-                      style={[
-                        styles.artLine,
-                        {
-                          backgroundColor:
-                            roleColor,
-                          opacity: 0.25,
-                        },
-                      ]}
-                    />
-
-                    <View
-                      style={[
-                        styles.artLineSmall,
-                        {
-                          backgroundColor:
-                            roleColor,
-                          opacity: 0.18,
-                        },
-                      ]}
-                    />
-                  </View>
-                </>
-              )}
+                <View
+                  style={[
+                    styles.artLineSmall,
+                    {
+                      backgroundColor:
+                        roleColor,
+                      opacity: 0.18,
+                    },
+                  ]}
+                />
+              </View>
             </View>
 
             <Text
@@ -3416,14 +3369,6 @@ const styles = StyleSheet.create({
     marginBottom: 13,
   },
 
-  /*
-   * صورة بطاقة الدور الجديدة.
-   */
-  roleCardImage: {
-    width: "100%",
-    height: "100%",
-  },
-
   artGlow: {
     position: "absolute",
     width: 260,
@@ -4018,7 +3963,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  myMessageRow: {
+  myMessageRow: {StyleSheet
     justifyContent: "flex-end",
   },
 
