@@ -1,4 +1,4 @@
-import React, {
+Import React, {
   useCallback,
   useEffect,
   useMemo,
@@ -595,11 +595,6 @@ export default function MafiaGameScreen() {
   const [sendingMessage, setSendingMessage] =
     useState(false);
 
-  /*
-   * لا نعرض بطاقة الدور عند دخول الغرفة.
-   * تصبح true فقط بعد التأكد أن اللعبة بدأت
-   * وأن هناك دورًا حقيقيًا.
-   */
   const [showRoleCard, setShowRoleCard] =
     useState(false);
 
@@ -916,13 +911,6 @@ export default function MafiaGameScreen() {
           next.players || [],
         );
 
-        /*
-         * أثناء الانتظار لا يوجد دور.
-         *
-         * حتى لو كانت بيانات اللاعب تحتوي
-         * على role قديمة، لا نستخدمها قبل
-         * بدء اللعبة.
-         */
         const currentPhase =
           next.room?.game_phase ||
           "waiting";
@@ -935,10 +923,6 @@ export default function MafiaGameScreen() {
             setShowRoleCard(false);
           }
         } else {
-          /*
-           * بعد بدء اللعبة فقط نحاول
-           * جلب الدور الحقيقي.
-           */
           try {
             const myRole =
               await getMyRole(roomId);
@@ -1255,12 +1239,6 @@ export default function MafiaGameScreen() {
     state?.room?.game_phase ||
     "waiting";
 
-  /*
-   * لا نقرأ me.role أثناء الانتظار.
-   *
-   * هذا يمنع ظهور Citizen أو أي دور
-   * افتراضي قبل بدء اللعبة.
-   */
   const currentRole: GameRole | null =
     phase === "waiting"
       ? null
@@ -1339,18 +1317,12 @@ export default function MafiaGameScreen() {
         ] || "🎴"
       : "🎴";
 
-  /*
-   * القدرة المسروقة للغول.
-   */
   const stolenAction =
     currentRole
       ? role?.stolen_ability ??
         null
       : null;
 
-  /*
-   * القدرة العادية للدور.
-   */
   const normalAction =
     currentRole
       ? (() => {
@@ -1370,10 +1342,6 @@ export default function MafiaGameScreen() {
         })()
       : null;
 
-  /*
-   * إذا سرق الغول قدرة، تصبح
-   * هي القدرة الفعالة.
-   */
   const effectiveAction =
     currentRole &&
     role?.ghoul_ability_stolen &&
@@ -3963,7 +3931,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
-  myMessageRow: {StyleSheet
+  myMessageRow: {
     justifyContent: "flex-end",
   },
 
@@ -4015,6 +3983,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "#D7A94B",
     alignItems: "center",
+    zIndex: 1,
     justifyContent: "center",
   },
 
