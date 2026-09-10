@@ -24,10 +24,7 @@ import {
 
 import { supabase } from '../../lib/supabase';
 import { getMyProfile } from '../../lib/profile';
-
-import {
-  getGameState,
-} from '../../lib/game';
+import { getGameState } from '../../lib/game';
 
 import type {
   GamePlayer,
@@ -44,6 +41,8 @@ type RoomData = GameState['room'] & {
   game_round?: number | null;
   game_phase?: string | null;
   winner?: string | null;
+  phase_ends_at?: string | null;
+  last_event?: unknown;
 };
 
 type Message = {
@@ -59,7 +58,10 @@ function getErrorMessage(
   error: unknown,
   fallback: string,
 ): string {
-  if (typeof error === 'string' && error.trim()) {
+  if (
+    typeof error === 'string' &&
+    error.trim()
+  ) {
     return error;
   }
 
@@ -96,7 +98,10 @@ function getErrorMessage(
 function normalizeCode(
   value: string | string[] | undefined,
 ): string {
-  const raw = Array.isArray(value) ? value[0] : value;
+  const raw = Array.isArray(value)
+    ? value[0]
+    : value;
+
   return String(raw || '')
     .trim()
     .toUpperCase();
@@ -143,30 +148,65 @@ export default function RoomLobbyScreen() {
   const roomCode = normalizeCode(params.code);
 
   const mountedRef = useRef(true);
+
+  /*
+   * يمنع الانتقال المكرر إلى شاشة اللعبة.
+   */
   const navigatingToGameRef = useRef(false);
 
+  /*
+   * نحتفظ بآخر غرفة مؤكدة داخل ref.
+   * هذا مهم لأن setState غير متزامن.
+   */
+  const roomRef = useRef<RoomData | null>(null);
+
   const [roomId, setRoomId] = useState('');
-  const [room, setRoom] = useState<RoomData | null>(null);
-  const [players, setPlayers] = useState<GamePlayer[]>([]);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [room, setRoom] =
+    useState<RoomData | null>(null);
 
-  const [currentUserId, setCurrentUserId] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [startingGame, setStartingGame] = useState(false);
+  const [players, setPlayers] =
+    useState<GamePlayer[]>([]);
 
-  const [messageText, setMessageText] = useState('');
+  const [messages, setMessages] =
+    useState<Message[]>([]);
 
-  const isWaiting = room?.status === 'waiting';
+  const [currentUserId, setCurrentUserId] =
+    useState('');
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [startingGame, setStartingGame] =
+    useState(false);
+
+  const [messageText, setMessageText] =
+    useState('');
+
+  /*
+   * مهم جدًا:
+   *
+   * status هو المصدر الأساسي لمعرفة
+   * هل اللعبة بدأت أم لا.
+   *
+   * لا نعتمد على game_phase وحده،
+   * لأن قاعدة البيانات قد تحتوي على
+   * game_phase قديم مثل night بينما
+   * الغرفة ما زالت waiting.
+   */
+  const isWaiting =
+    room?.status === 'waiting';
+
   const isPlaying =
-    room?.status === 'playing' ||
-    room?.game_phase === 'night' ||
-    room?.game_phase === 'day';
+    room?.status === 'playing';
 
   const isFinished =
-    room?.status === 'finished' ||
-    room?.game_phase === 'finished';
+    room?.status === 'finished';
 
   const isHost = Boolean(
     room?.host_id &&
@@ -188,10 +228,18 @@ export default function RoomLobbyScreen() {
     playerCount <= maxPlayers &&
     !startingGame;
 
+  /*
+   * تحويل كود الغرفة إلى UUID الحقيقي.
+   *
+   * هذا يمنع الخطأ:
+   * invalid input syntax for type uuid: "T2GZ6M"
+   */
   const resolveRoom = useCallback(
     async (): Promise<string> => {
       if (!roomCode) {
-        throw new Error('كود الغرفة غير موجود.');
+        throw new Error(
+          'كود الغرفة غير موجود.',
+        );
       }
 
       if (roomId) {
@@ -222,13 +270,21 @@ export default function RoomLobbyScreen() {
         );
 
       if (isUuid) {
-        query = query.eq('id', roomCode);
+        query = query.eq(
+          'id',
+          roomCode,
+        );
       } else {
-        query = query.ilike('code', roomCode);
+        query = query.ilike(
+          'code',
+          roomCode,
+        );
       }
 
-      const { data, error } =
-        await query.maybeSingle();
+      const {
+        data,
+        error,
+      } = await query.maybeSingle();
 
       if (error) {
         throw new Error(
@@ -256,41 +312,61 @@ export default function RoomLobbyScreen() {
     [roomCode, roomId],
   );
 
+  /*
+   * تحميل رسائل الغرفة.
+   */
   const loadMessages = useCallback(
     async (resolvedRoomId?: string) => {
-      const id = resolvedRoomId || roomId;
+      const id =
+        resolvedRoomId || roomId;
 
-      if (!id) return;
+      if (!id) {
+        return;
+      }
 
       try {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('room_messages')
           .select(
             'id,room_id,user_id,message,created_at',
           )
-          .eq('room_id', id)
-          .order('created_at', {
-            ascending: true,
-          })
+          .eq(
+            'room_id',
+            id,
+          )
+          .order(
+            'created_at',
+            {
+              ascending: true,
+            },
+          )
           .limit(100);
 
         if (error) {
           throw error;
         }
 
-        const rows = (data || []) as Message[];
+        const rows =
+          (data || []) as Message[];
 
         if (!rows.length) {
           if (mountedRef.current) {
             setMessages([]);
           }
+
           return;
         }
 
         const userIds = [
           ...new Set(
             rows
-              .map((item) => item.user_id)
+              .map(
+                (item) =>
+                  item.user_id,
+              )
               .filter(Boolean),
           ),
         ];
@@ -299,23 +375,26 @@ export default function RoomLobbyScreen() {
           new Map<string, string>();
 
         if (userIds.length) {
-          const { data: profiles } =
-            await supabase
-              .from('profiles')
-              .select(
-                'user_id,username',
-              )
-              .in(
-                'user_id',
-                userIds,
-              );
+          const {
+            data: profiles,
+          } = await supabase
+            .from('profiles')
+            .select(
+              'user_id,username',
+            )
+            .in(
+              'user_id',
+              userIds,
+            );
 
           profileMap =
             new Map<string, string>();
 
           (profiles || []).forEach(
             (profile: any) => {
-              if (profile?.user_id) {
+              if (
+                profile?.user_id
+              ) {
                 profileMap.set(
                   profile.user_id,
                   profile.username ||
@@ -348,6 +427,9 @@ export default function RoomLobbyScreen() {
     [roomId],
   );
 
+  /*
+   * تحميل الغرفة والحالة واللاعبين.
+   */
   const loadRoom = useCallback(
     async (
       showLoader = false,
@@ -356,6 +438,7 @@ export default function RoomLobbyScreen() {
         if (mountedRef.current) {
           setLoading(false);
         }
+
         return;
       }
 
@@ -391,7 +474,9 @@ export default function RoomLobbyScreen() {
         }
 
         const stateRoom =
-          state?.room as RoomData | null;
+          state?.room as
+            | RoomData
+            | null;
 
         if (!stateRoom) {
           throw new Error(
@@ -400,9 +485,17 @@ export default function RoomLobbyScreen() {
         }
 
         const statePlayers =
-          Array.isArray(state.players)
+          Array.isArray(
+            state.players,
+          )
             ? state.players
             : [];
+
+        /*
+         * نخزن الحالة في state و ref.
+         */
+        roomRef.current =
+          stateRoom;
 
         setRoom(stateRoom);
         setPlayers(statePlayers);
@@ -448,8 +541,12 @@ export default function RoomLobbyScreen() {
     ],
   );
 
+  /*
+   * أول تحميل.
+   */
   useEffect(() => {
     mountedRef.current = true;
+    navigatingToGameRef.current = false;
 
     void loadRoom(true);
 
@@ -458,8 +555,17 @@ export default function RoomLobbyScreen() {
     };
   }, [loadRoom]);
 
+  /*
+   * Realtime:
+   *
+   * - تغيير الغرفة
+   * - دخول/خروج لاعب
+   * - الرسائل
+   */
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     const channel =
       supabase
@@ -515,22 +621,38 @@ export default function RoomLobbyScreen() {
     loadMessages,
   ]);
 
+  /*
+   * Heartbeat.
+   */
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     let cancelled = false;
 
     const heartbeat =
       async () => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         try {
-          await supabase.rpc(
+          const {
+            error,
+          } = await supabase.rpc(
             'heartbeat_room',
             {
               p_room_id: roomId,
             },
           );
+
+          if (error) {
+            console.error(
+              'heartbeat error:',
+              error,
+            );
+          }
         } catch (error) {
           console.error(
             'heartbeat error:',
@@ -549,12 +671,16 @@ export default function RoomLobbyScreen() {
 
     return () => {
       cancelled = true;
+
       clearInterval(
         interval,
       );
     };
   }, [roomId]);
 
+  /*
+   * بدء اللعبة.
+   */
   const startGame =
     useCallback(async () => {
       if (!roomId) {
@@ -562,6 +688,7 @@ export default function RoomLobbyScreen() {
           'خطأ',
           'معرف الغرفة غير جاهز.',
         );
+
         return;
       }
 
@@ -570,10 +697,20 @@ export default function RoomLobbyScreen() {
           'غير مسموح',
           'فقط صاحب الغرفة يستطيع بدء اللعبة.',
         );
+
         return;
       }
 
+      /*
+       * لا نسمح بالبدء إلا إذا كان
+       * status = waiting.
+       */
       if (!isWaiting) {
+        Alert.alert(
+          'اللعبة غير جاهزة',
+          'لا يمكن بدء اللعبة لأن الغرفة لم تعد في وضع الانتظار.',
+        );
+
         return;
       }
 
@@ -582,6 +719,7 @@ export default function RoomLobbyScreen() {
           'عدد اللاعبين غير كافٍ',
           `تحتاج اللعبة إلى 4 لاعبين على الأقل.\nالعدد الحالي: ${playerCount}`,
         );
+
         return;
       }
 
@@ -590,6 +728,7 @@ export default function RoomLobbyScreen() {
           'الغرفة ممتلئة',
           `الحد الأقصى لهذه الغرفة هو ${maxPlayers} لاعبين.`,
         );
+
         return;
       }
 
@@ -614,33 +753,50 @@ export default function RoomLobbyScreen() {
           throw error;
         }
 
+        /*
+         * دعم RPC التي ترجع:
+         * { success: false, message: ... }
+         */
         if (
           data &&
-          typeof data ===
-            'object' &&
+          typeof data === 'object' &&
           'success' in data &&
           (data as any).success ===
             false
         ) {
           throw new Error(
-            (data as any)
-              .message ||
-              (data as any)
-                .error ||
+            (data as any).message ||
+              (data as any).error ||
               'تعذر بدء اللعبة.',
           );
         }
 
-        if (
-          mountedRef.current
-        ) {
-          await loadRoom(false);
-        }
+        /*
+         * نعيد تحميل الغرفة مباشرة
+         * بعد RPC.
+         */
+        await loadRoom(false);
 
         /*
-         * ننتقل إلى شاشة اللعب فقط بعد نجاح
-         * start_mafia_game.
+         * مهم:
+         *
+         * لا ننتقل لمجرد أن RPC لم ترجع خطأ.
+         *
+         * يجب أن نتأكد أن status أصبح
+         * playing فعلًا.
          */
+        const latestRoom =
+          roomRef.current;
+
+        if (
+          latestRoom?.status !==
+          'playing'
+        ) {
+          throw new Error(
+            'تم تنفيذ طلب بدء اللعبة، لكن الغرفة لم تنتقل إلى حالة اللعب بعد. حاول مرة أخرى.',
+          );
+        }
+
         if (
           mountedRef.current &&
           !navigatingToGameRef.current
@@ -659,6 +815,13 @@ export default function RoomLobbyScreen() {
           'startGame error:',
           error,
         );
+
+        /*
+         * السماح بالمحاولة مرة أخرى
+         * إذا لم تبدأ اللعبة فعليًا.
+         */
+        navigatingToGameRef.current =
+          false;
 
         if (mountedRef.current) {
           Alert.alert(
@@ -686,6 +849,9 @@ export default function RoomLobbyScreen() {
       router,
     ]);
 
+  /*
+   * طرد لاعب.
+   */
   const kickPlayer =
     useCallback(
       (player: GamePlayer) => {
@@ -694,6 +860,7 @@ export default function RoomLobbyScreen() {
             'خطأ',
             'معرف الغرفة غير جاهز.',
           );
+
           return;
         }
 
@@ -702,6 +869,7 @@ export default function RoomLobbyScreen() {
             'غير مسموح',
             'فقط صاحب الغرفة يستطيع طرد اللاعبين.',
           );
+
           return;
         }
 
@@ -717,6 +885,7 @@ export default function RoomLobbyScreen() {
             'غير متاح',
             'لا يمكن طرد اللاعبين بعد بدء اللعبة.',
           );
+
           return;
         }
 
@@ -734,88 +903,86 @@ export default function RoomLobbyScreen() {
             {
               text: 'طرد',
               style: 'destructive',
-              onPress:
-                async () => {
-                  try {
-                    setBusy(true);
+              onPress: async () => {
+                try {
+                  setBusy(true);
 
-                    const {
-                      data,
-                      error,
-                    } =
-                      await supabase.rpc(
-                        'kick_room_player',
-                        {
-                          p_room_id:
-                            roomId,
-                          p_player_user_id:
-                            player.user_id,
-                        },
-                      );
-
-                    if (error) {
-                      throw error;
-                    }
-
-                    if (
-                      data &&
-                      typeof data ===
-                        'object' &&
-                      'success' in
-                        data &&
-                      (data as any)
-                        .success ===
-                        false
-                    ) {
-                      throw new Error(
-                        (data as any)
-                          .message ||
-                          (data as any)
-                            .error ||
-                          'تعذر طرد اللاعب.',
-                      );
-                    }
-
-                    await loadRoom(
-                      false,
+                  const {
+                    data,
+                    error,
+                  } =
+                    await supabase.rpc(
+                      'kick_room_player',
+                      {
+                        p_room_id:
+                          roomId,
+                        p_player_user_id:
+                          player.user_id,
+                      },
                     );
 
-                    if (
-                      mountedRef.current
-                    ) {
-                      Alert.alert(
-                        'تم',
-                        `تم طرد ${
-                          player.name ||
-                          'اللاعب'
-                        } من الغرفة.`,
-                      );
-                    }
-                  } catch (error) {
-                    console.error(
-                      'kickPlayer error:',
-                      error,
-                    );
-
-                    if (
-                      mountedRef.current
-                    ) {
-                      Alert.alert(
-                        'تعذر الطرد',
-                        getErrorMessage(
-                          error,
-                          'حدث خطأ أثناء طرد اللاعب.',
-                        ),
-                      );
-                    }
-                  } finally {
-                    if (
-                      mountedRef.current
-                    ) {
-                      setBusy(false);
-                    }
+                  if (error) {
+                    throw error;
                   }
-                },
+
+                  if (
+                    data &&
+                    typeof data ===
+                      'object' &&
+                    'success' in data &&
+                    (data as any)
+                      .success ===
+                      false
+                  ) {
+                    throw new Error(
+                      (data as any)
+                        .message ||
+                        (data as any)
+                          .error ||
+                        'تعذر طرد اللاعب.',
+                    );
+                  }
+
+                  await loadRoom(
+                    false,
+                  );
+
+                  if (
+                    mountedRef.current
+                  ) {
+                    Alert.alert(
+                      'تم',
+                      `تم طرد ${
+                        player.name ||
+                        'اللاعب'
+                      } من الغرفة.`,
+                    );
+                  }
+                } catch (error) {
+                  console.error(
+                    'kickPlayer error:',
+                    error,
+                  );
+
+                  if (
+                    mountedRef.current
+                  ) {
+                    Alert.alert(
+                      'تعذر الطرد',
+                      getErrorMessage(
+                        error,
+                        'حدث خطأ أثناء طرد اللاعب.',
+                      ),
+                    );
+                  }
+                } finally {
+                  if (
+                    mountedRef.current
+                  ) {
+                    setBusy(false);
+                  }
+                }
+              },
             },
           ],
         );
@@ -829,6 +996,9 @@ export default function RoomLobbyScreen() {
       ],
     );
 
+  /*
+   * إرسال رسالة.
+   */
   const sendMessage =
     useCallback(async () => {
       const text =
@@ -869,17 +1039,13 @@ export default function RoomLobbyScreen() {
             false
         ) {
           throw new Error(
-            (data as any)
-              .message ||
-              (data as any)
-                .error ||
+            (data as any).message ||
+              (data as any).error ||
               'تعذر إرسال الرسالة.',
           );
         }
 
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           setMessageText('');
         }
 
@@ -890,9 +1056,7 @@ export default function RoomLobbyScreen() {
           error,
         );
 
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           Alert.alert(
             'تعذر إرسال الرسالة',
             getErrorMessage(
@@ -902,9 +1066,7 @@ export default function RoomLobbyScreen() {
           );
         }
       } finally {
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           setBusy(false);
         }
       }
@@ -915,6 +1077,9 @@ export default function RoomLobbyScreen() {
       loadMessages,
     ]);
 
+  /*
+   * مغادرة الغرفة.
+   */
   const leaveRoom =
     useCallback(async () => {
       if (!roomId) {
@@ -925,10 +1090,6 @@ export default function RoomLobbyScreen() {
       try {
         setBusy(true);
 
-        /*
-         * نغادر الغرفة بحذف عضوية اللاعب.
-         * لا نستخدم هذا أثناء انتقال اللعبة.
-         */
         if (currentUserId) {
           const {
             error,
@@ -956,9 +1117,7 @@ export default function RoomLobbyScreen() {
           error,
         );
 
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           Alert.alert(
             'تعذر مغادرة الغرفة',
             getErrorMessage(
@@ -968,9 +1127,7 @@ export default function RoomLobbyScreen() {
           );
         }
       } finally {
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           setBusy(false);
         }
       }
@@ -980,6 +1137,9 @@ export default function RoomLobbyScreen() {
       router,
     ]);
 
+  /*
+   * تحديث يدوي.
+   */
   const refresh =
     useCallback(async () => {
       setRefreshing(true);
@@ -987,18 +1147,20 @@ export default function RoomLobbyScreen() {
       try {
         await loadRoom(false);
       } finally {
-        if (
-          mountedRef.current
-        ) {
+        if (mountedRef.current) {
           setRefreshing(false);
         }
       }
     }, [loadRoom]);
 
   /*
-   * إذا بدأت اللعبة من جهاز آخر،
-   * تنتقل جميع الأجهزة الموجودة في اللوبي
-   * تلقائيًا إلى شاشة اللعبة.
+   * الانتقال التلقائي إلى اللعبة.
+   *
+   * مهم:
+   * لا نستخدم game_phase هنا.
+   *
+   * فقط:
+   * status === playing
    */
   useEffect(() => {
     if (
@@ -1010,20 +1172,20 @@ export default function RoomLobbyScreen() {
     }
 
     const playing =
-      room.status === 'playing' ||
-      room.game_phase === 'night' ||
-      room.game_phase === 'day';
+      room.status === 'playing';
 
-    if (playing) {
-      navigatingToGameRef.current =
-        true;
-
-      router.replace(
-        `/game/${encodeURIComponent(
-          roomCode,
-        )}`,
-      );
+    if (!playing) {
+      return;
     }
+
+    navigatingToGameRef.current =
+      true;
+
+    router.replace(
+      `/game/${encodeURIComponent(
+        roomCode,
+      )}`,
+    );
   }, [
     room,
     roomId,
@@ -1031,6 +1193,9 @@ export default function RoomLobbyScreen() {
     router,
   ]);
 
+  /*
+   * شاشة التحميل.
+   */
   if (
     loading &&
     !room
@@ -1052,6 +1217,9 @@ export default function RoomLobbyScreen() {
     );
   }
 
+  /*
+   * لم يتم العثور على الغرفة.
+   */
   if (!room) {
     return (
       <View style={styles.center}>
@@ -1114,6 +1282,7 @@ export default function RoomLobbyScreen() {
           />
         }
       >
+        {/* Header */}
         <View
           style={
             styles.header
@@ -1161,6 +1330,7 @@ export default function RoomLobbyScreen() {
           </Pressable>
         </View>
 
+        {/* Status */}
         <View
           style={
             styles.statusCard
@@ -1216,6 +1386,7 @@ export default function RoomLobbyScreen() {
             )}
         </View>
 
+        {/* Start Game */}
         {isWaiting &&
           isHost && (
             <View
@@ -1282,9 +1453,23 @@ export default function RoomLobbyScreen() {
                   لاعبين إضافيين.
                 </Text>
               )}
+
+              {playerCount >=
+                4 &&
+                playerCount <=
+                  maxPlayers && (
+                  <Text
+                    style={
+                      styles.readyText
+                    }
+                  >
+                    ✅ الغرفة جاهزة للبدء
+                  </Text>
+                )}
             </View>
           )}
 
+        {/* Players */}
         <View
           style={
             styles.card
@@ -1324,9 +1509,7 @@ export default function RoomLobbyScreen() {
             </Text>
           ) : (
             players.map(
-              (
-                player,
-              ) => {
+              (player) => {
                 const isMe =
                   player.user_id ===
                   currentUserId;
@@ -1349,9 +1532,7 @@ export default function RoomLobbyScreen() {
                       player={
                         player
                       }
-                      size={
-                        52
-                      }
+                      size={52}
                     />
 
                     <View
@@ -1382,7 +1563,9 @@ export default function RoomLobbyScreen() {
                         {player.alive ===
                         false
                           ? 'غير متاح'
-                          : 'جاهز للعبة'}
+                          : isWaiting
+                            ? 'بانتظار بدء اللعبة'
+                            : 'داخل اللعبة'}
                       </Text>
                     </View>
 
@@ -1418,6 +1601,7 @@ export default function RoomLobbyScreen() {
           )}
         </View>
 
+        {/* Chat */}
         <View
           style={
             styles.card
@@ -1455,9 +1639,7 @@ export default function RoomLobbyScreen() {
               </Text>
             ) : (
               messages.map(
-                (
-                  item,
-                ) => (
+                (item) => (
                   <View
                     key={
                       item.id
@@ -1508,9 +1690,7 @@ export default function RoomLobbyScreen() {
               placeholder="اكتب رسالة..."
               placeholderTextColor="#777"
               multiline
-              maxLength={
-                500
-              }
+              maxLength={500}
               editable={
                 !busy
               }
@@ -1542,6 +1722,7 @@ export default function RoomLobbyScreen() {
           </View>
         </View>
 
+        {/* Info */}
         <View
           style={
             styles.infoCard
@@ -1576,7 +1757,15 @@ export default function RoomLobbyScreen() {
               styles.infoText
             }
           >
-            • بعد البدء سيتم نقلك تلقائيًا إلى شاشة اللعبة.
+            • حالة الانتظار تعتمد على status = waiting.
+          </Text>
+
+          <Text
+            style={
+              styles.infoText
+            }
+          >
+            • بعد بدء اللعبة فعليًا سيتم نقلك تلقائيًا إلى شاشة اللعبة.
           </Text>
 
           <Text
@@ -1757,6 +1946,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     marginTop: 9,
+  },
+
+  readyText: {
+    color: '#83d18b',
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: 9,
+    fontWeight: '800',
   },
 
   disabledButton: {
