@@ -78,7 +78,7 @@ type Profile = {
 type ProfileMap = Record<string, Profile>;
 
 type RoleInfo = {
-  role: GameRole;
+  role: GameRole | null;
   alive: boolean;
   team?: string | null;
   ghoul_ability_stolen?: boolean;
@@ -376,16 +376,6 @@ export default function MafiaGameScreen() {
       setVoiceError(null);
 
       try {
-        /*
-         * إذا كانت الغرفة الصوتية غير متصلة:
-         * 1. نطلب صلاحية الميكروفون.
-         * 2. نحصل على LiveKit token.
-         * 3. نبدأ AudioSession.
-         * 4. ننشئ Room.
-         * 5. نتصل.
-         * 6. نفتح الميكروفون.
-         */
-
         if (!liveKitRoomRef.current) {
           if (!code) {
             throw new Error(
@@ -477,11 +467,6 @@ export default function MafiaGameScreen() {
 
           return;
         }
-
-        /*
-         * الغرفة متصلة بالفعل:
-         * نبدل حالة الميكروفون فقط.
-         */
 
         const room =
           liveKitRoomRef.current;
@@ -575,8 +560,14 @@ export default function MafiaGameScreen() {
   const [sendingMessage, setSendingMessage] =
     useState(false);
 
+  /*
+   * مهم:
+   * لا نعرض بطاقة الدور عند دخول الغرفة.
+   * ستصبح true فقط بعد التأكد أن اللعبة بدأت
+   * وأن هناك دورًا فعليًا.
+   */
   const [showRoleCard, setShowRoleCard] =
-    useState(true);
+    useState(false);
 
   const scrollRef =
     useRef<ScrollView>(null);
@@ -905,25 +896,75 @@ export default function MafiaGameScreen() {
             next.players || [],
           );
 
-          try {
-            const myRole =
-              await getMyRole(
-                roomId,
+          /*
+           * ====================================================
+           * أهم إصلاح:
+           *
+           * أثناء الانتظار لا يوجد دور.
+           *
+           * حتى لو أعاد Supabase دورًا قديمًا أو كانت حالة
+           * اللاعب تحتوي على role، لا نستخدمه قبل بدء اللعبة.
+           * ====================================================
+           */
+
+          const currentPhase =
+            next.room?.game_phase ||
+            "waiting";
+
+          if (
+            currentPhase ===
+            "waiting"
+          ) {
+            if (mounted.current) {
+              setRole(null);
+              setShowRoleCard(false);
+            }
+          } else {
+            /*
+             * بعد بدء اللعبة فقط نحاول جلب الدور الحقيقي.
+             */
+            try {
+              const myRole =
+                await getMyRole(
+                  roomId,
+                );
+
+              if (
+                mounted.current
+              ) {
+                if (
+                  myRole &&
+                  myRole.role
+                ) {
+                  setRole(
+                    myRole as RoleInfo,
+                  );
+
+                  setShowRoleCard(
+                    true,
+                  );
+                } else {
+                  setRole(null);
+                  setShowRoleCard(false);
+                }
+              }
+            } catch (error) {
+              console.log(
+                "getMyRole:",
+                error,
               );
 
-            if (
-              mounted.current &&
-              myRole
-            ) {
-              setRole(
-                myRole as RoleInfo,
-              );
+              if (
+                mounted.current
+              ) {
+                /*
+                 * لا نظهر بطاقة فارغة أو Citizen
+                 * في حال فشل جلب الدور.
+                 */
+                setRole(null);
+                setShowRoleCard(false);
+              }
             }
-          } catch (error) {
-            console.log(
-              "getMyRole:",
-              error,
-            );
           }
         } catch (error) {
           console.error(
@@ -1198,11 +1239,22 @@ export default function MafiaGameScreen() {
      ROLE
   ============================================================ */
 
-  const currentRole =
-    role?.role ??
-    (me?.role
-      ? (me.role as GameRole)
-      : null);
+  const phase =
+    state?.room?.game_phase ||
+    "waiting";
+
+  /*
+   * لا نقرأ me.role أثناء الانتظار.
+   *
+   * هذا يمنع ظهور Citizen الناتج عن أي قيمة افتراضية
+   * أو بيانات قديمة.
+   */
+  const currentRole: GameRole | null =
+    phase === "waiting"
+      ? null
+      : role?.role ??
+        me?.role ??
+        null;
 
   const myAlive =
     role?.alive ??
@@ -1214,14 +1266,14 @@ export default function MafiaGameScreen() {
       ? getRoleLabel(
           currentRole,
         )
-      : "بانتظار الدور";
+      : "بانتظار توزيع الدور";
 
   const roleDescription =
     currentRole
       ? getRoleDescription(
           currentRole,
         )
-      : "سيظهر دورك هنا بعد توزيع الأدوار.";
+      : "سيظهر دورك هنا بعد بدء اللعبة وتوزيع الأدوار.";
 
   const roleAbility =
     currentRole
@@ -1238,12 +1290,14 @@ export default function MafiaGameScreen() {
       : "انتظر بدء اللعبة.";
 
   const roleTeam =
-    role?.team ??
-    (currentRole
-      ? getRoleTeam(
-          currentRole,
+    currentRole
+      ? (
+          role?.team ??
+          getRoleTeam(
+            currentRole,
+          )
         )
-      : null);
+      : null;
 
   const rolePhase =
     currentRole
@@ -1274,8 +1328,10 @@ export default function MafiaGameScreen() {
       : "🎴";
 
   const stolenAction =
-    role?.stolen_ability ??
-    null;
+    currentRole
+      ? role?.stolen_ability ??
+        null
+      : null;
 
   const normalAction =
     currentRole
@@ -1284,11 +1340,10 @@ export default function MafiaGameScreen() {
             const card =
               getRoleCardData(
                 currentRole,
-              ) as any;
+              );
 
             return (
               card?.action ??
-              card?.night_action ??
               null
             );
           } catch {
@@ -1298,6 +1353,7 @@ export default function MafiaGameScreen() {
       : null;
 
   const effectiveAction =
+    currentRole &&
     role?.ghoul_ability_stolen &&
     stolenAction
       ? stolenAction
@@ -1730,10 +1786,6 @@ export default function MafiaGameScreen() {
      PHASE
   ============================================================ */
 
-  const phase =
-    state?.room?.game_phase ||
-    "waiting";
-
   const phaseTitle =
     phase === "night"
       ? "🌙 الليل"
@@ -2012,7 +2064,15 @@ export default function MafiaGameScreen() {
            ROLE CARD
         ====================================================== */}
 
-        {showRoleCard ? (
+        {/*
+         * البطاقة تظهر فقط:
+         * 1. اللعبة ليست waiting
+         * 2. يوجد currentRole حقيقي
+         * 3. showRoleCard = true
+         */}
+        {phase !== "waiting" &&
+        currentRole &&
+        showRoleCard ? (
           <View
             style={[
               styles.roleCard,
@@ -2355,7 +2415,9 @@ export default function MafiaGameScreen() {
               </Text>
             </Pressable>
           </View>
-        ) : (
+        ) : phase !==
+            "waiting" &&
+          currentRole ? (
           <View
             style={
               styles.hiddenRoleCard
@@ -2419,7 +2481,7 @@ export default function MafiaGameScreen() {
               </Text>
             </Pressable>
           </View>
-        )}
+        ) : null}
 
         {/* PHASE */}
 
