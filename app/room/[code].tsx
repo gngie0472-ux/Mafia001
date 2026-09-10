@@ -22,6 +22,15 @@ import {
   useRouter,
 } from 'expo-router';
 
+import { Room, RoomEvent } from 'livekit-client';
+
+import {
+  prepareMicrophone,
+  stopMicrophoneSession,
+} from '../../lib/voice';
+
+import { getLiveKitToken } from '../../lib/livekit';
+
 import { supabase } from '../../lib/supabase';
 import { getMyProfile } from '../../lib/profile';
 import { getGameState } from '../../lib/game';
@@ -149,6 +158,20 @@ export default function RoomLobbyScreen() {
 
   const mountedRef = useRef(true);
 
+  const liveKitRoomRef = useRef<Room | null>(null);
+
+  const [voiceConnecting, setVoiceConnecting] =
+    useState(false);
+
+  const [voiceConnected, setVoiceConnected] =
+    useState(false);
+
+  const [microphoneEnabled, setMicrophoneEnabled] =
+    useState(false);
+
+  const [voiceError, setVoiceError] =
+    useState<string | null>(null);
+
   /*
    * يمنع الانتقال المكرر إلى شاشة اللعبة.
    */
@@ -156,7 +179,6 @@ export default function RoomLobbyScreen() {
 
   /*
    * نحتفظ بآخر غرفة مؤكدة داخل ref.
-   * هذا مهم لأن setState غير متزامن.
    */
   const roomRef = useRef<RoomData | null>(null);
 
@@ -188,17 +210,6 @@ export default function RoomLobbyScreen() {
   const [messageText, setMessageText] =
     useState('');
 
-  /*
-   * مهم جدًا:
-   *
-   * status هو المصدر الأساسي لمعرفة
-   * هل اللعبة بدأت أم لا.
-   *
-   * لا نعتمد على game_phase وحده،
-   * لأن قاعدة البيانات قد تحتوي على
-   * game_phase قديم مثل night بينما
-   * الغرفة ما زالت waiting.
-   */
   const isWaiting =
     room?.status === 'waiting';
 
@@ -228,12 +239,6 @@ export default function RoomLobbyScreen() {
     playerCount <= maxPlayers &&
     !startingGame;
 
-  /*
-   * تحويل كود الغرفة إلى UUID الحقيقي.
-   *
-   * هذا يمنع الخطأ:
-   * invalid input syntax for type uuid: "T2GZ6M"
-   */
   const resolveRoom = useCallback(
     async (): Promise<string> => {
       if (!roomCode) {
@@ -312,9 +317,6 @@ export default function RoomLobbyScreen() {
     [roomCode, roomId],
   );
 
-  /*
-   * تحميل رسائل الغرفة.
-   */
   const loadMessages = useCallback(
     async (resolvedRoomId?: string) => {
       const id =
@@ -427,9 +429,6 @@ export default function RoomLobbyScreen() {
     [roomId],
   );
 
-  /*
-   * تحميل الغرفة والحالة واللاعبين.
-   */
   const loadRoom = useCallback(
     async (
       showLoader = false,
@@ -491,9 +490,6 @@ export default function RoomLobbyScreen() {
             ? state.players
             : [];
 
-        /*
-         * نخزن الحالة في state و ref.
-         */
         roomRef.current =
           stateRoom;
 
@@ -541,9 +537,138 @@ export default function RoomLobbyScreen() {
     ],
   );
 
-  /*
-   * أول تحميل.
-   */
+  const toggleMicrophone = useCallback(
+    async () => {
+      if (!roomCode) {
+        setVoiceError('كود الغرفة غير موجود.');
+        return;
+      }
+
+      try {
+        setVoiceError(null);
+
+        if (liveKitRoomRef.current) {
+          const nextState = !microphoneEnabled;
+
+          await liveKitRoomRef.current.localParticipant
+            .setMicrophoneEnabled(nextState);
+
+          if (mountedRef.current) {
+            setMicrophoneEnabled(nextState);
+          }
+
+          return;
+        }
+
+        setVoiceConnecting(true);
+
+        await prepareMicrophone();
+
+        const connection =
+          await getLiveKitToken(roomCode);
+
+        if (
+          !connection?.token ||
+          !connection?.server_url
+        ) {
+          throw new Error(
+            'تعذر الحصول على بيانات الاتصال الصوتي.',
+          );
+        }
+
+        const liveKitRoom = new Room();
+
+        liveKitRoomRef.current =
+          liveKitRoom;
+
+        liveKitRoom.on(
+          RoomEvent.Connected,
+          () => {
+            if (mountedRef.current) {
+              setVoiceConnected(true);
+              setVoiceError(null);
+            }
+          },
+        );
+
+        liveKitRoom.on(
+          RoomEvent.Disconnected,
+          () => {
+            if (mountedRef.current) {
+              setVoiceConnected(false);
+              setMicrophoneEnabled(false);
+            }
+          },
+        );
+
+        liveKitRoom.on(
+          RoomEvent.MediaDevicesError,
+          (error) => {
+            console.error(
+              'LiveKit media device error:',
+              error,
+            );
+
+            if (mountedRef.current) {
+              setVoiceError(
+                'تعذر الوصول إلى الميكروفون.',
+              );
+              setMicrophoneEnabled(false);
+            }
+          },
+        );
+
+        await liveKitRoom.connect(
+          connection.server_url,
+          connection.token,
+        );
+
+        if (mountedRef.current) {
+          setVoiceConnected(true);
+        }
+
+        await liveKitRoom.localParticipant
+          .setMicrophoneEnabled(true);
+
+        if (mountedRef.current) {
+          setMicrophoneEnabled(true);
+        }
+      } catch (error) {
+        console.error(
+          'toggleMicrophone error:',
+          error,
+        );
+
+        if (liveKitRoomRef.current) {
+          try {
+            await liveKitRoomRef.current.disconnect();
+          } catch {}
+        }
+
+        liveKitRoomRef.current = null;
+
+        if (mountedRef.current) {
+          setVoiceConnected(false);
+          setMicrophoneEnabled(false);
+          setVoiceError(
+            getErrorMessage(
+              error,
+              'تعذر تشغيل الميكروفون.',
+            ),
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setVoiceConnecting(false);
+        }
+      }
+    },
+    [
+      roomCode,
+      microphoneEnabled,
+    ],
+  );
+
   useEffect(() => {
     mountedRef.current = true;
     navigatingToGameRef.current = false;
@@ -552,16 +677,20 @@ export default function RoomLobbyScreen() {
 
     return () => {
       mountedRef.current = false;
+
+      const liveKitRoom =
+        liveKitRoomRef.current;
+
+      liveKitRoomRef.current = null;
+
+      if (liveKitRoom) {
+        void liveKitRoom.disconnect();
+      }
+
+      void stopMicrophoneSession();
     };
   }, [loadRoom]);
 
-  /*
-   * Realtime:
-   *
-   * - تغيير الغرفة
-   * - دخول/خروج لاعب
-   * - الرسائل
-   */
   useEffect(() => {
     if (!roomId) {
       return;
@@ -621,9 +750,6 @@ export default function RoomLobbyScreen() {
     loadMessages,
   ]);
 
-  /*
-   * Heartbeat.
-   */
   useEffect(() => {
     if (!roomId) {
       return;
@@ -678,9 +804,6 @@ export default function RoomLobbyScreen() {
     };
   }, [roomId]);
 
-  /*
-   * بدء اللعبة.
-   */
   const startGame =
     useCallback(async () => {
       if (!roomId) {
@@ -701,10 +824,6 @@ export default function RoomLobbyScreen() {
         return;
       }
 
-      /*
-       * لا نسمح بالبدء إلا إذا كان
-       * status = waiting.
-       */
       if (!isWaiting) {
         Alert.alert(
           'اللعبة غير جاهزة',
@@ -753,10 +872,6 @@ export default function RoomLobbyScreen() {
           throw error;
         }
 
-        /*
-         * دعم RPC التي ترجع:
-         * { success: false, message: ... }
-         */
         if (
           data &&
           typeof data === 'object' &&
@@ -771,20 +886,8 @@ export default function RoomLobbyScreen() {
           );
         }
 
-        /*
-         * نعيد تحميل الغرفة مباشرة
-         * بعد RPC.
-         */
         await loadRoom(false);
 
-        /*
-         * مهم:
-         *
-         * لا ننتقل لمجرد أن RPC لم ترجع خطأ.
-         *
-         * يجب أن نتأكد أن status أصبح
-         * playing فعلًا.
-         */
         const latestRoom =
           roomRef.current;
 
@@ -816,10 +919,6 @@ export default function RoomLobbyScreen() {
           error,
         );
 
-        /*
-         * السماح بالمحاولة مرة أخرى
-         * إذا لم تبدأ اللعبة فعليًا.
-         */
         navigatingToGameRef.current =
           false;
 
@@ -849,9 +948,6 @@ export default function RoomLobbyScreen() {
       router,
     ]);
 
-  /*
-   * طرد لاعب.
-   */
   const kickPlayer =
     useCallback(
       (player: GamePlayer) => {
@@ -996,9 +1092,6 @@ export default function RoomLobbyScreen() {
       ],
     );
 
-  /*
-   * إرسال رسالة.
-   */
   const sendMessage =
     useCallback(async () => {
       const text =
@@ -1077,9 +1170,6 @@ export default function RoomLobbyScreen() {
       loadMessages,
     ]);
 
-  /*
-   * مغادرة الغرفة.
-   */
   const leaveRoom =
     useCallback(async () => {
       if (!roomId) {
@@ -1137,9 +1227,6 @@ export default function RoomLobbyScreen() {
       router,
     ]);
 
-  /*
-   * تحديث يدوي.
-   */
   const refresh =
     useCallback(async () => {
       setRefreshing(true);
@@ -1153,15 +1240,6 @@ export default function RoomLobbyScreen() {
       }
     }, [loadRoom]);
 
-  /*
-   * الانتقال التلقائي إلى اللعبة.
-   *
-   * مهم:
-   * لا نستخدم game_phase هنا.
-   *
-   * فقط:
-   * status === playing
-   */
   useEffect(() => {
     if (
       !room ||
@@ -1193,9 +1271,6 @@ export default function RoomLobbyScreen() {
     router,
   ]);
 
-  /*
-   * شاشة التحميل.
-   */
   if (
     loading &&
     !room
@@ -1217,9 +1292,6 @@ export default function RoomLobbyScreen() {
     );
   }
 
-  /*
-   * لم يتم العثور على الغرفة.
-   */
   if (!room) {
     return (
       <View style={styles.center}>
@@ -1311,24 +1383,57 @@ export default function RoomLobbyScreen() {
             </Text>
           </View>
 
-          <Pressable
-            style={
-              styles.leaveButton
-            }
-            onPress={
-              leaveRoom
-            }
-            disabled={busy}
-          >
-            <Text
-              style={
-                styles.leaveButtonText
-              }
+          <View style={styles.headerActions}>
+            <Pressable
+              onPress={toggleMicrophone}
+              disabled={voiceConnecting}
+              style={[
+                styles.micButton,
+                microphoneEnabled &&
+                  styles.micButtonActive,
+                voiceConnecting &&
+                  styles.micButtonBusy,
+              ]}
             >
-              مغادرة
-            </Text>
-          </Pressable>
+              {voiceConnecting ? (
+                <ActivityIndicator
+                  size="small"
+                  color="#fff"
+                />
+              ) : (
+                <Text style={styles.micButtonIcon}>
+                  {microphoneEnabled
+                    ? '🎙️'
+                    : '🔇'}
+                </Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={
+                styles.leaveButton
+              }
+              onPress={
+                leaveRoom
+              }
+              disabled={busy}
+            >
+              <Text
+                style={
+                  styles.leaveButtonText
+                }
+              >
+                مغادرة
+              </Text>
+            </Pressable>
+          </View>
         </View>
+
+        {voiceError && (
+          <Text style={styles.voiceErrorText}>
+            {voiceError}
+          </Text>
+        )}
 
         {/* Status */}
         <View
@@ -1835,6 +1940,40 @@ const styles = StyleSheet.create({
   headerMain: {
     flex: 1,
     marginRight: 12,
+  },
+
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#374151',
+  },
+
+  micButtonActive: {
+    backgroundColor: '#16a34a',
+  },
+
+  micButtonBusy: {
+    opacity: 0.7,
+  },
+
+  micButtonIcon: {
+    fontSize: 20,
+  },
+
+  voiceErrorText: {
+    color: '#f87171',
+    fontSize: 13,
+    marginBottom: 12,
+    textAlign: 'center',
   },
 
   title: {
