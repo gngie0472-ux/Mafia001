@@ -23,10 +23,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import {
-  Room,
-  RoomEvent,
-} from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
 
 import {
   advanceMafiaPhase,
@@ -47,9 +44,7 @@ import {
   submitNightAction,
 } from "../../lib/game";
 
-import {
-  getLiveKitToken,
-} from "../../lib/livekit";
+import { getLiveKitToken } from "../../lib/livekit";
 
 import {
   prepareMicrophone,
@@ -81,9 +76,15 @@ type RoleInfo = {
   role: GameRole | null;
   alive: boolean;
   team?: string | null;
+
+  /* Ghoul */
   ghoul_ability_stolen?: boolean;
   stolen_role?: GameRole | null;
   stolen_ability?: string | null;
+
+  /* Raw database names */
+  ghoul_has_copied?: boolean;
+  ghoul_copied_role?: GameRole | null;
 };
 
 /* ============================================================
@@ -177,9 +178,13 @@ function secondsUntil(value?: string | null) {
 }
 
 function errorText(error: any) {
-  if (!error) return "حدث خطأ غير معروف.";
+  if (!error) {
+    return "حدث خطأ غير معروف.";
+  }
 
-  if (typeof error === "string") return error;
+  if (typeof error === "string") {
+    return error;
+  }
 
   return (
     error?.message ||
@@ -194,17 +199,22 @@ function safeTeamLabel(team?: string | null) {
     if (team) {
       const value = getTeamLabel(team as any);
 
-      if (value) return value;
+      if (value) {
+        return value;
+      }
     }
   } catch {}
 
   switch (team) {
     case "MAFIA":
       return "المافيا";
+
     case "CULT":
       return "الطائفة";
+
     case "CITIZENS":
       return "المواطنون";
+
     default:
       return "غير معروف";
   }
@@ -214,37 +224,125 @@ function safeActionLabel(action?: string | null) {
   switch (action) {
     case "kill":
       return "قتل";
+
     case "protect":
       return "حماية";
+
     case "investigate":
       return "تحقيق";
+
     case "spy":
       return "تجسس";
+
     case "guard":
       return "حراسة";
+
     case "sheriff_check":
       return "فحص";
+
     case "witch_save":
       return "إنقاذ";
+
     case "witch_kill":
       return "قتل";
+
     case "cult_convert":
       return "تحويل";
+
     case "ghoul":
       return "قدرة الغول";
+
     default:
       return action || "قدرة";
   }
 }
 
 function safeRolePhase(role?: GameRole | null) {
-  if (!role) return "غير محدد";
+  if (!role) {
+    return "غير محدد";
+  }
 
   try {
     return getRolePhase(role);
   } catch {
     return "night";
   }
+}
+
+function normalizeRoleInfo(value: any): RoleInfo | null {
+  if (!value) {
+    return null;
+  }
+
+  const rawRole =
+    typeof value.role === "string"
+      ? value.role
+      : null;
+
+  const role =
+    rawRole as GameRole | null;
+
+  const copiedRole =
+    typeof value.ghoul_copied_role === "string"
+      ? (value.ghoul_copied_role as GameRole)
+      : typeof value.stolen_role === "string"
+        ? (value.stolen_role as GameRole)
+        : null;
+
+  const copied =
+    Boolean(
+      value.ghoul_has_copied ??
+        value.ghoul_ability_stolen ??
+        false,
+    );
+
+  let stolenAbility =
+    typeof value.stolen_ability === "string"
+      ? value.stolen_ability
+      : null;
+
+  /*
+   * إذا كان اللاعب غولًا وقد نسخ دورًا،
+   * نحصل على قدرة الدور المنسوخ مباشرة
+   * من تعريفات اللعبة.
+   */
+  if (
+    !stolenAbility &&
+    copied &&
+    copiedRole
+  ) {
+    try {
+      const card =
+        getRoleCardData(copiedRole);
+
+      stolenAbility =
+        card?.action || null;
+    } catch {}
+  }
+
+  return {
+    role,
+    alive:
+      value.alive !== false,
+    team:
+      value.team ??
+      null,
+
+    ghoul_ability_stolen:
+      copied,
+
+    stolen_role:
+      copiedRole,
+
+    stolen_ability:
+      stolenAbility,
+
+    ghoul_has_copied:
+      copied,
+
+    ghoul_copied_role:
+      copiedRole,
+  };
 }
 
 function Avatar({
@@ -269,7 +367,9 @@ function Avatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          opacity: player.alive ? 1 : 0.35,
+          opacity: player.alive
+            ? 1
+            : 0.35,
         }}
       />
     );
@@ -283,7 +383,9 @@ function Avatar({
           width: size,
           height: size,
           borderRadius: size / 2,
-          opacity: player.alive ? 1 : 0.35,
+          opacity: player.alive
+            ? 1
+            : 0.35,
         },
       ]}
     >
@@ -303,17 +405,23 @@ function Avatar({
 export default function MafiaGameScreen() {
   const router = useRouter();
 
-  const params = useLocalSearchParams<{
-    code?: string | string[];
-  }>();
+  const params =
+    useLocalSearchParams<{
+      code?: string | string[];
+    }>();
 
   const code = Array.isArray(params.code)
     ? params.code[0]
     : params.code;
 
-  const mounted = useRef(true);
-  const advancing = useRef(false);
-  const lastAdvanceAt = useRef(0);
+  const mounted =
+    useRef(true);
+
+  const advancing =
+    useRef(false);
+
+  const lastAdvanceAt =
+    useRef(0);
 
   /* ============================================================
      LIVEKIT
@@ -340,11 +448,12 @@ export default function MafiaGameScreen() {
         const room =
           liveKitRoomRef.current;
 
-        liveKitRoomRef.current = null;
+        liveKitRoomRef.current =
+          null;
 
         if (room) {
           try {
-            room.localParticipant.setMicrophoneEnabled(
+            await room.localParticipant.setMicrophoneEnabled(
               false,
             );
           } catch {}
@@ -371,7 +480,9 @@ export default function MafiaGameScreen() {
 
   const toggleMicrophone =
     useCallback(async () => {
-      if (voiceConnecting) return;
+      if (voiceConnecting) {
+        return;
+      }
 
       setVoiceError(null);
 
@@ -399,7 +510,8 @@ export default function MafiaGameScreen() {
             );
           }
 
-          const room = new Room();
+          const room =
+            new Room();
 
           liveKitRoomRef.current =
             room;
@@ -407,7 +519,9 @@ export default function MafiaGameScreen() {
           room.on(
             RoomEvent.Connected,
             () => {
-              if (!mounted.current) return;
+              if (!mounted.current) {
+                return;
+              }
 
               setVoiceConnected(true);
               setVoiceConnecting(false);
@@ -418,7 +532,9 @@ export default function MafiaGameScreen() {
           room.on(
             RoomEvent.Disconnected,
             () => {
-              if (!mounted.current) return;
+              if (!mounted.current) {
+                return;
+              }
 
               setVoiceConnected(false);
               setMicrophoneEnabled(false);
@@ -471,7 +587,9 @@ export default function MafiaGameScreen() {
         const room =
           liveKitRoomRef.current;
 
-        if (!room) return;
+        if (!room) {
+          return;
+        }
 
         const next =
           !microphoneEnabled;
@@ -542,6 +660,11 @@ export default function MafiaGameScreen() {
   const [profiles, setProfiles] =
     useState<ProfileMap>({});
 
+  /*
+   * مهم جدًا:
+   * selectedTarget أصبح room_players.id
+   * وليس user_id.
+   */
   const [selectedTarget, setSelectedTarget] =
     useState<string | null>(null);
 
@@ -560,12 +683,6 @@ export default function MafiaGameScreen() {
   const [sendingMessage, setSendingMessage] =
     useState(false);
 
-  /*
-   * مهم:
-   * لا نعرض بطاقة الدور عند دخول الغرفة.
-   * ستصبح true فقط بعد التأكد أن اللعبة بدأت
-   * وأن هناك دورًا فعليًا.
-   */
   const [showRoleCard, setShowRoleCard] =
     useState(false);
 
@@ -579,25 +696,37 @@ export default function MafiaGameScreen() {
   useEffect(() => {
     mounted.current = true;
 
+    let active = true;
+
     const loadSession =
       async () => {
-        const {
-          data,
-          error,
-        } =
-          await supabase.auth.getSession();
-
-        if (error) {
-          console.log(
-            "getSession:",
+        try {
+          const {
+            data,
             error,
-          );
-        }
+          } =
+            await supabase.auth.getSession();
 
-        if (mounted.current) {
-          setUserId(
-            data.session?.user?.id ??
-              null,
+          if (error) {
+            console.log(
+              "getSession:",
+              error,
+            );
+          }
+
+          if (
+            active &&
+            mounted.current
+          ) {
+            setUserId(
+              data.session?.user?.id ??
+                null,
+            );
+          }
+        } catch (error) {
+          console.log(
+            "load session:",
+            error,
           );
         }
       };
@@ -605,11 +734,16 @@ export default function MafiaGameScreen() {
     loadSession();
 
     const {
-      data: { subscription },
+      data: {
+        subscription,
+      },
     } =
       supabase.auth.onAuthStateChange(
         (_event, session) => {
-          if (mounted.current) {
+          if (
+            active &&
+            mounted.current
+          ) {
             setUserId(
               session?.user?.id ??
                 null,
@@ -619,6 +753,7 @@ export default function MafiaGameScreen() {
       );
 
     return () => {
+      active = false;
       mounted.current = false;
       subscription.unsubscribe();
     };
@@ -699,7 +834,9 @@ export default function MafiaGameScreen() {
             )
             .maybeSingle();
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
 
         if (
           !data?.id ||
@@ -783,8 +920,9 @@ export default function MafiaGameScreen() {
                 ids,
               );
 
-          if (error)
+          if (error) {
             throw error;
+          }
 
           const map: ProfileMap =
             {};
@@ -793,15 +931,15 @@ export default function MafiaGameScreen() {
             const row of data || []
           ) {
             if (row.user_id) {
-              map[row.user_id] =
-                {
-                  username:
-                    row.username ||
-                    "لاعب",
-                  avatar_url:
-                    row.avatar_url ||
-                    null,
-                };
+              map[row.user_id] = {
+                username:
+                  row.username ||
+                  "لاعب",
+
+                avatar_url:
+                  row.avatar_url ||
+                  null,
+              };
             }
           }
 
@@ -824,7 +962,9 @@ export default function MafiaGameScreen() {
 
   const loadMessages =
     useCallback(async () => {
-      if (!roomId) return;
+      if (!roomId) {
+        return;
+      }
 
       const {
         data,
@@ -872,7 +1012,9 @@ export default function MafiaGameScreen() {
       async (
         initial = false,
       ) => {
-        if (!roomId) return;
+        if (!roomId) {
+          return;
+        }
 
         try {
           if (
@@ -887,8 +1029,9 @@ export default function MafiaGameScreen() {
               roomId,
             );
 
-          if (!mounted.current)
+          if (!mounted.current) {
             return;
+          }
 
           setState(next);
 
@@ -898,55 +1041,51 @@ export default function MafiaGameScreen() {
 
           /*
            * ====================================================
-           * أهم إصلاح:
+           * SOURCE OF TRUTH
            *
-           * أثناء الانتظار لا يوجد دور.
+           * status=waiting:
+           * لا يوجد دور حتى لو كانت game_phase قديمة.
            *
-           * حتى لو أعاد Supabase دورًا قديمًا أو كانت حالة
-           * اللاعب تحتوي على role، لا نستخدمه قبل بدء اللعبة.
+           * status=finished:
+           * لا نعيد جلب دور جديد.
+           *
+           * status=playing:
+           * يمكن إظهار الدور الحقيقي فقط.
            * ====================================================
            */
 
-          const currentPhase =
-            next.room?.game_phase ||
+          const status =
+            next.room?.status ||
             "waiting";
 
           if (
-            currentPhase ===
-            "waiting"
+            status !== "playing"
           ) {
-            if (mounted.current) {
-              setRole(null);
-              setShowRoleCard(false);
-            }
+            setRole(null);
+            setShowRoleCard(false);
           } else {
-            /*
-             * بعد بدء اللعبة فقط نحاول جلب الدور الحقيقي.
-             */
             try {
               const myRole =
                 await getMyRole(
                   roomId,
                 );
 
+              const normalized =
+                normalizeRoleInfo(
+                  myRole,
+                );
+
               if (
+                mounted.current &&
+                normalized?.role
+              ) {
+                setRole(normalized);
+                setShowRoleCard(true);
+              } else if (
                 mounted.current
               ) {
-                if (
-                  myRole &&
-                  myRole.role
-                ) {
-                  setRole(
-                    myRole as RoleInfo,
-                  );
-
-                  setShowRoleCard(
-                    true,
-                  );
-                } else {
-                  setRole(null);
-                  setShowRoleCard(false);
-                }
+                setRole(null);
+                setShowRoleCard(false);
               }
             } catch (error) {
               console.log(
@@ -957,10 +1096,6 @@ export default function MafiaGameScreen() {
               if (
                 mounted.current
               ) {
-                /*
-                 * لا نظهر بطاقة فارغة أو Citizen
-                 * في حال فشل جلب الدور.
-                 */
                 setRole(null);
                 setShowRoleCard(false);
               }
@@ -997,7 +1132,9 @@ export default function MafiaGameScreen() {
     );
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     loadGame(true);
     loadMessages();
@@ -1012,7 +1149,9 @@ export default function MafiaGameScreen() {
   ============================================================ */
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     const channel =
       supabase
@@ -1060,7 +1199,9 @@ export default function MafiaGameScreen() {
   ============================================================ */
 
   useEffect(() => {
-    if (!roomId) return;
+    if (!roomId) {
+      return;
+    }
 
     const channel =
       supabase
@@ -1122,25 +1263,35 @@ export default function MafiaGameScreen() {
 
   useEffect(() => {
     const update = () => {
+      const status =
+        state?.room?.status;
+
+      const currentPhase =
+        status === "playing"
+          ? state?.room?.game_phase
+          : status === "finished"
+            ? "finished"
+            : "waiting";
+
       const value =
-        secondsUntil(
-          state?.room
-            ?.phase_ends_at,
-        );
+        status === "playing"
+          ? secondsUntil(
+              state?.room
+                ?.phase_ends_at,
+            )
+          : 0;
 
       if (mounted.current) {
         setSeconds(value);
       }
 
-      const phase =
-        state?.room?.game_phase;
-
       if (
         value <= 0 &&
         roomId &&
-        phase &&
-        phase !== "waiting" &&
-        phase !== "finished" &&
+        currentPhase &&
+        currentPhase !== "waiting" &&
+        currentPhase !== "finished" &&
+        status === "playing" &&
         !advancing.current &&
         Date.now() -
           lastAdvanceAt.current >
@@ -1185,6 +1336,7 @@ export default function MafiaGameScreen() {
     return () =>
       clearInterval(timer);
   }, [
+    state?.room?.status,
     state?.room?.phase_ends_at,
     state?.room?.game_phase,
     roomId,
@@ -1196,7 +1348,9 @@ export default function MafiaGameScreen() {
   ============================================================ */
 
   const me = useMemo(() => {
-    if (!state) return null;
+    if (!state) {
+      return null;
+    }
 
     if (state.me) {
       if (
@@ -1216,7 +1370,9 @@ export default function MafiaGameScreen() {
             userId,
         );
 
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
 
     if (state.my_player_id) {
@@ -1229,32 +1385,55 @@ export default function MafiaGameScreen() {
               state.my_player_id,
         );
 
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
 
     return null;
-  }, [state, userId]);
+  }, [
+    state,
+    userId,
+  ]);
+
+  /* ============================================================
+     PHASE
+  ============================================================ */
+
+  /*
+   * status هو المصدر الأول.
+   * هذا يمنع night/day القديمة من الظهور في غرفة waiting.
+   */
+  const roomStatus =
+    state?.room?.status ||
+    "waiting";
+
+  const phase =
+    roomStatus === "waiting"
+      ? "waiting"
+      : roomStatus === "finished"
+        ? "finished"
+        : state?.room?.game_phase ||
+          "waiting";
+
+  const gameStarted =
+    roomStatus === "playing";
 
   /* ============================================================
      ROLE
   ============================================================ */
 
-  const phase =
-    state?.room?.game_phase ||
-    "waiting";
-
   /*
-   * لا نقرأ me.role أثناء الانتظار.
+   * مهم جدًا:
    *
-   * هذا يمنع ظهور Citizen الناتج عن أي قيمة افتراضية
-   * أو بيانات قديمة.
+   * لا نقرأ me.role إذا لم تبدأ اللعبة.
    */
   const currentRole: GameRole | null =
-    phase === "waiting"
-      ? null
-      : role?.role ??
+    gameStarted
+      ? role?.role ??
         me?.role ??
-        null;
+        null
+      : null;
 
   const myAlive =
     role?.alive ??
@@ -1291,11 +1470,9 @@ export default function MafiaGameScreen() {
 
   const roleTeam =
     currentRole
-      ? (
-          role?.team ??
-          getRoleTeam(
-            currentRole,
-          )
+      ? role?.team ??
+        getRoleTeam(
+          currentRole,
         )
       : null;
 
@@ -1327,23 +1504,53 @@ export default function MafiaGameScreen() {
         ] || "🎴"
       : "🎴";
 
-  const stolenAction =
-    currentRole
-      ? role?.stolen_ability ??
+  /*
+   * قدرة الغول:
+   *
+   * إذا كان الغول قد نسخ دورًا، نأخذ قدرة
+   * الدور المنسوخ من getRoleCardData.
+   */
+  const stolenRole =
+    currentRole === "GHOUL"
+      ? role?.stolen_role ??
+        role?.ghoul_copied_role ??
         null
       : null;
+
+  const ghoulCopied =
+    currentRole === "GHOUL" &&
+    Boolean(
+      role?.ghoul_ability_stolen ??
+        role?.ghoul_has_copied ??
+        false,
+    );
+
+  const stolenAction =
+    ghoulCopied &&
+    stolenRole
+      ? (() => {
+          try {
+            return (
+              getRoleCardData(
+                stolenRole,
+              )?.action ??
+              null
+            );
+          } catch {
+            return null;
+          }
+        })()
+      : role?.stolen_ability ??
+        null;
 
   const normalAction =
     currentRole
       ? (() => {
           try {
-            const card =
+            return (
               getRoleCardData(
                 currentRole,
-              );
-
-            return (
-              card?.action ??
+              )?.action ??
               null
             );
           } catch {
@@ -1353,8 +1560,8 @@ export default function MafiaGameScreen() {
       : null;
 
   const effectiveAction =
-    currentRole &&
-    role?.ghoul_ability_stolen &&
+    currentRole === "GHOUL" &&
+    ghoulCopied &&
     stolenAction
       ? stolenAction
       : normalAction;
@@ -1376,13 +1583,25 @@ export default function MafiaGameScreen() {
       [players],
     );
 
+  /*
+   * الأهداف تستخدم player.id
+   * وهو room_players.id.
+   */
   const targets =
     useMemo(
       () =>
         alivePlayers.filter(
           (player) => {
-            if (!me)
+            if (!me) {
               return true;
+            }
+
+            if (
+              player.id ===
+              me.id
+            ) {
+              return false;
+            }
 
             if (
               player.user_id ===
@@ -1414,7 +1633,7 @@ export default function MafiaGameScreen() {
       () =>
         players.find(
           (player) =>
-            player.user_id ===
+            player.id ===
             selectedTarget,
         ) || null,
       [
@@ -1424,13 +1643,14 @@ export default function MafiaGameScreen() {
     );
 
   useEffect(() => {
-    if (!selectedTarget)
+    if (!selectedTarget) {
       return;
+    }
 
     const exists =
       targets.some(
         (player) =>
-          player.user_id ===
+          player.id ===
           selectedTarget,
       );
 
@@ -1449,7 +1669,9 @@ export default function MafiaGameScreen() {
   const vote =
     useCallback(
       async () => {
-        if (!roomId) return;
+        if (!roomId) {
+          return;
+        }
 
         if (!myAlive) {
           Alert.alert(
@@ -1461,9 +1683,8 @@ export default function MafiaGameScreen() {
         }
 
         if (
-          state?.room
-            ?.game_phase !==
-          "day"
+          !gameStarted ||
+          phase !== "day"
         ) {
           Alert.alert(
             "التصويت غير متاح",
@@ -1473,11 +1694,12 @@ export default function MafiaGameScreen() {
           return;
         }
 
+        /*
+         * selectedTarget = room_players.id
+         */
         if (
           !selectedTarget ||
-          !isUuid(
-            selectedTarget,
-          )
+          !isUuid(selectedTarget)
         ) {
           Alert.alert(
             "اختر لاعبًا",
@@ -1490,22 +1712,23 @@ export default function MafiaGameScreen() {
         const target =
           players.find(
             (player) =>
-              player.user_id ===
+              player.id ===
                 selectedTarget &&
               player.alive &&
               player.user_id !==
                 userId,
           );
 
-        if (!target) {
+        if (
+          !target ||
+          !isUuid(target.id)
+        ) {
           Alert.alert(
             "الهدف غير صالح",
             "اللاعب المحدد لم يعد هدفًا صالحًا للتصويت.",
           );
 
-          setSelectedTarget(
-            null,
-          );
+          setSelectedTarget(null);
 
           return;
         }
@@ -1513,9 +1736,14 @@ export default function MafiaGameScreen() {
         setBusy(true);
 
         try {
+          /*
+           * FIX:
+           * نرسل room_players.id
+           * وليس user_id.
+           */
           await submitDayVote(
             roomId,
-            target.user_id,
+            target.id,
           );
 
           Alert.alert(
@@ -1523,9 +1751,7 @@ export default function MafiaGameScreen() {
             `تم تسجيل صوتك ضد ${target.name}.`,
           );
 
-          setSelectedTarget(
-            null,
-          );
+          setSelectedTarget(null);
 
           await loadGame(false);
         } catch (error) {
@@ -1549,7 +1775,8 @@ export default function MafiaGameScreen() {
       [
         roomId,
         myAlive,
-        state?.room?.game_phase,
+        gameStarted,
+        phase,
         selectedTarget,
         players,
         userId,
@@ -1564,7 +1791,9 @@ export default function MafiaGameScreen() {
   const performAction =
     useCallback(
       async () => {
-        if (!roomId) return;
+        if (!roomId) {
+          return;
+        }
 
         if (!myAlive) {
           Alert.alert(
@@ -1576,9 +1805,8 @@ export default function MafiaGameScreen() {
         }
 
         if (
-          state?.room
-            ?.game_phase !==
-          "night"
+          !gameStarted ||
+          phase !== "night"
         ) {
           Alert.alert(
             "القدرة غير متاحة",
@@ -1599,9 +1827,7 @@ export default function MafiaGameScreen() {
 
         if (
           !selectedTarget ||
-          !isUuid(
-            selectedTarget,
-          )
+          !isUuid(selectedTarget)
         ) {
           Alert.alert(
             "اختر هدفًا",
@@ -1611,25 +1837,29 @@ export default function MafiaGameScreen() {
           return;
         }
 
+        /*
+         * الهدف = room_players.id
+         */
         const target =
           players.find(
             (player) =>
-              player.user_id ===
+              player.id ===
                 selectedTarget &&
               player.alive &&
               player.user_id !==
                 userId,
           );
 
-        if (!target) {
+        if (
+          !target ||
+          !isUuid(target.id)
+        ) {
           Alert.alert(
             "الهدف غير صالح",
             "اللاعب المحدد لم يعد هدفًا صالحًا.",
           );
 
-          setSelectedTarget(
-            null,
-          );
+          setSelectedTarget(null);
 
           return;
         }
@@ -1637,10 +1867,14 @@ export default function MafiaGameScreen() {
         setBusy(true);
 
         try {
+          /*
+           * FIX:
+           * نرسل room_players.id.
+           */
           await submitNightAction(
             roomId,
             effectiveAction,
-            target.user_id,
+            target.id,
           );
 
           Alert.alert(
@@ -1650,9 +1884,7 @@ export default function MafiaGameScreen() {
             )} على ${target.name}.`,
           );
 
-          setSelectedTarget(
-            null,
-          );
+          setSelectedTarget(null);
 
           await loadGame(false);
         } catch (error) {
@@ -1676,7 +1908,8 @@ export default function MafiaGameScreen() {
       [
         roomId,
         myAlive,
-        state?.room?.game_phase,
+        gameStarted,
+        phase,
         effectiveAction,
         selectedTarget,
         players,
@@ -1704,9 +1937,7 @@ export default function MafiaGameScreen() {
           return;
         }
 
-        setSendingMessage(
-          true,
-        );
+        setSendingMessage(true);
 
         try {
           const {
@@ -1727,7 +1958,9 @@ export default function MafiaGameScreen() {
               )
               .single();
 
-          if (error) throw error;
+          if (error) {
+            throw error;
+          }
 
           if (data) {
             setMessages(
@@ -1768,9 +2001,7 @@ export default function MafiaGameScreen() {
           if (
             mounted.current
           ) {
-            setSendingMessage(
-              false,
-            );
+            setSendingMessage(false);
           }
         }
       },
@@ -1783,7 +2014,7 @@ export default function MafiaGameScreen() {
     );
 
   /* ============================================================
-     PHASE
+     PHASE TEXT
   ============================================================ */
 
   const phaseTitle =
@@ -1791,8 +2022,7 @@ export default function MafiaGameScreen() {
       ? "🌙 الليل"
       : phase === "day"
         ? "☀️ النهار"
-        : phase ===
-            "finished"
+        : phase === "finished"
           ? "🏆 انتهت اللعبة"
           : "⏳ الانتظار";
 
@@ -1801,8 +2031,7 @@ export default function MafiaGameScreen() {
       ? "الأدوار التي تملك قدرات ليلية يمكنها تنفيذها الآن."
       : phase === "day"
         ? "تحدث مع اللاعبين واختر من تعتقد أنه العدو."
-        : phase ===
-            "finished"
+        : phase === "finished"
           ? "تم تحديد الفريق الفائز."
           : "بانتظار بدء اللعبة.";
 
@@ -1818,9 +2047,7 @@ export default function MafiaGameScreen() {
     !state
   ) {
     return (
-      <View
-        style={styles.loading}
-      >
+      <View style={styles.loading}>
         <ActivityIndicator
           size="large"
           color="#D7A94B"
@@ -1839,9 +2066,7 @@ export default function MafiaGameScreen() {
 
   if (!state) {
     return (
-      <View
-        style={styles.loading}
-      >
+      <View style={styles.loading}>
         <Ionicons
           name="alert-circle"
           size={60}
@@ -1892,9 +2117,7 @@ export default function MafiaGameScreen() {
     >
       {/* HEADER */}
 
-      <View
-        style={styles.header}
-      >
+      <View style={styles.header}>
         <Pressable
           onPress={() =>
             router.back()
@@ -1988,9 +2211,7 @@ export default function MafiaGameScreen() {
                 styles.timerText
               }
             >
-              {formatTime(
-                seconds,
-              )}
+              {formatTime(seconds)}
             </Text>
           </View>
         </View>
@@ -2064,13 +2285,7 @@ export default function MafiaGameScreen() {
            ROLE CARD
         ====================================================== */}
 
-        {/*
-         * البطاقة تظهر فقط:
-         * 1. اللعبة ليست waiting
-         * 2. يوجد currentRole حقيقي
-         * 3. showRoleCard = true
-         */}
-        {phase !== "waiting" &&
+        {gameStarted &&
         currentRole &&
         showRoleCard ? (
           <View
@@ -2328,7 +2543,10 @@ export default function MafiaGameScreen() {
               </Text>
             </View>
 
-            {role?.ghoul_ability_stolen &&
+            {currentRole ===
+              "GHOUL" &&
+              ghoulCopied &&
+              stolenRole &&
               stolenAction && (
                 <View
                   style={
@@ -2368,11 +2586,9 @@ export default function MafiaGameScreen() {
                       {safeActionLabel(
                         stolenAction,
                       )} من دور{" "}
-                      {role.stolen_role
-                        ? getRoleLabel(
-                            role.stolen_role,
-                          )
-                        : "أول لاعب يموت"}
+                      {getRoleLabel(
+                        stolenRole,
+                      )}
                     </Text>
 
                     <Text
@@ -2384,7 +2600,8 @@ export default function MafiaGameScreen() {
                       فريق المواطنين
                       ويستطيع استخدام
                       القدرة المسروقة
-                      مرة واحدة.
+                      مرة واحدة في
+                      اللعبة.
                     </Text>
                   </View>
                 </View>
@@ -2392,9 +2609,7 @@ export default function MafiaGameScreen() {
 
             <Pressable
               onPress={() =>
-                setShowRoleCard(
-                  false,
-                )
+                setShowRoleCard(false)
               }
               style={
                 styles.hideRoleButton
@@ -2415,8 +2630,7 @@ export default function MafiaGameScreen() {
               </Text>
             </Pressable>
           </View>
-        ) : phase !==
-            "waiting" &&
+        ) : gameStarted &&
           currentRole ? (
           <View
             style={
@@ -2436,7 +2650,9 @@ export default function MafiaGameScreen() {
             </View>
 
             <View
-              style={{ flex: 1 }}
+              style={{
+                flex: 1,
+              }}
             >
               <Text
                 style={
@@ -2458,9 +2674,7 @@ export default function MafiaGameScreen() {
 
             <Pressable
               onPress={() =>
-                setShowRoleCard(
-                  true,
-                )
+                setShowRoleCard(true)
               }
               style={
                 styles.showRoleButton
@@ -2521,9 +2735,7 @@ export default function MafiaGameScreen() {
                   styles.bigTimerText
                 }
               >
-                {formatTime(
-                  seconds,
-                )}
+                {formatTime(seconds)}
               </Text>
             </View>
           </View>
@@ -2639,21 +2851,27 @@ export default function MafiaGameScreen() {
 
           {players.map(
             (player) => {
+              /*
+               * selectedTarget = player.id
+               */
               const selected =
                 selectedTarget ===
-                player.user_id;
+                player.id;
 
               const isMe =
                 player.user_id ===
                   userId ||
                 player.user_id ===
-                  me?.user_id;
+                  me?.user_id ||
+                player.id ===
+                  me?.id;
 
               const canSelect =
                 Boolean(
                   player.alive &&
                     !isMe &&
                     myAlive &&
+                    gameStarted &&
                     (phase ===
                       "day" ||
                       (phase ===
@@ -2666,21 +2884,25 @@ export default function MafiaGameScreen() {
               return (
                 <Pressable
                   key={
-                    player.user_id ||
-                    player.id
+                    player.id ||
+                    player.user_id
                   }
                   disabled={
                     !canSelect
                   }
                   onPress={() => {
                     if (
-                      player.user_id &&
+                      player.id &&
                       isUuid(
-                        player.user_id,
+                        player.id,
                       )
                     ) {
+                      /*
+                       * FIX:
+                       * حفظ room_players.id
+                       */
                       setSelectedTarget(
-                        player.user_id,
+                        player.id,
                       );
                     }
                   }}
@@ -2771,6 +2993,7 @@ export default function MafiaGameScreen() {
         {/* ACTION */}
 
         {myAlive &&
+          gameStarted &&
           (phase === "day" ||
             phase === "night") && (
             <View
@@ -2989,48 +3212,49 @@ export default function MafiaGameScreen() {
 
         {/* DEAD */}
 
-        {!myAlive && (
-          <View
-            style={
-              styles.spectatorBox
-            }
-          >
+        {!myAlive &&
+          gameStarted && (
             <View
               style={
-                styles.spectatorIcon
+                styles.spectatorBox
               }
             >
-              <Ionicons
-                name="eye-outline"
-                size={26}
-                color="#A0A0A0"
-              />
-            </View>
-
-            <View
-              style={{ flex: 1 }}
-            >
-              <Text
+              <View
                 style={
-                  styles.spectatorTitle
+                  styles.spectatorIcon
                 }
               >
-                أنت ميت
-              </Text>
+                <Ionicons
+                  name="eye-outline"
+                  size={26}
+                  color="#A0A0A0"
+                />
+              </View>
 
-              <Text
-                style={
-                  styles.spectatorText
-                }
+              <View
+                style={{ flex: 1 }}
               >
-                يمكنك متابعة اللعبة،
-                لكن لا يمكنك
-                التصويت أو استخدام
-                القدرات.
-              </Text>
+                <Text
+                  style={
+                    styles.spectatorTitle
+                  }
+                >
+                  أنت ميت
+                </Text>
+
+                <Text
+                  style={
+                    styles.spectatorText
+                  }
+                >
+                  يمكنك متابعة اللعبة،
+                  لكن لا يمكنك
+                  التصويت أو استخدام
+                  القدرات.
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
+          )}
 
         {/* CHAT */}
 
@@ -3284,695 +3508,4 @@ const styles = StyleSheet.create({
 
   timerText: {
     color: "#D7A94B",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  voiceStatus: {
-    marginHorizontal: 14,
-    marginTop: 8,
-    minHeight: 42,
-    paddingHorizontal: 11,
-    borderRadius: 13,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  voiceStatusConnected: {
-    backgroundColor: "#0D211A",
-    borderColor: "#164B38",
-  },
-
-  voiceStatusError: {
-    backgroundColor: "#241111",
-    borderColor: "#5A2020",
-  },
-
-  voiceStatusText: {
-    flex: 1,
-    color: "#BDBDBD",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  scroll: {
-    flex: 1,
-  },
-
-  content: {
-    padding: 14,
-    paddingBottom: 40,
-  },
-
-  roleCard: {
-    borderWidth: 2,
-    borderRadius: 26,
-    backgroundColor: "#101010",
-    padding: 18,
-    alignItems: "center",
-    marginBottom: 14,
-    overflow: "hidden",
-  },
-
-  roleArtwork: {
-    width: "100%",
-    height: 235,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: 13,
-  },
-
-  artGlow: {
-    position: "absolute",
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-  },
-
-  roleEmoji: {
-    fontSize: 112,
-    textAlign: "center",
-    includeFontPadding: false,
-    marginTop: -5,
-  },
-
-  artIconCircle: {
-    position: "absolute",
-    right: 18,
-    top: 18,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  artLines: {
-    position: "absolute",
-    bottom: 16,
-    left: 20,
-    right: 20,
-  },
-
-  artLine: {
-    height: 2,
-    width: "100%",
-    borderRadius: 2,
-  },
-
-  artLineSmall: {
-    height: 2,
-    width: "65%",
-    borderRadius: 2,
-    marginTop: 6,
-  },
-
-  cardCaption: {
-    color: "#777",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 5,
-  },
-
-  yourRole: {
-    color: "#777",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
-
-  roleName: {
-    fontSize: 34,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-
-  teamBadge: {
-    marginTop: 9,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 17,
-    paddingVertical: 7,
-  },
-
-  teamBadgeText: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  roleMetaRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-
-  metaBadge: {
-    minHeight: 32,
-    paddingHorizontal: 11,
-    borderRadius: 12,
-    backgroundColor: "#181818",
-    borderWidth: 1,
-    borderColor: "#292929",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-
-  metaText: {
-    color: "#AAA",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  infoBlock: {
-    width: "100%",
-    marginTop: 13,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: "#171717",
-    borderWidth: 1,
-    borderColor: "#262626",
-  },
-
-  infoTitle: {
-    color: "#D7A94B",
-    fontSize: 14,
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-
-  roleDescription: {
-    color: "#D0D0D0",
-    fontSize: 14,
-    lineHeight: 23,
-    textAlign: "right",
-  },
-
-  stolenBox: {
-    width: "100%",
-    marginTop: 14,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: "#1B1124",
-    borderWidth: 1,
-    borderColor: "#542A73",
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-
-  stolenIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#291637",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  stolenTitle: {
-    color: "#C084FC",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  stolenText: {
-    color: "#DDD",
-    fontSize: 13,
-    marginTop: 3,
-  },
-
-  stolenHint: {
-    color: "#A78BFA",
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 6,
-  },
-
-  hideRoleButton: {
-    marginTop: 17,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: "#1B1B1B",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  hideRoleText: {
-    color: "#999",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  hiddenRoleCard: {
-    borderWidth: 1,
-    borderColor: "#332B1B",
-    borderRadius: 20,
-    backgroundColor: "#111",
-    padding: 14,
-    marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  hiddenRoleIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: "#1B1710",
-    borderWidth: 1,
-    borderColor: "#59451E",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  hiddenRoleTitle: {
-    color: "#D7A94B",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-
-  hiddenRoleText: {
-    color: "#777",
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  showRoleButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 13,
-    backgroundColor: "#1B1710",
-  },
-
-  showRoleText: {
-    color: "#D7A94B",
-    fontWeight: "900",
-  },
-
-  phaseCard: {
-    backgroundColor: "#111",
-    borderRadius: 18,
-    padding: 17,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#222",
-  },
-
-  phaseHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-
-  bigTimer: {
-    minWidth: 76,
-    height: 54,
-    borderRadius: 14,
-    backgroundColor: "#17130C",
-    borderWidth: 1,
-    borderColor: "#3A3020",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  bigTimerText: {
-    color: "#D7A94B",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-
-  section: {
-    marginTop: 4,
-    marginBottom: 14,
-  },
-
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-
-  sectionTitle: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "900",
-  },
-
-  phaseDescription: {
-    color: "#999",
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 5,
-    maxWidth: 240,
-  },
-
-  actionInfo: {
-    marginTop: 13,
-    padding: 11,
-    borderRadius: 12,
-    backgroundColor: "#19150D",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  actionInfoText: {
-    color: "#D0D0D0",
-    fontSize: 14,
-  },
-
-  bold: {
-    fontWeight: "900",
-    color: "#D7A94B",
-  },
-
-  winnerCard: {
-    backgroundColor: "#17130A",
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#806326",
-    alignItems: "center",
-    padding: 25,
-    marginBottom: 14,
-  },
-
-  trophyCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "#241D0E",
-    borderWidth: 1,
-    borderColor: "#806326",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  winnerTitle: {
-    color: "#D7A94B",
-    fontSize: 27,
-    fontWeight: "900",
-    marginTop: 10,
-  },
-
-  winnerText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "800",
-    marginTop: 7,
-  },
-
-  playerCountBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    backgroundColor: "#171717",
-    borderWidth: 1,
-    borderColor: "#282828",
-  },
-
-  playerCount: {
-    color: "#777",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  playerCard: {
-    minHeight: 78,
-    padding: 11,
-    marginBottom: 8,
-    borderRadius: 17,
-    backgroundColor: "#121212",
-    borderWidth: 1,
-    borderColor: "#242424",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  selectedPlayer: {
-    borderColor: "#D7A94B",
-    backgroundColor: "#1B160C",
-  },
-
-  deadPlayer: {
-    opacity: 0.55,
-  },
-
-  disabledPlayer: {
-    opacity: 0.75,
-  },
-
-  avatarFallback: {
-    backgroundColor: "#1D1D1D",
-    borderWidth: 1,
-    borderColor: "#333",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  playerInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  playerNameRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  playerName: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-
-  playerStatus: {
-    color: "#777",
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  meBadge: {
-    backgroundColor: "#D7A94B",
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-
-  meBadgeText: {
-    color: "#111",
-    fontSize: 9,
-    fontWeight: "900",
-  },
-
-  actionSection: {
-    backgroundColor: "#111",
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#292929",
-    padding: 17,
-    marginBottom: 14,
-  },
-
-  helpText: {
-    color: "#888",
-    fontSize: 13,
-    lineHeight: 20,
-    marginTop: 6,
-    marginBottom: 13,
-  },
-
-  selectedTargetBox: {
-    minHeight: 44,
-    borderRadius: 13,
-    backgroundColor: "#1B160C",
-    borderWidth: 1,
-    borderColor: "#59451E",
-    paddingHorizontal: 12,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-
-  selectedTargetText: {
-    color: "#D0D0D0",
-    fontSize: 14,
-  },
-
-  primaryButton: {
-    minHeight: 52,
-    borderRadius: 15,
-    backgroundColor: "#D7A94B",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 4,
-    paddingHorizontal: 16,
-  },
-
-  primaryButtonText: {
-    color: "#111",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-
-  disabledButton: {
-    opacity: 0.4,
-  },
-
-  noActionBox: {
-    padding: 15,
-    borderRadius: 14,
-    backgroundColor: "#181818",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 12,
-  },
-
-  noActionText: {
-    color: "#888",
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-
-  spectatorBox: {
-    padding: 16,
-    backgroundColor: "#151515",
-    borderRadius: 17,
-    borderWidth: 1,
-    borderColor: "#292929",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    marginBottom: 14,
-  },
-
-  spectatorIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: "#1D1D1D",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  spectatorTitle: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 15,
-  },
-
-  spectatorText: {
-    color: "#888",
-    fontSize: 12,
-    lineHeight: 19,
-    marginTop: 3,
-  },
-
-  chatSection: {
-    marginTop: 8,
-    backgroundColor: "#111",
-    borderRadius: 18,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#222",
-  },
-
-  chatBox: {
-    minHeight: 100,
-    maxHeight: 360,
-    backgroundColor: "#0C0C0C",
-    borderRadius: 14,
-    padding: 10,
-  },
-
-  emptyChat: {
-    color: "#666",
-    textAlign: "center",
-    marginTop: 30,
-  },
-
-  messageRow: {
-    flexDirection: "row",
-    marginBottom: 8,
-  },
-
-  myMessageRow: {
-    justifyContent: "flex-end",
-  },
-
-  messageBubble: {
-    maxWidth: "86%",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 13,
-    backgroundColor: "#1B1B1B",
-  },
-
-  messageUser: {
-    color: "#D7A94B",
-    fontSize: 11,
-    fontWeight: "900",
-    marginBottom: 3,
-  },
-
-  messageText: {
-    color: "#E5E5E5",
-    fontSize: 14,
-    lineHeight: 20,
-  },
-
-  inputRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginTop: 10,
-    gap: 8,
-  },
-
-  messageInput: {
-    flex: 1,
-    minHeight: 46,
-    maxHeight: 100,
-    backgroundColor: "#1A1A1A",
-    borderRadius: 14,
-    paddingHorizontal: 13,
-    paddingVertical: 11,
-    color: "#fff",
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: "#292929",
-  },
-
-  sendButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
-    backgroundColor: "#D7A94B",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  disabledSend: {
-    opacity: 0.35,
-  },
-});
+   
