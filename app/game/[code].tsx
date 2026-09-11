@@ -130,22 +130,6 @@ const ROLE_COLORS: Partial<Record<GameRole, string>> = {
   CULTIST: "#7C3AED",
 };
 
-const ROLE_EMOJIS: Partial<Record<GameRole, string>> = {
-  CITIZEN: "🧑",
-  DOCTOR: "🩺",
-  DETECTIVE: "🕵️",
-  GHOUL: "👹",
-  SPY: "🥷",
-  BODYGUARD: "🛡️",
-  SHERIFF: "⭐",
-  WITCH: "🧙",
-  MAFIA: "🔪",
-  GODFATHER: "👑",
-  CONSIGLIERE: "🎭",
-  CULT_LEADER: "🔥",
-  CULTIST: "☠️",
-};
-
 /* ============================================================
    HELPERS
 ============================================================ */
@@ -598,7 +582,7 @@ export default function MafiaGameScreen() {
     useState(false);
 
   const [showRoleCard, setShowRoleCard] =
-    useState(false);
+    useState(true);
 
   const scrollRef =
     useRef<ScrollView | null>(null);
@@ -922,7 +906,6 @@ export default function MafiaGameScreen() {
         ) {
           if (mounted.current) {
             setRole(null);
-            setShowRoleCard(false);
           }
         } else {
           try {
@@ -937,11 +920,8 @@ export default function MafiaGameScreen() {
                 setRole(
                   myRole as RoleInfo,
                 );
-
-                setShowRoleCard(true);
               } else {
                 setRole(null);
-                setShowRoleCard(false);
               }
             }
           } catch (error) {
@@ -952,7 +932,6 @@ export default function MafiaGameScreen() {
 
             if (mounted.current) {
               setRole(null);
-              setShowRoleCard(false);
             }
           }
         }
@@ -1246,6 +1225,7 @@ export default function MafiaGameScreen() {
       ? null
       : role?.role ??
         me?.role ??
+        state?.my_role?.role ??
         null;
 
   const myAlive =
@@ -2017,109 +1997,85 @@ export default function MafiaGameScreen() {
             ROLE CARD
         ====================================================== */}
 
-        {phase !== "waiting" &&
-        currentRole &&
-        showRoleCard ? (
-          <View style={styles.roleCard}>
-            {/* البطاقة المصورة الأصلية */}
-            <RoleCard
-              role={currentRole}
-              onHide={() => setShowRoleCard(false)}
-            />
+        {phase !== "waiting" && currentRole ? (
+          showRoleCard ? (
+            <View style={styles.roleCard}>
+              <RoleCard
+                role={currentRole}
+                onHide={() => setShowRoleCard(false)}
+              />
 
-            {/* معلومات الدور */}
-            <View style={styles.roleInfoPanel}>
-              <View style={styles.roleTitleRow}>
-                <Text style={styles.roleTitleLabel}>
-                  دورك
-                </Text>
+              <View style={styles.roleInfoPanel}>
+                <View style={styles.roleTitleRow}>
+                  <Text style={styles.roleTitleLabel}>دورك</Text>
 
-                <View
-                  style={[
-                    styles.roleAliveBadge,
-                    !myAlive && styles.roleDeadBadge,
-                  ]}
-                >
-                  <Text style={styles.roleAliveBadgeText}>
-                    {myAlive ? "حي" : "ميت"}
-                  </Text>
-                </View>
-              </View>
-
-              <Text
-                style={[
-                  styles.roleName,
-                  {
-                    color: roleColor,
-                  },
-                ]}
-              >
-                {roleLabel}
-              </Text>
-
-              {roleTeam ? (
-                <View
-                  style={[
-                    styles.roleTeamBadge,
-                    {
-                      borderColor: roleColor,
-                    },
-                  ]}
-                >
-                  <Text
+                  <View
                     style={[
-                      styles.roleTeamText,
-                      {
-                        color: roleColor,
-                      },
+                      styles.roleAliveBadge,
+                      !myAlive && styles.roleDeadBadge,
                     ]}
                   >
-                    {getTeamLabel(roleTeam)}
+                    <Text style={styles.roleAliveBadgeText}>
+                      {myAlive ? "حي" : "ميت"}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text
+                  style={[
+                    styles.roleName,
+                    { color: roleColor },
+                  ]}
+                >
+                  {roleLabel}
+                </Text>
+
+                {roleTeam ? (
+                  <View
+                    style={[
+                      styles.roleTeamBadge,
+                      { borderColor: roleColor },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.roleTeamText,
+                        { color: roleColor },
+                      ]}
+                    >
+                      {getTeamLabel(roleTeam as any)}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {rolePhase ? (
+                  <Text style={styles.rolePhaseText}>
+                    المرحلة: {rolePhase}
+                  </Text>
+                ) : null}
+
+                <View style={styles.roleInfoBox}>
+                  <Text style={styles.roleInfoHeading}>وصف الدور</Text>
+                  <Text style={styles.roleDescription}>
+                    {roleDescription}
                   </Text>
                 </View>
-              ) : null}
 
-              {rolePhase ? (
-                <Text style={styles.rolePhaseText}>
-                  المرحلة: {rolePhase}
-                </Text>
-              ) : null}
+                <View style={styles.roleInfoBox}>
+                  <Text style={styles.roleInfoHeading}>القدرة</Text>
+                  <Text style={styles.roleDescription}>
+                    {roleAbility}
+                  </Text>
+                </View>
 
-              {/* وصف الدور */}
-              <View style={styles.roleInfoBox}>
-                <Text style={styles.roleInfoHeading}>
-                  وصف الدور
-                </Text>
+                <View style={styles.roleInfoBox}>
+                  <Text style={styles.roleInfoHeading}>هدفك</Text>
+                  <Text style={styles.roleDescription}>
+                    {roleObjective}
+                  </Text>
+                </View>
 
-                <Text style={styles.roleDescription}>
-                  {roleDescription}
-                </Text>
-              </View>
-
-              {/* القدرة */}
-              <View style={styles.roleInfoBox}>
-                <Text style={styles.roleInfoHeading}>
-                  القدرة
-                </Text>
-
-                <Text style={styles.roleDescription}>
-                  {roleAbility}
-                </Text>
-              </View>
-
-              {/* الهدف */}
-              <View style={styles.roleInfoBox}>
-                <Text style={styles.roleInfoHeading}>
-                  هدفك
-                </Text>
-
-                <Text style={styles.roleDescription}>
-                  {roleObjective}
-                </Text>
-              </View>
-
-              {/* قدرة الغول المسروقة */}
-              {currentRole === "GHOUL" &&
+                {currentRole === "GHOUL" &&
                 role?.ghoul_ability_stolen &&
                 stolenAction ? (
                   <View
@@ -2131,68 +2087,58 @@ export default function MafiaGameScreen() {
                     <Text style={styles.roleInfoHeading}>
                       القدرة المسروقة
                     </Text>
-
                     <Text style={styles.roleDescription}>
                       {stolenAction}
                     </Text>
                   </View>
                 ) : null}
 
-              {/* القدرة الفعلية */}
-              {effectiveAction ? (
-                <View style={styles.roleActionBadge}>
-                  <Text style={styles.roleActionText}>
-                    القدرة الفعلية:{" "}
-                    {ACTION_LABELS[effectiveAction] ??
-                      effectiveAction}
-                  </Text>
-                </View>
-              ) : null}
+                {effectiveAction ? (
+                  <View style={styles.roleActionBadge}>
+                    <Text style={styles.roleActionText}>
+                      القدرة الفعلية:{" "}
+                      {safeActionLabel(effectiveAction)}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Pressable
+                style={styles.hideRoleButton}
+                onPress={() => setShowRoleCard(false)}
+              >
+                <Ionicons
+                  name="eye-off-outline"
+                  size={19}
+                  color="#999"
+                />
+                <Text style={styles.hideRoleButtonText}>
+                  إخفاء البطاقة
+                </Text>
+              </Pressable>
             </View>
-
-            {/* إخفاء البطاقة */}
-            <Pressable
-              style={styles.hideRoleButton}
-              onPress={() => setShowRoleCard(false)}
-            >
-              <Ionicons
-                name="eye-off-outline"
-                size={19}
-                color="#999"
-              />
-
-              <Text style={styles.hideRoleButtonText}>
-                إخفاء البطاقة
+          ) : (
+            <View style={styles.hiddenRoleCard}>
+              <Text style={styles.hiddenRoleTitle}>🎴 دورك مخفي</Text>
+              <Text style={styles.hiddenRoleSubtitle}>
+                اضغط لإظهار بطاقة دورك
               </Text>
-            </Pressable>
-          </View>
-        ) : phase !== "waiting" &&
-          currentRole &&
-          !showRoleCard ? (
-          <View style={styles.hiddenRoleCard}>
-            <Text style={styles.hiddenRoleTitle}>
-              🎴 دورك مخفي
-            </Text>
 
-            <Text style={styles.hiddenRoleSubtitle}>
-              اضغط لإظهار بطاقة دورك
-            </Text>
-
-            <Pressable
-              style={styles.showRoleButton}
-              onPress={() => setShowRoleCard(true)}
-            >
-              <Ionicons
-                name="eye-outline"
-                size={20}
-                color="#fff"
-              />
-
-              <Text style={styles.showRoleButtonText}>
-                إظهار البطاقة
-              </Text>
-            </Pressable>
-          </View>
+              <Pressable
+                style={styles.showRoleButton}
+                onPress={() => setShowRoleCard(true)}
+              >
+                <Ionicons
+                  name="eye-outline"
+                  size={20}
+                  color="#fff"
+                />
+                <Text style={styles.showRoleButtonText}>
+                  إظهار البطاقة
+                </Text>
+              </Pressable>
+            </View>
+          )
         ) : null}
 
         {/* PHASE */}
@@ -3056,6 +3002,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: 26,
     backgroundColor: "#101010",
+    borderColor: "#282a31",
     padding: 18,
     alignItems: "center",
     marginBottom: 14,
@@ -3206,6 +3153,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#252B36",
     alignItems: "center",
+    marginBottom: 14,
   },
 
   hiddenRoleTitle: {
@@ -3574,7 +3522,8 @@ const styles = StyleSheet.create({
   chatSection: {
     marginTop: 8,
     backgroundColor: "#111",
-    borderRadius: 18,    padding: 15,
+    borderRadius: 18,
+    padding: 15,
     borderWidth: 1,
     borderColor: "#222",
   },
@@ -3588,10 +3537,11 @@ const styles = StyleSheet.create({
   },
 
   emptyChat: {
+    content: "لا توجد رسائل بعد.",
     color: "#666",
     textAlign: "center",
     marginTop: 30,
-  },
+  } as any,
 
   messageRow: {
     flexDirection: "row",
