@@ -29,11 +29,7 @@ const ROLE_CARD_IMAGES: Record<string, any> = {
 };
 
 function normalizeRole(role?: string | null): string {
-  if (!role) {
-    return 'CITIZEN';
-  }
-
-  return role
+  return String(role ?? 'CITIZEN')
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
@@ -55,18 +51,24 @@ export function RoleCard({
         source={image}
         style={styles.image}
         resizeMode="contain"
+        accessibilityLabel={`بطاقة الدور ${normalizedRole}`}
       />
 
-      {onHide && (
+      {onHide ? (
         <Pressable
-          style={styles.hideButton}
+          style={({ pressed }) => [
+            styles.hideButton,
+            pressed && styles.hideButtonPressed,
+          ]}
           onPress={onHide}
+          accessibilityRole="button"
+          accessibilityLabel="إخفاء بطاقة الدور"
         >
           <Text style={styles.hideText}>
             إخفاء البطاقة
           </Text>
         </Pressable>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -90,14 +92,20 @@ const styles = StyleSheet.create({
 
   hideButton: {
     marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
     borderRadius: 10,
     backgroundColor: '#17191D',
+    borderWidth: 1,
+    borderColor: '#292D34',
+  },
+
+  hideButtonPressed: {
+    opacity: 0.65,
   },
 
   hideText: {
-    color: '#999',
+    color: '#B8B8B8',
     fontSize: 13,
     fontWeight: '700',
   },
