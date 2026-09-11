@@ -1,112 +1,97 @@
-import React from 'react';
+import React from "react";
 import {
   Image,
   Pressable,
   StyleSheet,
   Text,
   View,
-} from 'react-native';
+  ImageSourcePropType,
+} from "react-native";
 
-type RoleCardProps = {
-  role?: string | null;
-  onHide?: () => void;
-};
+/**
+ * Mafia001 RoleCard
+ * Uses local assets for the 13 role cards.
+ */
 
-const ROLE_CARD_IMAGES: Record<string, any> = {
-  CITIZEN: require('../assets/roles/citizen.jpg'),
-  DOCTOR: require('../assets/roles/doctor.jpg'),
-  DETECTIVE: require('../assets/roles/detective.jpg'),
-  GHOUL: require('../assets/roles/ghoul.jpg'),
-  SPY: require('../assets/roles/spy.jpg'),
-  BODYGUARD: require('../assets/roles/bodyguard.jpg'),
-  SHERIFF: require('../assets/roles/sheriff.jpg'),
-  WITCH: require('../assets/roles/witch.jpg'),
-  MAFIA: require('../assets/roles/mafia.jpg'),
-  GODFATHER: require('../assets/roles/godfather.jpg'),
-  CONSIGLIERE: require('../assets/roles/consigliere.jpg'),
-  CULT_LEADER: require('../assets/roles/cult_leader.jpg'),
-  CULTIST: require('../assets/roles/cultist.jpg'),
+// Map each normalized role to its local asset require path
+const ROLE_CARD_IMAGES: Record<string, ImageSourcePropType> = {
+  CITIZEN: require("../assets/roles/citizen.png"),
+  DOCTOR: require("../assets/roles/doctor.png"),
+  DETECTIVE: require("../assets/roles/detective.png"),
+  GHOUL: require("../assets/roles/ghoul.png"),
+  SPY: require("../assets/roles/spy.png"),
+  BODYGUARD: require("../assets/roles/bodyguard.png"),
+  SHERIFF: require("../assets/roles/sheriff.png"),
+  WITCH: require("../assets/roles/witch.png"),
+  MAFIA: require("../assets/roles/mafia.png"),
+  GODFATHER: require("../assets/roles/godfather.png"),
+  CONSIGLIERE: require("../assets/roles/consigliere.png"),
+  CULT_LEADER: require("../assets/roles/cult_leader.png"),
+  CULTIST: require("../assets/roles/cultist.png"),
 };
 
 function normalizeRole(role?: string | null): string {
-  return String(role ?? 'CITIZEN')
+  if (!role) {
+    return "CITIZEN";
+  }
+  return String(role)
     .trim()
     .toUpperCase()
-    .replace(/[\s-]+/g, '_');
+    .replace(/[\s-]+/g, "_");
 }
 
 export function RoleCard({
   role,
   onHide,
-}: RoleCardProps) {
+}: {
+  role?: string | null;
+  onHide?: () => void;
+}) {
   const normalizedRole = normalizeRole(role);
-
-  const image =
-    ROLE_CARD_IMAGES[normalizedRole] ??
-    ROLE_CARD_IMAGES.CITIZEN;
+  const imageSource = ROLE_CARD_IMAGES[normalizedRole] ?? ROLE_CARD_IMAGES.CITIZEN;
 
   return (
     <View style={styles.container}>
-      <Image
-        source={image}
-        style={styles.image}
-        resizeMode="contain"
-        accessibilityLabel={`بطاقة الدور ${normalizedRole}`}
-      />
-
-      {onHide ? (
+      <Image source={imageSource} style={styles.image} resizeMode="contain" />
+      {onHide && (
         <Pressable
-          style={({ pressed }) => [
-            styles.hideButton,
-            pressed && styles.hideButtonPressed,
-          ]}
+          style={styles.hideButton}
           onPress={onHide}
           accessibilityRole="button"
-          accessibilityLabel="إخفاء بطاقة الدور"
+          accessibilityLabel="إخفاء البطاقة"
         >
-          <Text style={styles.hideText}>
-            إخفاء البطاقة
-          </Text>
+          <Text style={styles.hideText}>إخفاء البطاقة</Text>
         </Pressable>
-      ) : null}
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    alignItems: 'center',
-    backgroundColor: '#05070A',
+    width: "100%",
+    alignItems: "center",
+    backgroundColor: "#05070A",
     borderRadius: 24,
     padding: 8,
     marginBottom: 14,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
-
   image: {
-    width: '100%',
+    width: "100%",
     aspectRatio: 240 / 382,
     borderRadius: 18,
   },
-
   hideButton: {
     marginTop: 8,
-    paddingVertical: 9,
-    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 10,
-    backgroundColor: '#17191D',
-    borderWidth: 1,
-    borderColor: '#292D34',
+    backgroundColor: "#17191D",
   },
-
-  hideButtonPressed: {
-    opacity: 0.65,
-  },
-
   hideText: {
-    color: '#B8B8B8',
+    color: "#999",
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 });
