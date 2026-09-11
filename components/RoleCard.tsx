@@ -1,508 +1,311 @@
-import React, { useMemo } from 'react';
-
+import React from 'react';
 import {
   Image,
   ImageSourcePropType,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
 import {
+  ROLES,
   Role,
   RoleType,
-  ROLES,
+  getRoleById,
 } from '../types/roles';
 
-interface RoleCardProps {
+type RoleCardProps = {
   role: Role | RoleType | string;
-  onClick?: () => void;
   onHide?: () => void;
+  onClick?: () => void;
   size?: 'small' | 'medium' | 'large';
-}
+};
 
-function normalizeRoleId(
-  value: Role | RoleType | string,
-): RoleType | null {
-  if (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value
-  ) {
-    return value.id as RoleType;
+const CARD_WIDTHS = {
+  small: 150,
+  medium: 220,
+  large: 290,
+} as const;
+
+function normalizeRole(role: Role | RoleType | string): Role | undefined {
+  if (typeof role === 'object' && role !== null && 'id' in role) {
+    return role as Role;
   }
 
-  const normalized = String(value)
+  const normalized = String(role)
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, '_');
 
-  if (
-    Object.prototype.hasOwnProperty.call(
-      ROLES,
-      normalized,
-    )
-  ) {
-    return normalized as RoleType;
-  }
-
-  return null;
+  return getRoleById(normalized);
 }
 
-function getRole(
-  value: Role | RoleType | string,
-): Role | null {
-  if (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value
-  ) {
-    return value as Role;
-  }
+export function RoleCard({
+  role,
+  onHide,
+  onClick,
+  size = 'large',
+}: RoleCardProps) {
+  const roleData = normalizeRole(role);
 
-  const id = normalizeRoleId(value);
-
-  if (!id) {
+  if (!roleData) {
     return null;
   }
 
-  return ROLES[id] ?? null;
-}
+  const imageSource: ImageSourcePropType | undefined = roleData.image;
 
-const RoleCard: React.FC<RoleCardProps> = ({
-  role,
-  onClick,
-  onHide,
-  size = 'medium',
-}) => {
-  const roleData = useMemo(
-    () => getRole(role),
-    [role],
-  );
-
-  if (!roleData) {
-    return (
-      <View style={styles.notFound}>
-        <Text style={styles.notFoundText}>
-          تعذر العثور على بطاقة الدور
-        </Text>
-      </View>
-    );
-  }
-
-  const imageSource:
-    | ImageSourcePropType
-    | undefined = roleData.image;
-
-  const content = (
-    <View
-      style={[
-        styles.card,
-        styles[`card_${size}`],
-        {
-          borderColor:
-            roleData.borderColor,
-        },
-      ]}
-    >
-      <View style={styles.imageContainer}>
+  return (
+    <View style={styles.overlay}>
+      <Pressable
+        style={[
+          styles.card,
+          {
+            width: CARD_WIDTHS[size],
+          },
+        ]}
+        onPress={onClick}
+      >
         {imageSource ? (
           <Image
             source={imageSource}
-            style={styles.image}
-            resizeMode="contain"
-            accessibilityLabel={`بطاقة دور ${roleData.nameAr}`}
+            style={styles.roleImage}
+            resizeMode="cover"
           />
         ) : (
           <View style={styles.imageFallback}>
-            <Text style={styles.fallbackIcon}>
-              {roleData.icon}
-            </Text>
-
-            <Text style={styles.fallbackTitle}>
-              {roleData.nameAr}
-            </Text>
-
-            <Text style={styles.fallbackText}>
-              أضف صورة هذا الدور إلى assets/roles
-            </Text>
+            <Text style={styles.fallbackText}>?</Text>
           </View>
         )}
-      </View>
 
-      <View style={styles.info}>
-        <View
-          style={[
-            styles.teamBadge,
-            {
-              borderColor:
-                roleData.borderColor,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.teamText,
-              {
-                color:
-                  roleData.borderColor,
-              },
-            ]}
-          >
-            {roleData.team === 'MAFIA'
-              ? 'المافيا'
-              : roleData.team === 'CULT'
-                ? 'الطائفة'
-                : 'المواطنون'}
+        <View style={styles.content}>
+          <Text style={styles.roleName}>{roleData.name}</Text>
+
+          <View style={styles.teamBadge}>
+            <Text style={styles.teamText}>
+              {roleData.team === 'MAFIA'
+                ? 'MAFIA'
+                : roleData.team === 'CULT'
+                  ? 'CULT'
+                  : 'CITIZEN'}
+            </Text>
+          </View>
+
+          <Text style={styles.description}>
+            {roleData.description}
           </Text>
-        </View>
 
-        <Text style={styles.nameAr}>
-          {roleData.nameAr}
-        </Text>
-
-        <Text style={styles.nameEn}>
-          {roleData.nameEn.toUpperCase()}
-        </Text>
-
-        <Text style={styles.description}>
-          {roleData.descriptionAr}
-        </Text>
-
-        {size === 'large' &&
-          roleData.abilities.length > 0 && (
-            <View style={styles.abilities}>
-              <Text style={styles.abilitiesTitle}>
-                القدرات
-              </Text>
-
-              {roleData.abilities.map(
-                (ability, index) => (
-                  <View
-                    key={`${roleData.id}-ability-${index}`}
-                    style={styles.abilityRow}
-                  >
-                    <Text
-                      style={[
-                        styles.bullet,
-                        {
-                          color:
-                            roleData.borderColor,
-                        },
-                      ]}
-                    >
-                      •
-                    </Text>
-
-                    <Text
-                      style={styles.abilityText}
-                    >
-                      {ability}
-                    </Text>
-                  </View>
-                ),
-              )}
-            </View>
+          {onHide && (
+            <Pressable
+              style={styles.hideButton}
+              onPress={onHide}
+            >
+              <Text style={styles.hideButtonText}>إخفاء البطاقة</Text>
+            </Pressable>
           )}
-      </View>
-
-      {onHide && (
-        <Pressable
-          style={styles.hideButton}
-          onPress={onHide}
-          accessibilityRole="button"
-          accessibilityLabel="إخفاء البطاقة"
-        >
-          <Text style={styles.hideButtonText}>
-            إخفاء البطاقة
-          </Text>
-        </Pressable>
-      )}
+        </View>
+      </Pressable>
     </View>
   );
+}
 
-  if (onClick) {
-    return (
-      <Pressable
-        onPress={onClick}
-        style={styles.pressable}
-      >
-        {content}
-      </Pressable>
-    );
-  }
-
-  return content;
+type RoleCardsListProps = {
+  roles?: (Role | RoleType | string)[];
+  onSelect?: (role: Role) => void;
 };
 
+export function RoleCardsList({
+  roles = Object.keys(ROLES) as RoleType[],
+  onSelect,
+}: RoleCardsListProps) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.listContent}
+    >
+      {roles.map((item, index) => {
+        const role = normalizeRole(item);
+
+        if (!role) {
+          return null;
+        }
+
+        return (
+          <Pressable
+            key={`${role.id}-${index}`}
+            onPress={() => onSelect?.(role)}
+            style={styles.listCard}
+          >
+            {role.image ? (
+              <Image
+                source={role.image}
+                style={styles.listImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.listFallback}>
+                <Text style={styles.fallbackText}>?</Text>
+              </View>
+            )}
+
+            <Text style={styles.listName} numberOfLines={1}>
+              {role.name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+export function RoleCardById({
+  roleId,
+  onHide,
+  onClick,
+  size = 'large',
+}: {
+  roleId: RoleType | string;
+  onHide?: () => void;
+  onClick?: () => void;
+  size?: 'small' | 'medium' | 'large';
+}) {
+  return (
+    <RoleCard
+      role={roleId}
+      onHide={onHide}
+      onClick={onClick}
+      size={size}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
-  pressable: {
-    width: '100%',
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    padding: 20,
   },
 
   card: {
-    width: '100%',
-    backgroundColor: '#070A12',
-    borderWidth: 1,
-    borderRadius: 22,
     overflow: 'hidden',
+    borderRadius: 20,
+    backgroundColor: '#111827',
+    borderWidth: 2,
+    borderColor: '#374151',
+    elevation: 12,
     shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
     shadowOffset: {
       width: 0,
-      height: 7,
+      height: 8,
     },
-    elevation: 8,
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
   },
 
-  card_small: {
-    maxWidth: 230,
-    alignSelf: 'center',
-  },
-
-  card_medium: {
-    maxWidth: 380,
-    alignSelf: 'center',
-  },
-
-  card_large: {
-    maxWidth: 520,
-    alignSelf: 'center',
-  },
-
-  imageContainer: {
+  roleImage: {
     width: '100%',
-    aspectRatio: 240 / 382,
-    backgroundColor: '#05070C',
-  },
-
-  image: {
-    width: '100%',
-    height: '100%',
+    aspectRatio: 0.72,
+    backgroundColor: '#1f2937',
   },
 
   imageFallback: {
-    flex: 1,
-    alignItems: 'center',
+    width: '100%',
+    aspectRatio: 0.72,
     justifyContent: 'center',
-    padding: 25,
+    alignItems: 'center',
+    backgroundColor: '#1f2937',
   },
 
-  fallbackIcon: {
+  fallbackText: {
     fontSize: 64,
-    marginBottom: 14,
+    fontWeight: '900',
+    color: '#6b7280',
   },
 
-  fallbackTitle: {
-    color: '#FFFFFF',
+  content: {
+    padding: 16,
+    alignItems: 'center',
+  },
+
+  roleName: {
     fontSize: 24,
     fontWeight: '900',
+    color: '#fff',
     textAlign: 'center',
     marginBottom: 8,
   },
 
-  fallbackText: {
-    color: '#8B93A7',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-
-  info: {
-    padding: 16,
-  },
-
   teamBadge: {
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#374151',
     marginBottom: 10,
   },
 
   teamText: {
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  nameAr: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '900',
-    textAlign: 'right',
-  },
-
-  nameEn: {
-    color: '#7E8799',
-    fontSize: 12,
+    color: '#fff',
+    fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,
-    marginTop: 2,
-    textAlign: 'right',
   },
 
   description: {
-    color: '#D5D9E2',
+    color: '#d1d5db',
     fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'right',
-    marginTop: 14,
-  },
-
-  abilities: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#202532',
-  },
-
-  abilitiesTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
-    textAlign: 'right',
-    marginBottom: 9,
-  },
-
-  abilityRow: {
-    flexDirection: 'row-reverse',
-    alignItems: 'flex-start',
-    marginBottom: 7,
-  },
-
-  bullet: {
-    fontSize: 18,
-    fontWeight: '900',
-    marginLeft: 7,
-    lineHeight: 20,
-  },
-
-  abilityText: {
-    flex: 1,
-    color: '#B8BFCC',
-    fontSize: 13,
-    lineHeight: 20,
-    textAlign: 'right',
+    lineHeight: 21,
+    textAlign: 'center',
   },
 
   hideButton: {
-    marginHorizontal: 16,
-    marginBottom: 16,
-    paddingVertical: 10,
+    marginTop: 16,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
     borderRadius: 12,
-    backgroundColor: '#151922',
-    alignItems: 'center',
+    backgroundColor: '#374151',
   },
 
   hideButtonText: {
-    color: '#AEB5C2',
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  listContent: {
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+
+  listCard: {
+    width: 120,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#111827',
+  },
+
+  listImage: {
+    width: 120,
+    height: 165,
+  },
+
+  listFallback: {
+    width: 120,
+    height: 165,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1f2937',
+  },
+
+  listName: {
+    color: '#fff',
     fontSize: 13,
     fontWeight: '800',
-  },
-
-  notFound: {
-    width: '100%',
-    minHeight: 180,
-    borderRadius: 20,
-    backgroundColor: '#080B12',
-    borderWidth: 1,
-    borderColor: '#343A48',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-
-  notFoundText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
     textAlign: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 9,
   },
 });
-
-export default RoleCard;
-
-export const RoleCardsList: React.FC<{
-  onClick?: (role: Role) => void;
-  size?: 'small' | 'medium' | 'large';
-  filter?: 'all' | 'CITIZEN' | 'MAFIA' | 'CULT';
-}> = ({
-  onClick,
-  size = 'medium',
-  filter = 'all',
-}) => {
-  const filteredRoles = Object.values(
-    ROLES,
-  ).filter((role) => {
-    if (filter === 'all') {
-      return true;
-    }
-
-    return role.team === filter;
-  });
-
-  return (
-    <View style={styles.list}>
-      {filteredRoles.map((role) => (
-        <View
-          key={role.id}
-          style={styles.listItem}
-        >
-          <RoleCard
-            role={role}
-            size={size}
-            onClick={() =>
-              onClick?.(role)
-            }
-          />
-        </View>
-      ))}
-    </View>
-  );
-};
-
-export const RoleCardById: React.FC<{
-  roleId: string;
-  size?: 'small' | 'medium' | 'large';
-}> = ({
-  roleId,
-  size = 'medium',
-}) => {
-  const role =
-    ROLES[
-      roleId
-        .trim()
-        .toUpperCase()
-        .replace(
-          /[\s-]+/g,
-          '_',
-        ) as RoleType
-    ];
-
-  if (!role) {
-    return (
-      <View style={styles.notFound}>
-        <Text style={styles.notFoundText}>
-          Role not found
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <RoleCard
-      role={role}
-      size={size}
-    />
-  );
-};
-
-const listStyles = StyleSheet.create({
-  list: {
-    width: '100%',
-  },
-});
-
-Object.assign(styles, listStyles);
