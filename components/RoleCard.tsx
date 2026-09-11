@@ -1,97 +1,109 @@
-import React from "react";
-import {
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  ImageSourcePropType,
-} from "react-native";
+import React from 'react';
+import { Role, ROLES } from '../types/roles';
+import '../styles/RoleCard.css';
 
-/**
- * Mafia001 RoleCard
- * Uses local assets for the 13 role cards.
- */
+interface RoleCardProps {
+  role: Role;
+  onClick?: () => void;
+  size?: 'small' | 'medium' | 'large';
+}
 
-// Map each normalized role to its local asset require path
-const ROLE_CARD_IMAGES: Record<string, ImageSourcePropType> = {
-  CITIZEN: require("../assets/roles/citizen.png"),
-  DOCTOR: require("../assets/roles/doctor.png"),
-  DETECTIVE: require("../assets/roles/detective.png"),
-  GHOUL: require("../assets/roles/ghoul.png"),
-  SPY: require("../assets/roles/spy.png"),
-  BODYGUARD: require("../assets/roles/bodyguard.png"),
-  SHERIFF: require("../assets/roles/sheriff.png"),
-  WITCH: require("../assets/roles/witch.png"),
-  MAFIA: require("../assets/roles/mafia.png"),
-  GODFATHER: require("../assets/roles/godfather.png"),
-  CONSIGLIERE: require("../assets/roles/consigliere.png"),
-  CULT_LEADER: require("../assets/roles/cult_leader.png"),
-  CULTIST: require("../assets/roles/cultist.png"),
+const RoleCard: React.FC<RoleCardProps> = ({ role, onClick, size = 'medium' }) => {
+  return (
+    <div
+      className={`role-card role-card--${size} role-card--${role.team.toLowerCase()}`}
+      onClick={onClick}
+      style={{
+        borderColor: role.borderColor,
+        '--border-color': role.borderColor,
+      } as React.CSSProperties & { '--border-color': string }}
+    >
+      {/* Card Background */}
+      <div className="role-card__background">
+        <div className="role-card__image-placeholder">
+          <span className="role-card__image-icon">{role.icon}</span>
+        </div>
+      </div>
+
+      {/* Card Content */}
+      <div className="role-card__content">
+        {/* Icon Badge */}
+        <div className="role-card__icon-badge" style={{ borderColor: role.borderColor }}>
+          <span className="role-card__icon">{role.icon}</span>
+        </div>
+
+        {/* Role Name Section */}
+        <div className="role-card__name-section">
+          <div className="role-card__banner" style={{ borderColor: role.borderColor }}>
+            <h2 className="role-card__name-en">{role.nameEn.toUpperCase()}</h2>
+          </div>
+          <h3 className="role-card__name-ar">{role.nameAr}</h3>
+        </div>
+
+        {/* Description */}
+        <p className="role-card__description">{role.descriptionAr}</p>
+
+        {/* Team Badge */}
+        <div className={`role-card__team-badge role-card__team-badge--${role.team.toLowerCase()}`}>
+          <span className="role-card__team-label">
+            {role.team === 'CITIZEN' && 'الفريق: المواطنون'}
+            {role.team === 'MAFIA' && 'الفريق: المافيا'}
+            {role.team === 'CULT' && 'الفريق: الطائفة'}
+          </span>
+        </div>
+
+        {/* Abilities */}
+        {size === 'large' && (
+          <div className="role-card__abilities">
+            <h4 className="role-card__abilities-title">المقدرات:</h4>
+            <ul className="role-card__abilities-list">
+              {role.abilities.map((ability, index) => (
+                <li key={index} className="role-card__ability-item">
+                  {ability}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Corner Decorations */}
+      <div className="role-card__corner role-card__corner--top-left" style={{ borderColor: role.borderColor }}></div>
+      <div className="role-card__corner role-card__corner--top-right" style={{ borderColor: role.borderColor }}></div>
+      <div className="role-card__corner role-card__corner--bottom-left" style={{ borderColor: role.borderColor }}></div>
+      <div className="role-card__corner role-card__corner--bottom-right" style={{ borderColor: role.borderColor }}></div>
+    </div>
+  );
 };
 
-function normalizeRole(role?: string | null): string {
-  if (!role) {
-    return "CITIZEN";
-  }
-  return String(role)
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, "_");
-}
+export default RoleCard;
 
-export function RoleCard({
-  role,
-  onHide,
-}: {
-  role?: string | null;
-  onHide?: () => void;
-}) {
-  const normalizedRole = normalizeRole(role);
-  const imageSource = ROLE_CARD_IMAGES[normalizedRole] ?? ROLE_CARD_IMAGES.CITIZEN;
+// Export all roles as cards grid
+export const RoleCardsList: React.FC<{
+  onClick?: (role: Role) => void;
+  size?: 'small' | 'medium' | 'large';
+  filter?: 'all' | 'CITIZEN' | 'MAFIA' | 'CULT';
+}> = ({ onClick, size = 'medium', filter = 'all' }) => {
+  const filteredRoles = Object.values(ROLES).filter(role => {
+    if (filter === 'all') return true;
+    return role.team === filter;
+  });
 
   return (
-    <View style={styles.container}>
-      <Image source={imageSource} style={styles.image} resizeMode="contain" />
-      {onHide && (
-        <Pressable
-          style={styles.hideButton}
-          onPress={onHide}
-          accessibilityRole="button"
-          accessibilityLabel="إخفاء البطاقة"
-        >
-          <Text style={styles.hideText}>إخفاء البطاقة</Text>
-        </Pressable>
-      )}
-    </View>
+    <div className="role-cards-grid">
+      {filteredRoles.map(role => (
+        <RoleCard key={role.id} role={role} onClick={() => onClick?.(role)} size={size} />
+      ))}
+    </div>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    alignItems: "center",
-    backgroundColor: "#05070A",
-    borderRadius: 24,
-    padding: 8,
-    marginBottom: 14,
-    overflow: "hidden",
-  },
-  image: {
-    width: "100%",
-    aspectRatio: 240 / 382,
-    borderRadius: 18,
-  },
-  hideButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    backgroundColor: "#17191D",
-  },
-  hideText: {
-    color: "#999",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-});
+// Export role by ID
+export const RoleCardById: React.FC<{ roleId: string; size?: 'small' | 'medium' | 'large' }> = ({
+  roleId,
+  size = 'medium',
+}) => {
+  const role = ROLES[roleId as keyof typeof ROLES];
+  if (!role) return <div>Role not found</div>;
+  return <RoleCard role={role} size={size} />;
+};
