@@ -1,5 +1,8 @@
 // Role types and interface definitions for Mafia Night
-export type RoleType = 
+
+import type { ImageSourcePropType } from 'react-native';
+
+export type RoleType =
   | 'CITIZEN'
   | 'DOCTOR'
   | 'DETECTIVE'
@@ -14,7 +17,10 @@ export type RoleType =
   | 'CULT_LEADER'
   | 'CULTIST';
 
-export type TeamType = 'CITIZEN' | 'MAFIA' | 'CULT';
+export type TeamType =
+  | 'CITIZEN'
+  | 'MAFIA'
+  | 'CULT';
 
 export interface Role {
   id: RoleType;
@@ -26,7 +32,7 @@ export interface Role {
   icon: string;
   borderColor: string;
   abilities: string[];
-  image: string;
+  image?: ImageSourcePropType;
 }
 
 export const ROLES: Record<RoleType, Role> = {
@@ -35,161 +41,252 @@ export const ROLES: Record<RoleType, Role> = {
     nameEn: 'Citizen',
     nameAr: 'المواطن',
     team: 'CITIZEN',
-    description: 'An ordinary citizen with no special abilities. Your role is to find and eliminate the Mafia.',
-    descriptionAr: 'مواطن عادي لا يملك أي قدرة خاصة. دورك اكتشاف القاتل والمافيا ووجاه الخطر معهم.',
+    description:
+      'An ordinary citizen with no special abilities. Your role is to find and eliminate the Mafia.',
+    descriptionAr:
+      'مواطن عادي بلا قدرة خاصة. مهمتك كشف أفراد المافيا والتعاون مع المواطنين للقضاء عليهم.',
     icon: '👥',
     borderColor: '#0066FF',
-    abilities: ['Vote during day phase', 'Discuss with others'],
-    image: require('../assets/roles/citizen.png'),
+    abilities: [
+      'التصويت أثناء النهار',
+      'مناقشة اللاعبين',
+      'كشف المافيا بالتحليل والتعاون',
+    ],
+    image: require('../assets/roles/01_citizen.png'),
   },
+
   DOCTOR: {
     id: 'DOCTOR',
     nameEn: 'Doctor',
     nameAr: 'الطبيب',
     team: 'CITIZEN',
-    description: 'Protects one person each night. Can save them from being killed by the Mafia.',
-    descriptionAr: 'يحمي شخص واحد كل ليلة من الموت على يد المافيا. يمكنه إنقاذ حياته.',
+    description:
+      'Protects one person each night and can save them from a Mafia attack.',
+    descriptionAr:
+      'يحمي لاعبًا واحدًا كل ليلة، ويمكنه إنقاذه من هجوم المافيا.',
     icon: '⚕️',
     borderColor: '#0066FF',
-    abilities: ['Protect one player per night', 'Save from Mafia kills'],
-    image: require('../assets/roles/doctor.png'),
+    abilities: [
+      'حماية لاعب واحد كل ليلة',
+      'إنقاذ الهدف من قتل المافيا',
+    ],
+    image: require('../assets/roles/02_doctor.png'),
   },
+
   DETECTIVE: {
     id: 'DETECTIVE',
     nameEn: 'Detective',
     nameAr: 'المحقق',
     team: 'CITIZEN',
-    description: 'Each night, you can investigate one player to learn their role.',
-    descriptionAr: 'كل ليلة، يمكنك التحقيق من لاعب واحد لاكتشاف دوره الحقيقي.',
+    description:
+      'Investigates one player each night to uncover valuable information about their role.',
+    descriptionAr:
+      'يحقق مع لاعب واحد كل ليلة للحصول على معلومات مهمة عن دوره الحقيقي.',
     icon: '🔍',
     borderColor: '#0066FF',
-    abilities: ['Investigate one player per night', 'Discover role'],
-    image: require('../assets/roles/detective.png'),
+    abilities: [
+      'التحقيق مع لاعب كل ليلة',
+      'جمع معلومات عن هوية اللاعبين',
+      'مساعدة المواطنين في كشف المافيا',
+    ],
+    image: require('../assets/roles/03_detective.png'),
   },
+
   GHOUL: {
     id: 'GHOUL',
     nameEn: 'Ghoul',
     nameAr: 'الغول',
     team: 'CITIZEN',
-    description: 'You have the ability to see who dies each night. Help your team by providing information.',
-    descriptionAr: 'تملك قدرة فريدة لترى من يموت كل ليلة. ساعد فريقك بالمعلومات.',
+    description:
+      'A mysterious observer who gains information from the deaths that occur during the night.',
+    descriptionAr:
+      'مراقب غامض يمتلك قدرة فريدة على الاستفادة من معلومات الوفيات التي تحدث أثناء الليل.',
     icon: '👁️',
     borderColor: '#0066FF',
-    abilities: ['See deaths each night', 'Provide information to team'],
-    image: require('../assets/roles/ghoul.png'),
+    abilities: [
+      'معرفة ضحايا الليل',
+      'جمع معلومات من أحداث اللعبة',
+      'مساعدة الفريق بالمعلومات',
+    ],
+    image: require('../assets/roles/04_ghoul.png'),
   },
+
   SPY: {
     id: 'SPY',
     nameEn: 'Spy',
     nameAr: 'الجاسوس',
     team: 'CITIZEN',
-    description: 'You work with the Citizens but gather intelligence. You can eavesdrop on Mafia meetings.',
-    descriptionAr: 'تعمل مع المواطنين لكن تجمع معلومات. يمكنك التنصت على اجتماعات المافيا.',
+    description:
+      'A covert investigator who gathers intelligence and observes the Mafia.',
+    descriptionAr:
+      'جاسوس سري يجمع المعلومات ويراقب تحركات المافيا لمساعدة المواطنين.',
     icon: '👁️',
     borderColor: '#0066FF',
-    abilities: ['Eavesdrop on Mafia', 'Gather intelligence'],
-    image: require('../assets/roles/spy.png'),
+    abilities: [
+      'جمع المعلومات',
+      'مراقبة المافيا',
+      'نقل المعلومات لفريق المواطنين',
+    ],
+    // لا توجد spy.png في المستودع حاليًا.
+    // سيتم ربطها عند رفع الصورة.
   },
+
   BODYGUARD: {
     id: 'BODYGUARD',
     nameEn: 'Bodyguard',
     nameAr: 'الحارس الشخصي',
     team: 'CITIZEN',
-    description: 'You protect one player each night from assassination. If attacked, you die instead.',
-    descriptionAr: 'تحمي لاعب واحد كل ليلة من الاغتيال. إذا تعرضت للهجوم، تموت بدلاً منه.',
+    description:
+      'Protects another player from assassination. If the attack succeeds, the Bodyguard may sacrifice themselves.',
+    descriptionAr:
+      'يحمي لاعبًا آخر من الاغتيال. إذا وقع الهجوم، يمكن للحارس التضحية بنفسه لحماية الهدف.',
     icon: '🛡️',
     borderColor: '#0066FF',
-    abilities: ['Protect one player per night', 'Sacrifice yourself'],
-    image: require('../assets/roles/bodyguard.png'),
+    abilities: [
+      'حماية لاعب كل ليلة',
+      'التضحية بالنفس لحماية الهدف',
+    ],
+    image: require('../assets/roles/06_bodyguard.png'),
   },
+
   SHERIFF: {
     id: 'SHERIFF',
     nameEn: 'Sheriff',
     nameAr: 'الشريف',
     team: 'CITIZEN',
-    description: 'A law enforcer who investigates suspects and can arrest them. Helps identify the Mafia.',
-    descriptionAr: 'رجل قانون يحقق مع المشبوهين ويمكنه اعتقالهم. يساعد في تحديد أفراد المافيا.',
+    description:
+      'A law enforcer who investigates suspicious players and helps expose the Mafia.',
+    descriptionAr:
+      'رجل قانون يحقق في اللاعبين المشبوهين ويساعد المواطنين على كشف أفراد المافيا.',
     icon: '⭐',
     borderColor: '#0066FF',
-    abilities: ['Investigate suspects', 'Arrest players', 'Identify Mafia'],
-    image: require('../assets/roles/sheriff.png'),
+    abilities: [
+      'التحقيق مع المشتبه بهم',
+      'كشف أفراد المافيا',
+      'مساعدة المواطنين في اتخاذ القرار',
+    ],
+    image: require('../assets/roles/05_sheriff.png'),
   },
+
   WITCH: {
     id: 'WITCH',
     nameEn: 'Witch',
     nameAr: 'الساحرة',
     team: 'CULT',
-    description: 'A mystical being with dark powers. You control members with magic and curses.',
-    descriptionAr: 'كائن غامض بقوى سحرية مظلمة. تتحكم بالأعضاء بالسحر واللعنات.',
+    description:
+      'A mysterious character with powerful abilities that can influence the course of the game.',
+    descriptionAr:
+      'شخصية غامضة تمتلك قوى خاصة قادرة على التأثير في مجريات اللعبة.',
     icon: '🧪',
     borderColor: '#8B3A8B',
-    abilities: ['Cast spells', 'Control minds', 'Use curses'],
-    image: require('../assets/roles/witch.png'),
+    abilities: [
+      'استخدام قدرات سحرية',
+      'التأثير في مجريات اللعبة',
+      'استخدام اللعنات والقدرات الخاصة',
+    ],
+    image: require('../assets/roles/08_witch.png'),
   },
+
   MAFIA: {
     id: 'MAFIA',
     nameEn: 'Mafia',
     nameAr: 'المافيا',
     team: 'MAFIA',
-    description: 'A member of the criminal organization. Work with your team to eliminate Citizens.',
-    descriptionAr: 'عضو في التنظيم الإجرامي. تعاون مع فريقك للقضاء على المواطنين.',
+    description:
+      'A member of the criminal organization. Work with the Mafia to eliminate the opposing teams.',
+    descriptionAr:
+      'عضو في التنظيم الإجرامي. تعاون مع أفراد المافيا للقضاء على خصومكم والسيطرة على المدينة.',
     icon: '👹',
     borderColor: '#FF0000',
-    abilities: ['Night kills', 'Team communication', 'Deceive'],
-    image: require('../assets/roles/mafia.png'),
+    abilities: [
+      'تنفيذ عمليات القتل ليلًا',
+      'التواصل مع أفراد المافيا',
+      'خداع المواطنين',
+    ],
+    image: require('../assets/roles/09_mafia.png'),
   },
+
   GODFATHER: {
     id: 'GODFATHER',
     nameEn: 'Godfather',
-    nameAr: 'الأب الروحي',
+    nameAr: 'العرّاب',
     team: 'MAFIA',
-    description: 'The leader of the Mafia. Controls decisions and organizes the night kills.',
-    descriptionAr: 'زعيم المافيا. يتحكم بالقرارات ويدير عمليات الليل.',
+    description:
+      'The supreme leader of the Mafia who directs the organization and makes critical decisions.',
+    descriptionAr:
+      'القائد الأعلى للمافيا. يدير التنظيم ويتخذ القرارات الحاسمة التي تحدد مصير الفريق.',
     icon: '👑',
     borderColor: '#FF0000',
-    abilities: ['Command Mafia', 'Organize kills', 'Final decision'],
-    image: require('../assets/roles/godfather.png'),
+    abilities: [
+      'قيادة المافيا',
+      'تنظيم عمليات الليل',
+      'اتخاذ القرارات الحاسمة',
+    ],
+    image: require('../assets/roles/10_godfather.png'),
   },
+
   CONSIGLIERE: {
     id: 'CONSIGLIERE',
     nameEn: 'Consigliere',
     nameAr: 'المستشار',
     team: 'MAFIA',
-    description: 'The advisor to the Godfather. Investigates players and reports findings to the Mafia.',
-    descriptionAr: 'مستشار الأب الروحي. يحقق مع اللاعبين ويقدم تقارير للمافيا.',
+    description:
+      'The trusted advisor of the Godfather who specializes in gathering intelligence.',
+    descriptionAr:
+      'المستشار الموثوق للعرّاب. متخصص في جمع المعلومات وتحليل اللاعبين لصالح المافيا.',
     icon: '🧠',
     borderColor: '#FF0000',
-    abilities: ['Investigate players', 'Report to Mafia', 'Strategic advice'],
-    image: require('../assets/roles/consigliere.png'),
+    abilities: [
+      'التحقيق في اللاعبين',
+      'جمع المعلومات',
+      'تقديم الاستشارات للعرّاب',
+    ],
+    image: require('../assets/roles/11_consigliere.png'),
   },
+
   CULT_LEADER: {
     id: 'CULT_LEADER',
     nameEn: 'Cult Leader',
     nameAr: 'زعيم الطائفة',
     team: 'CULT',
-    description: 'Leader of a secret cult. Controls members and executes the cult\'s agenda.',
-    descriptionAr: 'زعيم طائفة سرية. يتحكم بالأعضاء وينفذ أجندة الطائفة.',
+    description:
+      'The leader of a secret cult who guides its members and expands its influence.',
+    descriptionAr:
+      'زعيم طائفة سرية يقود أتباعه ويسعى إلى توسيع نفوذ الطائفة والسيطرة على اللعبة.',
     icon: '🔮',
     borderColor: '#8B3A8B',
-    abilities: ['Control cult members', 'Execute agenda', 'Mind control'],
-    image: require('../assets/roles/cult_leader.png'),
+    abilities: [
+      'قيادة أعضاء الطائفة',
+      'توسيع نفوذ الطائفة',
+      'توجيه أتباعه',
+    ],
+    image: require('../assets/roles/12_cult_leader.png'),
   },
+
   CULTIST: {
     id: 'CULTIST',
     nameEn: 'Cultist',
     nameAr: 'عضو الطائفة',
     team: 'CULT',
-    description: 'A devoted member of the cult. Follows orders and works to expand cult influence.',
-    descriptionAr: 'عضو مخلص في الطائفة. ينفذ الأوامر ويعمل على توسيع نفوذ الطائفة.',
+    description:
+      'A devoted member of the cult who follows the leader and helps expand its influence.',
+    descriptionAr:
+      'عضو مخلص في الطائفة ينفذ أوامر الزعيم ويساعد على توسيع نفوذها.',
     icon: '🔮',
     borderColor: '#8B3A8B',
-    abilities: ['Cult communication', 'Execute orders', 'Expand influence'],
-    image: require('../assets/roles/cultist.png'),
+    abilities: [
+      'التواصل مع أعضاء الطائفة',
+      'تنفيذ أوامر الزعيم',
+      'توسيع نفوذ الطائفة',
+    ],
+    image: require('../assets/roles/13_cultist.png'),
   },
 };
 
 export const getRoleByTeam = (team: TeamType): Role[] => {
-  return Object.values(ROLES).filter(role => role.team === team);
+  return Object.values(ROLES).filter(
+    (role) => role.team === team,
+  );
 };
 
 export const getRoleById = (id: RoleType): Role => {
