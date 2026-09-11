@@ -67,8 +67,13 @@ export default function CreateRoom() {
           Number(players)
         );
 
+      /*
+       * مهم:
+       * استخدم room.code (6 أحرف) وليس room.id (UUID)
+       * المسار [code].tsx يتوقع room code
+       */
       router.replace(
-        `/room/${room.id}`
+        `/room/${encodeURIComponent(room.code)}`
       );
     } catch (error: any) {
       Alert.alert(
