@@ -62,6 +62,8 @@ import {
 
 import { supabase } from "../../lib/supabase";
 
+import { RoleCard } from "../../components/RoleCard";
+
 /* ============================================================
    TYPES
 ============================================================ */
@@ -1303,20 +1305,6 @@ export default function MafiaGameScreen() {
         ] || "#D7A94B"
       : "#D7A94B";
 
-  const roleIcon =
-    currentRole
-      ? ROLE_ICONS[
-          currentRole
-        ] || "help-circle"
-      : "help-circle";
-
-  const roleEmoji =
-    currentRole
-      ? ROLE_EMOJIS[
-          currentRole
-        ] || "🎴"
-      : "🎴";
-
   const stolenAction =
     currentRole
       ? role?.stolen_ability ??
@@ -2032,428 +2020,176 @@ export default function MafiaGameScreen() {
         {phase !== "waiting" &&
         currentRole &&
         showRoleCard ? (
-          <View
-            style={[
-              styles.roleCard,
-              {
-                borderColor:
-                  roleColor,
-              },
-            ]}
-          >
-            {/* ROLE ARTWORK */}
+          <View style={styles.roleCard}>
+            {/* البطاقة المصورة الأصلية */}
+            <RoleCard
+              role={currentRole}
+              onHide={() => setShowRoleCard(false)}
+            />
 
-            <View
-              style={[
-                styles.roleArtwork,
-                {
-                  borderColor:
-                    roleColor,
-                  backgroundColor:
-                    `${roleColor}12`,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.artGlow,
-                  {
-                    backgroundColor:
-                      `${roleColor}18`,
-                  },
-                ]}
-              />
-
-              <Text
-                style={
-                  styles.roleEmoji
-                }
-              >
-                {roleEmoji}
-              </Text>
-
-              <View
-                style={[
-                  styles.artIconCircle,
-                  {
-                    borderColor:
-                      roleColor,
-                    backgroundColor:
-                      `${roleColor}20`,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    roleIcon
-                  }
-                  size={30}
-                  color={
-                    roleColor
-                  }
-                />
-              </View>
-
-              <View
-                style={
-                  styles.artLines
-                }
-              >
-                <View
-                  style={[
-                    styles.artLine,
-                    {
-                      backgroundColor:
-                        roleColor,
-                      opacity: 0.25,
-                    },
-                  ]}
-                />
+            {/* معلومات الدور */}
+            <View style={styles.roleInfoPanel}>
+              <View style={styles.roleTitleRow}>
+                <Text style={styles.roleTitleLabel}>
+                  دورك
+                </Text>
 
                 <View
                   style={[
-                    styles.artLineSmall,
-                    {
-                      backgroundColor:
-                        roleColor,
-                      opacity: 0.18,
-                    },
+                    styles.roleAliveBadge,
+                    !myAlive && styles.roleDeadBadge,
                   ]}
-                />
-              </View>
-            </View>
-
-            <Text
-              style={
-                styles.cardCaption
-              }
-            >
-              🎴 بطاقة الشخصية
-            </Text>
-
-            <Text
-              style={
-                styles.yourRole
-              }
-            >
-              دورك
-            </Text>
-
-            <Text
-              style={[
-                styles.roleName,
-                {
-                  color:
-                    roleColor,
-                },
-              ]}
-            >
-              {roleLabel}
-            </Text>
-
-            <View
-              style={[
-                styles.teamBadge,
-                {
-                  borderColor:
-                    roleColor,
-                  backgroundColor:
-                    `${roleColor}12`,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.teamBadgeText,
-                  {
-                    color:
-                      roleColor,
-                  },
-                ]}
-              >
-                {safeTeamLabel(
-                  roleTeam,
-                )}
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.roleMetaRow
-              }
-            >
-              <View
-                style={
-                  styles.metaBadge
-                }
-              >
-                <Ionicons
-                  name={
-                    rolePhase ===
-                    "day"
-                      ? "sunny"
-                      : "moon"
-                  }
-                  size={15}
-                  color="#D7A94B"
-                />
-
-                <Text
-                  style={
-                    styles.metaText
-                  }
                 >
-                  {rolePhase ===
-                  "day"
-                    ? "النهار"
-                    : "الليل"}
-                </Text>
-              </View>
-
-              <View
-                style={
-                  styles.metaBadge
-                }
-              >
-                <Ionicons
-                  name="shield-checkmark"
-                  size={15}
-                  color="#D7A94B"
-                />
-
-                <Text
-                  style={
-                    styles.metaText
-                  }
-                >
-                  {myAlive
-                    ? "حي"
-                    : "ميت"}
-                </Text>
-              </View>
-            </View>
-
-            <View
-              style={
-                styles.infoBlock
-              }
-            >
-              <Text
-                style={
-                  styles.infoTitle
-                }
-              >
-                📖 الوصف
-              </Text>
-
-              <Text
-                style={
-                  styles.roleDescription
-                }
-              >
-                {roleDescription}
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.infoBlock
-              }
-            >
-              <Text
-                style={
-                  styles.infoTitle
-                }
-              >
-                ⚡ القدرة
-              </Text>
-
-              <Text
-                style={
-                  styles.roleDescription
-                }
-              >
-                {roleAbility}
-              </Text>
-            </View>
-
-            <View
-              style={
-                styles.infoBlock
-              }
-            >
-              <Text
-                style={
-                  styles.infoTitle
-                }
-              >
-                🎯 الهدف
-              </Text>
-
-              <Text
-                style={
-                  styles.roleDescription
-                }
-              >
-                {roleObjective}
-              </Text>
-            </View>
-
-            {/* GHOUL STOLEN ABILITY */}
-
-            {role?.ghoul_ability_stolen &&
-              stolenAction && (
-                <View
-                  style={
-                    styles.stolenBox
-                  }
-                >
-                  <View
-                    style={
-                      styles.stolenIcon
-                    }
-                  >
-                    <Ionicons
-                      name="flash"
-                      size={22}
-                      color="#C084FC"
-                    />
-                  </View>
-
-                  <View
-                    style={{
-                      flex: 1,
-                    }}
-                  >
-                    <Text
-                      style={
-                        styles.stolenTitle
-                      }
-                    >
-                      قدرة الغول المسروقة
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.stolenText
-                      }
-                    >
-                      {safeActionLabel(
-                        stolenAction,
-                      )}{" "}
-                      من دور{" "}
-                      {role.stolen_role
-                        ? getRoleLabel(
-                            role.stolen_role,
-                          )
-                        : "أول لاعب يموت"}
-                    </Text>
-
-                    <Text
-                      style={
-                        styles.stolenHint
-                      }
-                    >
-                      الغول ينتمي إلى
-                      فريق المواطنين
-                      ويستطيع استخدام
-                      القدرة المسروقة
-                      مرة واحدة.
-                    </Text>
-                  </View>
+                  <Text style={styles.roleAliveBadgeText}>
+                    {myAlive ? "حي" : "ميت"}
+                  </Text>
                 </View>
-              )}
+              </View>
 
+              <Text
+                style={[
+                  styles.roleName,
+                  {
+                    color: roleColor,
+                  },
+                ]}
+              >
+                {roleLabel}
+              </Text>
+
+              {roleTeam ? (
+                <View
+                  style={[
+                    styles.roleTeamBadge,
+                    {
+                      borderColor: roleColor,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.roleTeamText,
+                      {
+                        color: roleColor,
+                      },
+                    ]}
+                  >
+                    {getTeamLabel(roleTeam)}
+                  </Text>
+                </View>
+              ) : null}
+
+              {rolePhase ? (
+                <Text style={styles.rolePhaseText}>
+                  المرحلة: {rolePhase}
+                </Text>
+              ) : null}
+
+              {/* وصف الدور */}
+              <View style={styles.roleInfoBox}>
+                <Text style={styles.roleInfoHeading}>
+                  وصف الدور
+                </Text>
+
+                <Text style={styles.roleDescription}>
+                  {roleDescription}
+                </Text>
+              </View>
+
+              {/* القدرة */}
+              <View style={styles.roleInfoBox}>
+                <Text style={styles.roleInfoHeading}>
+                  القدرة
+                </Text>
+
+                <Text style={styles.roleDescription}>
+                  {roleAbility}
+                </Text>
+              </View>
+
+              {/* الهدف */}
+              <View style={styles.roleInfoBox}>
+                <Text style={styles.roleInfoHeading}>
+                  هدفك
+                </Text>
+
+                <Text style={styles.roleDescription}>
+                  {roleObjective}
+                </Text>
+              </View>
+
+              {/* قدرة الغول المسروقة */}
+              {currentRole === "GHOUL" &&
+                role?.ghoul_ability_stolen &&
+                stolenAction ? (
+                  <View
+                    style={[
+                      styles.roleInfoBox,
+                      styles.stolenAbilityBox,
+                    ]}
+                  >
+                    <Text style={styles.roleInfoHeading}>
+                      القدرة المسروقة
+                    </Text>
+
+                    <Text style={styles.roleDescription}>
+                      {stolenAction}
+                    </Text>
+                  </View>
+                ) : null}
+
+              {/* القدرة الفعلية */}
+              {effectiveAction ? (
+                <View style={styles.roleActionBadge}>
+                  <Text style={styles.roleActionText}>
+                    القدرة الفعلية:{" "}
+                    {ACTION_LABELS[effectiveAction] ??
+                      effectiveAction}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* إخفاء البطاقة */}
             <Pressable
-              onPress={() =>
-                setShowRoleCard(
-                  false,
-                )
-              }
-              style={
-                styles.hideRoleButton
-              }
+              style={styles.hideRoleButton}
+              onPress={() => setShowRoleCard(false)}
             >
               <Ionicons
                 name="eye-off-outline"
-                size={16}
+                size={19}
                 color="#999"
               />
 
-              <Text
-                style={
-                  styles.hideRoleText
-                }
-              >
+              <Text style={styles.hideRoleButtonText}>
                 إخفاء البطاقة
               </Text>
             </Pressable>
           </View>
-        ) : phase !==
-            "waiting" &&
-          currentRole ? (
-          <View
-            style={
-              styles.hiddenRoleCard
-            }
-          >
-            <View
-              style={
-                styles.hiddenRoleIcon
-              }
-            >
-              <Ionicons
-                name="lock-closed"
-                size={25}
-                color="#D7A94B"
-              />
-            </View>
+        ) : phase !== "waiting" &&
+          currentRole &&
+          !showRoleCard ? (
+          <View style={styles.hiddenRoleCard}>
+            <Text style={styles.hiddenRoleTitle}>
+              🎴 دورك مخفي
+            </Text>
 
-            <View
-              style={{
-                flex: 1,
-              }}
-            >
-              <Text
-                style={
-                  styles.hiddenRoleTitle
-                }
-              >
-                دورك مخفي
-              </Text>
-
-              <Text
-                style={
-                  styles.hiddenRoleText
-                }
-              >
-                اضغط لإظهار بطاقة
-                دورك.
-              </Text>
-            </View>
+            <Text style={styles.hiddenRoleSubtitle}>
+              اضغط لإظهار بطاقة دورك
+            </Text>
 
             <Pressable
-              onPress={() =>
-                setShowRoleCard(
-                  true,
-                )
-              }
-              style={
-                styles.showRoleButton
-              }
+              style={styles.showRoleButton}
+              onPress={() => setShowRoleCard(true)}
             >
               <Ionicons
-                name="eye"
-                size={18}
-                color="#D7A94B"
+                name="eye-outline"
+                size={20}
+                color="#fff"
               />
 
-              <Text
-                style={
-                  styles.showRoleText
-                }
-              >
-                إظهار
+              <Text style={styles.showRoleButtonText}>
+                إظهار البطاقة
               </Text>
             </Pressable>
           </View>
@@ -3326,250 +3062,182 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
 
-  roleArtwork: {
+  roleInfoPanel: {
     width: "100%",
-    height: 235,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: 13,
+    marginTop: 10,
+    paddingHorizontal: 4,
   },
 
-  artGlow: {
-    position: "absolute",
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-  },
-
-  roleEmoji: {
-    fontSize: 112,
-    textAlign: "center",
-    includeFontPadding: false,
-    marginTop: -5,
-  },
-
-  artIconCircle: {
-    position: "absolute",
-    right: 18,
-    top: 18,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  artLines: {
-    position: "absolute",
-    bottom: 16,
-    left: 20,
-    right: 20,
-  },
-
-  artLine: {
-    height: 2,
+  roleTitleRow: {
     width: "100%",
-    borderRadius: 2,
-  },
-
-  artLineSmall: {
-    height: 2,
-    width: "65%",
-    borderRadius: 2,
-    marginTop: 6,
-  },
-
-  cardCaption: {
-    color: "#777",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 5,
-  },
-
-  yourRole: {
-    color: "#777",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
-
-  roleName: {
-    fontSize: 34,
-    fontWeight: "900",
-    textAlign: "center",
-  },
-
-  teamBadge: {
-    marginTop: 9,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 17,
-    paddingVertical: 7,
-  },
-
-  teamBadgeText: {
-    fontSize: 14,
-    fontWeight: "900",
-  },
-
-  roleMetaRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-
-  metaBadge: {
-    minHeight: 32,
-    paddingHorizontal: 11,
-    borderRadius: 12,
-    backgroundColor: "#181818",
-    borderWidth: 1,
-    borderColor: "#292929",
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-  },
-
-  metaText: {
-    color: "#AAA",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-
-  infoBlock: {
-    width: "100%",
-    marginTop: 13,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: "#171717",
-    borderWidth: 1,
-    borderColor: "#262626",
-  },
-
-  infoTitle: {
-    color: "#D7A94B",
-    fontSize: 14,
-    fontWeight: "900",
-    marginBottom: 6,
-  },
-
-  roleDescription: {
-    color: "#D0D0D0",
-    fontSize: 14,
-    lineHeight: 23,
-    textAlign: "right",
-  },
-
-  stolenBox: {
-    width: "100%",
-    marginTop: 14,
-    padding: 13,
-    borderRadius: 15,
-    backgroundColor: "#1B1124",
-    borderWidth: 1,
-    borderColor: "#542A73",
-    flexDirection: "row",
-    alignItems: "flex-start",
+    justifyContent: "space-between",
     gap: 10,
   },
 
-  stolenIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#291637",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  stolenTitle: {
-    color: "#C084FC",
-    fontSize: 14,
+  roleTitleLabel: {
+    color: "#FFFFFF",
+    fontSize: 18,
     fontWeight: "900",
   },
 
-  stolenText: {
-    color: "#DDD",
-    fontSize: 13,
-    marginTop: 3,
+  roleAliveBadge: {
+    minWidth: 58,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#173D27",
+    borderWidth: 1,
+    borderColor: "#3DBB6A",
   },
 
-  stolenHint: {
-    color: "#A78BFA",
-    fontSize: 11,
-    lineHeight: 17,
+  roleDeadBadge: {
+    backgroundColor: "#3A1717",
+    borderColor: "#C94B4B",
+  },
+
+  roleAliveBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  roleName: {
+    marginTop: 7,
+    fontSize: 25,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  roleTeamBadge: {
+    alignSelf: "center",
+    marginTop: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    backgroundColor: "#10131A",
+  },
+
+  roleTeamText: {
+    fontSize: 13,
+    fontWeight: "900",
+  },
+
+  rolePhaseText: {
     marginTop: 6,
+    color: "#8E95A3",
+    fontSize: 12,
+    textAlign: "center",
+  },
+
+  roleInfoBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: "#0C1018",
+    borderWidth: 1,
+    borderColor: "#202733",
+  },
+
+  roleInfoHeading: {
+    color: "#D7A94B",
+    fontSize: 13,
+    fontWeight: "900",
+    marginBottom: 5,
+    textAlign: "right",
+  },
+
+  roleDescription: {
+    color: "#D8DCE4",
+    fontSize: 14,
+    lineHeight: 22,
+    textAlign: "right",
+  },
+
+  stolenAbilityBox: {
+    borderColor: "#8A4BD6",
+    backgroundColor: "#170F22",
+  },
+
+  roleActionBadge: {
+    marginTop: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#171B25",
+    borderWidth: 1,
+    borderColor: "#3A4354",
+  },
+
+  roleActionText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
   },
 
   hideRoleButton: {
-    marginTop: 17,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: "#1B1B1B",
+    marginTop: 10,
+    alignSelf: "center",
     flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-
-  hideRoleText: {
-    color: "#999",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-
-  hiddenRoleCard: {
-    borderWidth: 1,
-    borderColor: "#332B1B",
-    borderRadius: 20,
-    backgroundColor: "#111",
-    padding: 14,
-    marginBottom: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
-  hiddenRoleIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: "#1B1710",
-    borderWidth: 1,
-    borderColor: "#59451E",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  hiddenRoleTitle: {
-    color: "#D7A94B",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-
-  hiddenRoleText: {
-    color: "#777",
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  showRoleButton: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 7,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 13,
-    backgroundColor: "#1B1710",
   },
 
-  showRoleText: {
-    color: "#D7A94B",
+  hideRoleButtonText: {
+    color: "#999999",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  hiddenRoleCard: {
+    width: "100%",
+    marginTop: 12,
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: "#080B11",
+    borderWidth: 1,
+    borderColor: "#252B36",
+    alignItems: "center",
+  },
+
+  hiddenRoleTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  hiddenRoleSubtitle: {
+    marginTop: 6,
+    color: "#858B97",
+    fontSize: 13,
+    textAlign: "center",
+  },
+
+  showRoleButton: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#171D29",
+    borderWidth: 1,
+    borderColor: "#343D4D",
+  },
+
+  showRoleButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "900",
   },
 
@@ -3906,8 +3574,7 @@ const styles = StyleSheet.create({
   chatSection: {
     marginTop: 8,
     backgroundColor: "#111",
-    borderRadius: 18,
-    padding: 15,
+    borderRadius: 18,    padding: 15,
     borderWidth: 1,
     borderColor: "#222",
   },
