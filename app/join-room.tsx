@@ -74,20 +74,21 @@ export default function JoinRoomScreen() {
 
       if (
         !room ||
-        !room.id
+        !room.code
       ) {
         throw new Error(
-          'تم الانضمام لكن معرف الغرفة غير موجود.'
+          'تم الانضمام لكن كود الغرفة غير موجود.'
         );
       }
 
       /*
        * مهم:
-       * نستخدم UUID الحقيقي للغرفة،
-       * وليس كود ABC123.
+       * استخدم room.code (6 أحرف) وليس room.id (UUID)
+       * المسار [code].tsx يتوقع room code
+       * resolveRoom() سيقوم بتحويل code إلى UUID
        */
       router.replace(
-        `/room/${room.id}`
+        `/room/${encodeURIComponent(room.code)}`
       );
     } catch (error: any) {
       console.error(
