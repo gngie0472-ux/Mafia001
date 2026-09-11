@@ -9,15 +9,14 @@ import {
   View,
 } from 'react-native';
 
+import { getRoleById, getAllRoles } from '../types/roles';
 import {
-  ROLES,
-  Role,
-  RoleType,
-  getRoleById,
-} from '../types/roles';
+  normalizeGameRole,
+  getRoleCardData,
+} from '../lib/game';
 
 type RoleCardProps = {
-  role: Role | RoleType | string;
+  role: string | null;
   onHide?: () => void;
   onClick?: () => void;
   size?: 'small' | 'medium' | 'large';
@@ -29,32 +28,31 @@ const CARD_WIDTHS = {
   large: 290,
 } as const;
 
-function normalizeRole(role: Role | RoleType | string): Role | undefined {
-  if (typeof role === 'object' && role !== null && 'id' in role) {
-    return role as Role;
-  }
-
-  const normalized = String(role)
-    .trim()
-    .toUpperCase()
-    .replace(/[\s-]+/g, '_');
-
-  return getRoleById(normalized);
-}
-
+/**
+ * بطاقة الدور.
+ * 
+ * ✅ البيانات تأتي من:
+ * lib/game.ts → getRoleCardData()
+ * 
+ * الصور من:
+ * types/roles.ts → ROLE_IMAGES
+ */
 export function RoleCard({
   role,
   onHide,
   onClick,
   size = 'large',
 }: RoleCardProps) {
-  const roleData = normalizeRole(role);
+  const normalizedRole = normalizeGameRole(role);
+  const cardData = getRoleCardData(normalizedRole);
+  const roleData = getRoleById(normalizedRole);
 
-  if (!roleData) {
+  if (!cardData || !roleData) {
     return null;
   }
 
-  const imageSource: ImageSourcePropType | undefined = roleData.image;
+  const imageSource: ImageSourcePropType | undefined =
+    roleData.image;
 
   return (
     <View style={styles.overlay}>
@@ -75,25 +73,25 @@ export function RoleCard({
           />
         ) : (
           <View style={styles.imageFallback}>
-            <Text style={styles.fallbackText}>?</Text>
+            <Text style={styles.fallbackText}>
+              ?
+            </Text>
           </View>
         )}
 
         <View style={styles.content}>
-          <Text style={styles.roleName}>{roleData.name}</Text>
+          <Text style={styles.roleName}>
+            {cardData.label}
+          </Text>
 
           <View style={styles.teamBadge}>
             <Text style={styles.teamText}>
-              {roleData.team === 'MAFIA'
-                ? 'MAFIA'
-                : roleData.team === 'CULT'
-                  ? 'CULT'
-                  : 'CITIZEN'}
+              {cardData.teamLabel}
             </Text>
           </View>
 
           <Text style={styles.description}>
-            {roleData.description}
+            {cardData.description}
           </Text>
 
           {onHide && (
@@ -101,7 +99,9 @@ export function RoleCard({
               style={styles.hideButton}
               onPress={onHide}
             >
-              <Text style={styles.hideButtonText}>إخفاء البطاقة</Text>
+              <Text style={styles.hideButtonText}>
+                إخفاء البطاقة
+              </Text>
             </Pressable>
           )}
         </View>
@@ -111,22 +111,27 @@ export function RoleCard({
 }
 
 type RoleCardsListProps = {
-  roles?: (Role | RoleType | string)[];
-  onSelect?: (role: Role) => void;
+  roles?: string[];
+  onSelect?: (roleId: string) => void;
 };
 
 export function RoleCardsList({
-  roles = Object.keys(ROLES) as RoleType[],
+  roles,
   onSelect,
 }: RoleCardsListProps) {
+  const roleList =
+    roles && roles.length > 0
+      ? roles
+      : getAllRoles().map(r => r.id);
+
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.listContent}
     >
-      {roles.map((item, index) => {
-        const role = normalizeRole(item);
+      {roleList.map((roleId, index) => {
+        const role = getRoleById(roleId);
 
         if (!role) {
           return null;
@@ -135,7 +140,9 @@ export function RoleCardsList({
         return (
           <Pressable
             key={`${role.id}-${index}`}
-            onPress={() => onSelect?.(role)}
+            onPress={() =>
+              onSelect?.(String(role.id))
+            }
             style={styles.listCard}
           >
             {role.image ? (
@@ -146,11 +153,16 @@ export function RoleCardsList({
               />
             ) : (
               <View style={styles.listFallback}>
-                <Text style={styles.fallbackText}>?</Text>
+                <Text style={styles.fallbackText}>
+                  ?
+                </Text>
               </View>
             )}
 
-            <Text style={styles.listName} numberOfLines={1}>
+            <Text
+              style={styles.listName}
+              numberOfLines={1}
+            >
               {role.name}
             </Text>
           </Pressable>
@@ -160,17 +172,19 @@ export function RoleCardsList({
   );
 }
 
+type RoleCardByIdProps = {
+  roleId: string | null;
+  onHide?: () => void;
+  onClick?: () => void;
+  size?: 'small' | 'medium' | 'large';
+};
+
 export function RoleCardById({
   roleId,
   onHide,
   onClick,
   size = 'large',
-}: {
-  roleId: RoleType | string;
-  onHide?: () => void;
-  onClick?: () => void;
-  size?: 'small' | 'medium' | 'large';
-}) {
+}: RoleCardByIdProps) {
   return (
     <RoleCard
       role={roleId}
@@ -186,7 +200,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor:
+      'rgba(0,0,0,0.78)',
     padding: 20,
   },
 
